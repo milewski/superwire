@@ -213,7 +213,7 @@
   Description: Relocate `Reference`, `Expression`, and `TypedToolIr` extension behavior to their owning type modules or runtime domains.
   Rationale: Hidden extension traits in `runtime.rs` violate method locality and make behavior hard to find.
 
-- [ ] Introduce explicit runtime context structs for build, validation, agent run, tool call, and MCP render operations.
+- [x] Introduce explicit runtime context structs for build, validation, agent run, tool call, and MCP render operations.
   Description: Replace long parameter lists with typed context structs.
   Rationale: Context structs make execution state changes explicit and reduce signature churn.
 

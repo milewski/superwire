@@ -1,6 +1,6 @@
-use super::{ExecutorError, WorkflowExecutor};
+use super::{ExecutorError, ToolCallExecutionContext, WorkflowExecutor};
 use crate::event::{ExecutorEvent, McpCallEventDetails};
-use crate::model::{normalize_mcp_tool_result, ModelToolDefinition, ModelToolSource, ToolCallLimitScope, ToolCallTracker};
+use crate::model::{normalize_mcp_tool_result, ModelToolDefinition, ModelToolSource, ToolCallLimitScope};
 use serde_json::{Map, Value};
 use std::collections::HashSet;
 use std::time::Instant;
@@ -12,6 +12,12 @@ use superwire_core::semantic::support::expression::{evaluate_expression, Evaluat
 use superwire_core::semantic::support::types::{validate_value_against_type, workflow_type_to_json_schema};
 use superwire_core::semantic::{PlannedAgent, TypedToolIr};
 use tokio::sync::mpsc;
+
+#[derive(Debug, Clone, Copy)]
+pub(in crate::runtime) struct StartupMcpToolValidationContext<'a> {
+    pub(in crate::runtime) evaluation_context: &'a EvaluationContext,
+    pub(in crate::runtime) event_sender: Option<&'a mpsc::Sender<ExecutorEvent>>,
+}
 
 impl WorkflowExecutor {
     pub(super) fn planned_agent_available_mcp_calls(
@@ -107,16 +113,15 @@ impl WorkflowExecutor {
 
     pub(super) fn validate_startup_mcp_tool_calls(
         &self,
-        evaluation_context: &EvaluationContext,
-        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+        startup_validation_context: StartupMcpToolValidationContext<'_>,
     ) -> Result<(), ExecutorError> {
         for tool_call in self.workflow.startup_tool_calls() {
-            self.validate_startup_mcp_tool_call(tool_call, evaluation_context, event_sender)?;
+            self.validate_startup_mcp_tool_call(tool_call, startup_validation_context)?;
         }
 
         for output_field in &self.execution_plan.output_declaration.fields {
             for tool_call in output_field.value.tool_calls() {
-                self.validate_startup_mcp_tool_call(tool_call, evaluation_context, event_sender)?;
+                self.validate_startup_mcp_tool_call(tool_call, startup_validation_context)?;
             }
         }
 
@@ -126,8 +131,7 @@ impl WorkflowExecutor {
     fn validate_startup_mcp_tool_call(
         &self,
         tool_call: &ToolCall,
-        evaluation_context: &EvaluationContext,
-        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+        startup_validation_context: StartupMcpToolValidationContext<'_>,
     ) -> Result<(), ExecutorError> {
         let Some(tool_name) = tool_call.callee.tool_name() else {
             return Ok(());
@@ -135,19 +139,22 @@ impl WorkflowExecutor {
         let Some(typed_tool) = self.execution_plan.tools.get(tool_name) else {
             return Ok(());
         };
-        let ModelToolSource::Mcp { .. } = self.model_tool_source(&typed_tool.declaration, evaluation_context)? else {
+        let ModelToolSource::Mcp { .. } = self.model_tool_source(&typed_tool.declaration, startup_validation_context.evaluation_context)?
+        else {
             return Ok(());
         };
-        let Ok(bindings) = typed_tool.resolve_bindings(&tool_call.binding_fields, evaluation_context) else {
+        let Ok(bindings) = typed_tool.resolve_bindings(&tool_call.binding_fields, startup_validation_context.evaluation_context) else {
             return Ok(());
         };
-        let Some(arguments) = self.startup_tool_call_arguments(tool_call, typed_tool, evaluation_context, &bindings)? else {
+        let Some(arguments) =
+            self.startup_tool_call_arguments(tool_call, typed_tool, startup_validation_context.evaluation_context, &bindings)?
+        else {
             return Ok(());
         };
         let validation_started_at = Instant::now();
         let input_schema = typed_tool.model_input_schema(&bindings);
 
-        if let Some(sender) = event_sender {
+        if let Some(sender) = startup_validation_context.event_sender {
             let _ = sender.try_send(ExecutorEvent::mcp_tool_validation_started(
                 String::new(),
                 tool_name.to_string(),
@@ -156,7 +163,7 @@ impl WorkflowExecutor {
             ));
         }
 
-        if let Some(sender) = event_sender {
+        if let Some(sender) = startup_validation_context.event_sender {
             let _ = sender.try_send(ExecutorEvent::mcp_tool_validation_completed(
                 String::new(),
                 tool_name.to_string(),
@@ -209,9 +216,7 @@ impl WorkflowExecutor {
     pub(super) fn execute_deterministic_tool_call(
         &self,
         tool_call: &ToolCall,
-        evaluation_context: &EvaluationContext,
-        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
-        tool_call_tracker: &ToolCallTracker,
+        tool_call_execution_context: ToolCallExecutionContext<'_>,
     ) -> Result<Value, ExecutorError> {
         let tool_name = tool_call.callee.tool_name().ok_or_else(|| ExecutorError::Other {
             message: "deterministic tool call must use `tool.<name>` reference".to_string(),
@@ -221,21 +226,20 @@ impl WorkflowExecutor {
             message: format!("deterministic tool call references unknown tool `{tool_name}`"),
         })?;
 
-        tool_call_tracker
+        tool_call_execution_context
+            .tool_call_tracker
             .register_call(tool_name, typed_tool.declaration.max_calls, &ToolCallLimitScope::Workflow)
             .map_err(|message| ExecutorError::Other { message })?;
 
-        let bindings = typed_tool.resolve_bindings(&tool_call.binding_fields, evaluation_context)?;
-        let source = self.model_tool_source(&typed_tool.declaration, evaluation_context)?;
+        let bindings = typed_tool.resolve_bindings(&tool_call.binding_fields, tool_call_execution_context.evaluation_context)?;
+        let source = self.model_tool_source(&typed_tool.declaration, tool_call_execution_context.evaluation_context)?;
         let mut input_arguments = Map::new();
 
         for input_field in &tool_call.input_fields {
             let input_value = self.evaluate_runtime_expression(
                 &input_field.value,
-                evaluation_context,
+                tool_call_execution_context,
                 &format!("input field `{}` for tool `{}`", input_field.name, tool_name),
-                event_sender,
-                tool_call_tracker,
             )?;
             input_arguments.insert(input_field.name.clone(), input_value);
         }
@@ -277,7 +281,7 @@ impl WorkflowExecutor {
                     Some(input_schema),
                 );
 
-                if let Some(sender) = event_sender {
+                if let Some(sender) = tool_call_execution_context.event_sender {
                     let _ = sender.try_send(ExecutorEvent::mcp_call_started(call_details.clone()));
                 }
 
@@ -290,7 +294,7 @@ impl WorkflowExecutor {
                 {
                     Ok(result) => result,
                     Err(error) => {
-                        if let Some(sender) = event_sender {
+                        if let Some(sender) = tool_call_execution_context.event_sender {
                             let _ = sender.try_send(ExecutorEvent::mcp_call_failed(
                                 call_details,
                                 Value::String(error.to_string()),
@@ -307,7 +311,7 @@ impl WorkflowExecutor {
 
                 log::debug!("completed deterministic MCP tool `{tool_name}`");
 
-                if let Some(sender) = event_sender {
+                if let Some(sender) = tool_call_execution_context.event_sender {
                     let _ = sender.try_send(ExecutorEvent::mcp_call_completed(
                         call_details,
                         normalized_result.clone(),

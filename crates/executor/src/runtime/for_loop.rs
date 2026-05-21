@@ -1,4 +1,4 @@
-use super::{AgentExecutionContext, CompletedAgentExecution, ExecutorError, WorkflowExecutor};
+use super::{AgentExecutionContext, AgentRunContext, CompletedAgentExecution, ExecutorError, WorkflowExecutor};
 use crate::model::ModelProvider;
 use crate::runtime::state::RuntimeState;
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -74,7 +74,12 @@ impl WorkflowExecutor {
                     message: format!("failed to acquire concurrency permit: {error}"),
                 })?;
                 let result = self
-                    .execute_agent(&agent_clone, &iteration_state, model_provider, &iteration_execution_context)
+                    .execute_agent(AgentRunContext {
+                        planned_agent: &agent_clone,
+                        runtime_state: &iteration_state,
+                        model_provider,
+                        agent_execution_context: &iteration_execution_context,
+                    })
                     .await;
                 drop(permit);
 

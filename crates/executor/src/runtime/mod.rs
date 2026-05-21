@@ -9,6 +9,8 @@ mod schema;
 pub mod state;
 mod tools;
 
+pub(in crate::runtime) use agent::AgentRunContext;
+pub(in crate::runtime) use configuration::RuntimeValidationContext;
 pub use error::ExecutorError;
 pub(in crate::runtime) use schema::value_object;
 
@@ -52,6 +54,27 @@ pub(in crate::runtime) struct AgentExecutionContext {
     pub(in crate::runtime) tool_call_tracker: ToolCallTracker,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(in crate::runtime) struct ToolCallExecutionContext<'a> {
+    pub(in crate::runtime) evaluation_context: &'a EvaluationContext,
+    pub(in crate::runtime) event_sender: Option<&'a mpsc::Sender<ExecutorEvent>>,
+    pub(in crate::runtime) tool_call_tracker: &'a ToolCallTracker,
+}
+
+impl<'a> ToolCallExecutionContext<'a> {
+    pub(in crate::runtime) fn new(
+        evaluation_context: &'a EvaluationContext,
+        event_sender: Option<&'a mpsc::Sender<ExecutorEvent>>,
+        tool_call_tracker: &'a ToolCallTracker,
+    ) -> Self {
+        Self {
+            evaluation_context,
+            event_sender,
+            tool_call_tracker,
+        }
+    }
+}
+
 impl WorkflowExecutor {
     #[must_use]
     pub fn agent_execution_order(&self) -> Vec<String> {
@@ -69,9 +92,8 @@ impl WorkflowExecutor {
     }
 
     pub fn planned_execution_steps(&self, input: &Value, secrets: &Value, max_concurrency: usize) -> Result<Value, ExecutorError> {
-        let input_values = self.resolve_input_values(input)?;
-        let secret_values = self.resolve_secret_values(secrets)?;
-        let runtime_state = RuntimeState::new(input_values, secret_values);
+        let runtime_configuration = self.resolve_runtime_configuration(RuntimeValidationContext { input, secrets })?;
+        let runtime_state = RuntimeState::new(runtime_configuration.input_values, runtime_configuration.secret_values);
         let evaluation_context = runtime_state.evaluation_context(HashMap::new());
         let mut steps = Vec::new();
 
@@ -165,10 +187,8 @@ impl WorkflowExecutor {
     fn evaluate_runtime_expression(
         &self,
         expression: &Expression,
-        evaluation_context: &EvaluationContext,
+        tool_call_execution_context: ToolCallExecutionContext<'_>,
         context: &str,
-        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
-        tool_call_tracker: &ToolCallTracker,
     ) -> Result<Value, ExecutorError> {
         match expression {
             Expression::StringLiteral(string_literal) => Ok(Value::String(string_literal.clone())),
@@ -179,13 +199,8 @@ impl WorkflowExecutor {
                     match string_template_part {
                         superwire_core::dsl::StringTemplatePart::Text(template_text) => rendered_template.push_str(template_text),
                         superwire_core::dsl::StringTemplatePart::Interpolation(interpolation_expression) => {
-                            let interpolation_value = self.evaluate_runtime_expression(
-                                interpolation_expression,
-                                evaluation_context,
-                                context,
-                                event_sender,
-                                tool_call_tracker,
-                            )?;
+                            let interpolation_value =
+                                self.evaluate_runtime_expression(interpolation_expression, tool_call_execution_context, context)?;
                             rendered_template.push_str(&normalize_prompt(interpolation_value));
                         }
                     }
@@ -199,38 +214,27 @@ impl WorkflowExecutor {
             | Expression::Reference(_)
             | Expression::FunctionCall(_)
             | Expression::VariantProjection(_)
-            | Expression::Match(_) => Ok(evaluate_expression(expression, evaluation_context, context)?),
+            | Expression::Match(_) => Ok(evaluate_expression(
+                expression,
+                tool_call_execution_context.evaluation_context,
+                context,
+            )?),
             Expression::NullFallback(null_fallback) => {
-                let value =
-                    self.evaluate_runtime_expression(&null_fallback.value, evaluation_context, context, event_sender, tool_call_tracker)?;
+                let value = self.evaluate_runtime_expression(&null_fallback.value, tool_call_execution_context, context)?;
 
                 if value.is_null() {
-                    return self.evaluate_runtime_expression(
-                        &null_fallback.fallback,
-                        evaluation_context,
-                        context,
-                        event_sender,
-                        tool_call_tracker,
-                    );
+                    return self.evaluate_runtime_expression(&null_fallback.fallback, tool_call_execution_context, context);
                 }
 
                 Ok(value)
             }
-            Expression::ToolCall(tool_call) => {
-                self.execute_deterministic_tool_call(tool_call, evaluation_context, event_sender, tool_call_tracker)
-            }
-            Expression::McpCall(mcp_call) => self.execute_mcp_call(mcp_call, evaluation_context, event_sender),
+            Expression::ToolCall(tool_call) => self.execute_deterministic_tool_call(tool_call, tool_call_execution_context),
+            Expression::McpCall(mcp_call) => self.execute_mcp_call(mcp_call, tool_call_execution_context.into()),
             Expression::ArrayLiteral(array_items) => {
                 let mut evaluated_items = Vec::with_capacity(array_items.len());
 
                 for array_item in array_items {
-                    evaluated_items.push(self.evaluate_runtime_expression(
-                        array_item,
-                        evaluation_context,
-                        context,
-                        event_sender,
-                        tool_call_tracker,
-                    )?);
+                    evaluated_items.push(self.evaluate_runtime_expression(array_item, tool_call_execution_context, context)?);
                 }
 
                 Ok(Value::Array(evaluated_items))
@@ -239,13 +243,7 @@ impl WorkflowExecutor {
                 let mut evaluated_fields = Map::new();
 
                 for object_field in object_fields {
-                    let field_value = self.evaluate_runtime_expression(
-                        &object_field.value,
-                        evaluation_context,
-                        context,
-                        event_sender,
-                        tool_call_tracker,
-                    )?;
+                    let field_value = self.evaluate_runtime_expression(&object_field.value, tool_call_execution_context, context)?;
                     evaluated_fields.insert(object_field.name.clone(), field_value);
                 }
 

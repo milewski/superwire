@@ -1,4 +1,4 @@
-use super::{AgentExecutionContext, CompletedAgentExecution, ExecutorError, WorkflowExecutor};
+use super::{AgentExecutionContext, CompletedAgentExecution, ExecutorError, ToolCallExecutionContext, WorkflowExecutor};
 use crate::event::ExecutorEvent;
 use crate::model::{ModelProvider, ModelRequest, ModelToolDefinition, ToolCallTracker};
 use crate::runtime::mcp::normalize_prompt;
@@ -12,17 +12,25 @@ use superwire_core::semantic::support::expression::{evaluate_expression, Evaluat
 use superwire_core::semantic::{PlannedAgent, WorkflowSemanticError};
 use tokio::sync::mpsc;
 
+pub(in crate::runtime) struct AgentRunContext<'a, ModelProviderType> {
+    pub(in crate::runtime) planned_agent: &'a PlannedAgent,
+    pub(in crate::runtime) runtime_state: &'a RuntimeState,
+    pub(in crate::runtime) model_provider: &'a ModelProviderType,
+    pub(in crate::runtime) agent_execution_context: &'a AgentExecutionContext,
+}
+
 impl WorkflowExecutor {
     pub(in crate::runtime) async fn execute_agent<ModelProviderType>(
         &self,
-        planned_agent: &PlannedAgent,
-        runtime_state: &RuntimeState,
-        model_provider: &ModelProviderType,
-        agent_execution_context: &AgentExecutionContext,
+        agent_run_context: AgentRunContext<'_, ModelProviderType>,
     ) -> Result<CompletedAgentExecution, ExecutorError>
     where
         ModelProviderType: ModelProvider,
     {
+        let planned_agent = agent_run_context.planned_agent;
+        let runtime_state = agent_run_context.runtime_state;
+        let model_provider = agent_run_context.model_provider;
+        let agent_execution_context = agent_run_context.agent_execution_context;
         let agent_started_at = Instant::now();
         let agent_dynamic_values = self.execute_agent_dynamic_blocks(
             planned_agent,
@@ -52,12 +60,12 @@ impl WorkflowExecutor {
                 property: missing_property.as_str().to_string(),
                 message: "property is required".to_string(),
             })?;
+        let tool_call_execution_context =
+            ToolCallExecutionContext::new(&evaluation_context, None, &agent_execution_context.tool_call_tracker);
         let agent_instruction = normalize_prompt(self.evaluate_runtime_expression(
             instruction_expression,
-            &evaluation_context,
+            tool_call_execution_context,
             &format!("instruction for agent `{}`", planned_agent.name),
-            None,
-            &agent_execution_context.tool_call_tracker,
         )?);
         let prompt = if agent_execution_context.import_context.is_empty() {
             agent_instruction
@@ -140,12 +148,12 @@ impl WorkflowExecutor {
             };
 
             for dynamic_field in &dynamic_block.fields {
+                let evaluation_context = runtime_state.evaluation_context(dynamic_values.clone());
+                let tool_call_execution_context = ToolCallExecutionContext::new(&evaluation_context, event_sender, tool_call_tracker);
                 let field_value = self.evaluate_runtime_expression(
                     &dynamic_field.value,
-                    &runtime_state.evaluation_context(dynamic_values.clone()),
+                    tool_call_execution_context,
                     &format!("dynamic field `{}` for agent `{}`", dynamic_field.name, planned_agent.name),
-                    event_sender,
-                    tool_call_tracker,
                 )?;
                 dynamic_values.insert(dynamic_field.name.clone(), field_value);
             }

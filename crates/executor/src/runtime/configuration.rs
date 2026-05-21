@@ -4,10 +4,20 @@ use std::collections::HashSet;
 use superwire_core::dsl::{Expression, ReferenceKeyword};
 use superwire_core::semantic::support::types::{validate_value_against_type, value_kind_name, WorkflowType};
 
+#[derive(Debug, Clone, Copy)]
+pub(in crate::runtime) struct RuntimeValidationContext<'a> {
+    pub(in crate::runtime) input: &'a Value,
+    pub(in crate::runtime) secrets: &'a Value,
+}
+
+pub(in crate::runtime) struct ResolvedRuntimeConfiguration {
+    pub(in crate::runtime) input_values: Map<String, Value>,
+    pub(in crate::runtime) secret_values: Map<String, Value>,
+}
+
 impl WorkflowExecutor {
     pub fn validate_runtime_configuration(&self, input: &Value, secrets: &Value) -> Result<(), ExecutorError> {
-        self.resolve_input_values(input)?;
-        self.resolve_secret_values(secrets)?;
+        self.resolve_runtime_configuration(RuntimeValidationContext { input, secrets })?;
 
         Ok(())
     }
@@ -16,6 +26,19 @@ impl WorkflowExecutor {
         self.resolve_secret_values(secrets)?;
 
         Ok(())
+    }
+
+    pub(in crate::runtime) fn resolve_runtime_configuration(
+        &self,
+        validation_context: RuntimeValidationContext<'_>,
+    ) -> Result<ResolvedRuntimeConfiguration, ExecutorError> {
+        let input_values = self.resolve_input_values(validation_context.input)?;
+        let secret_values = self.resolve_secret_values(validation_context.secrets)?;
+
+        Ok(ResolvedRuntimeConfiguration {
+            input_values,
+            secret_values,
+        })
     }
 
     pub(super) fn resolve_input_values(&self, input: &Value) -> Result<Map<String, Value>, ExecutorError> {

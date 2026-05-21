@@ -1,4 +1,4 @@
-use super::{AgentExecutionContext, ExecutorError, WorkflowExecutor};
+use super::{AgentExecutionContext, AgentRunContext, ExecutorError, RuntimeValidationContext, ToolCallExecutionContext, WorkflowExecutor};
 use crate::event::ExecutorEvent;
 use crate::model::{ModelProvider, ToolCallTracker};
 use crate::runtime::state::RuntimeState;
@@ -20,9 +20,11 @@ impl WorkflowExecutor {
     where
         ModelProviderType: ModelProvider,
     {
-        let input_values = self.resolve_input_values(&input)?;
-        let secret_values = self.resolve_secret_values(&secrets)?;
-        let mut runtime_state = RuntimeState::new(input_values, secret_values);
+        let runtime_configuration = self.resolve_runtime_configuration(RuntimeValidationContext {
+            input: &input,
+            secrets: &secrets,
+        })?;
+        let mut runtime_state = RuntimeState::new(runtime_configuration.input_values, runtime_configuration.secret_values);
         let tool_call_tracker = ToolCallTracker::default();
 
         log::info!("executing workflow runtime");
@@ -84,8 +86,13 @@ impl WorkflowExecutor {
                 let agent_execution_context = agent_execution_context.clone();
 
                 pending_executions.push(async move {
-                    self.execute_agent(&planned_agent, &runtime_state_snapshot, model_provider, &agent_execution_context)
-                        .await
+                    self.execute_agent(AgentRunContext {
+                        planned_agent: &planned_agent,
+                        runtime_state: &runtime_state_snapshot,
+                        model_provider,
+                        agent_execution_context: &agent_execution_context,
+                    })
+                    .await
                 });
             }
 
@@ -164,12 +171,12 @@ impl WorkflowExecutor {
             };
 
             for dynamic_field in &dynamic_block.fields {
+                let evaluation_context = runtime_state.evaluation_context(HashMap::new());
+                let tool_call_execution_context = ToolCallExecutionContext::new(&evaluation_context, event_sender, tool_call_tracker);
                 let field_value = self.evaluate_runtime_expression(
                     &dynamic_field.value,
-                    &runtime_state.evaluation_context(HashMap::new()),
+                    tool_call_execution_context,
                     &format!("dynamic field `{}`", dynamic_field.name),
-                    event_sender,
-                    tool_call_tracker,
                 )?;
                 runtime_state.insert_local_binding(dynamic_field.name.clone(), field_value);
             }

@@ -1,4 +1,4 @@
-use super::{ExecutorError, WorkflowExecutor};
+use super::{ExecutorError, ToolCallExecutionContext, WorkflowExecutor};
 use crate::event::{ExecutorEvent, McpCallEventDetails};
 use crate::model::ToolCallTracker;
 use serde_json::Value;
@@ -8,12 +8,26 @@ use superwire_core::mcp::McpServerConfig;
 use superwire_core::semantic::support::expression::EvaluationContext;
 use tokio::sync::mpsc;
 
+#[derive(Debug, Clone, Copy)]
+pub(in crate::runtime) struct McpRenderContext<'a> {
+    evaluation_context: &'a EvaluationContext,
+    event_sender: Option<&'a mpsc::Sender<ExecutorEvent>>,
+}
+
+impl<'a> From<ToolCallExecutionContext<'a>> for McpRenderContext<'a> {
+    fn from(tool_call_execution_context: ToolCallExecutionContext<'a>) -> Self {
+        Self {
+            evaluation_context: tool_call_execution_context.evaluation_context,
+            event_sender: tool_call_execution_context.event_sender,
+        }
+    }
+}
+
 impl WorkflowExecutor {
     pub(in crate::runtime) fn execute_mcp_call(
         &self,
         mcp_call: &McpCall,
-        evaluation_context: &EvaluationContext,
-        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+        mcp_render_context: McpRenderContext<'_>,
     ) -> Result<Value, ExecutorError> {
         let target_name = mcp_call.target_name().ok_or_else(|| ExecutorError::Other {
             message: format!("{} call requires a target name", mcp_call.operation.as_str()),
@@ -31,8 +45,8 @@ impl WorkflowExecutor {
         }
 
         match mcp_call.operation {
-            McpCallOperation::Read => self.execute_resource_read(target_name, mcp_call, evaluation_context, event_sender),
-            McpCallOperation::Render => self.execute_prompt_render(target_name, mcp_call, evaluation_context, event_sender),
+            McpCallOperation::Read => self.execute_resource_read(target_name, mcp_call, mcp_render_context),
+            McpCallOperation::Render => self.execute_prompt_render(target_name, mcp_call, mcp_render_context),
         }
     }
 
@@ -40,8 +54,7 @@ impl WorkflowExecutor {
         &self,
         resource_name: &str,
         mcp_call: &McpCall,
-        evaluation_context: &EvaluationContext,
-        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+        mcp_render_context: McpRenderContext<'_>,
     ) -> Result<Value, ExecutorError> {
         let resource_import = self
             .workflow
@@ -49,11 +62,11 @@ impl WorkflowExecutor {
             .ok_or_else(|| ExecutorError::Other {
                 message: format!("resource `{resource_name}` is not imported"),
             })?;
-        let server_config = self.resolve_mcp_import_server(&resource_import.source.server_name, evaluation_context)?;
+        let server_config = self.resolve_mcp_import_server(&resource_import.source.server_name, mcp_render_context.evaluation_context)?;
         let arguments = self.resolve_mcp_call_parameters(
             &resource_import.parameters,
             &mcp_call.parameter_fields,
-            evaluation_context,
+            mcp_render_context.evaluation_context,
             resource_name,
         )?;
         let call_details = McpCallEventDetails::new(
@@ -65,7 +78,7 @@ impl WorkflowExecutor {
             None,
         );
 
-        if let Some(sender) = event_sender {
+        if let Some(sender) = mcp_render_context.event_sender {
             let _ = sender.try_send(ExecutorEvent::mcp_call_started(call_details.clone()));
         }
 
@@ -77,7 +90,7 @@ impl WorkflowExecutor {
         {
             Ok(result) => result,
             Err(error) => {
-                if let Some(sender) = event_sender {
+                if let Some(sender) = mcp_render_context.event_sender {
                     let _ = sender.try_send(ExecutorEvent::mcp_call_failed(
                         call_details,
                         Value::String(error.to_string()),
@@ -92,7 +105,7 @@ impl WorkflowExecutor {
         };
         let rendered_result = Value::String(render_mcp_resource_result(&result));
 
-        if let Some(sender) = event_sender {
+        if let Some(sender) = mcp_render_context.event_sender {
             let _ = sender.try_send(ExecutorEvent::mcp_call_completed(
                 call_details,
                 rendered_result.clone(),
@@ -108,17 +121,16 @@ impl WorkflowExecutor {
         &self,
         prompt_name: &str,
         mcp_call: &McpCall,
-        evaluation_context: &EvaluationContext,
-        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+        mcp_render_context: McpRenderContext<'_>,
     ) -> Result<Value, ExecutorError> {
         let prompt_import = self.workflow.find_prompt_import(prompt_name).ok_or_else(|| ExecutorError::Other {
             message: format!("prompt `{prompt_name}` is not imported"),
         })?;
-        let server_config = self.resolve_mcp_import_server(&prompt_import.source.server_name, evaluation_context)?;
+        let server_config = self.resolve_mcp_import_server(&prompt_import.source.server_name, mcp_render_context.evaluation_context)?;
         let arguments = self.resolve_mcp_call_parameters(
             &prompt_import.parameters,
             &mcp_call.parameter_fields,
-            evaluation_context,
+            mcp_render_context.evaluation_context,
             prompt_name,
         )?;
         let call_details = McpCallEventDetails::new(
@@ -130,7 +142,7 @@ impl WorkflowExecutor {
             None,
         );
 
-        if let Some(sender) = event_sender {
+        if let Some(sender) = mcp_render_context.event_sender {
             let _ = sender.try_send(ExecutorEvent::mcp_call_started(call_details.clone()));
         }
 
@@ -142,7 +154,7 @@ impl WorkflowExecutor {
         {
             Ok(result) => result,
             Err(error) => {
-                if let Some(sender) = event_sender {
+                if let Some(sender) = mcp_render_context.event_sender {
                     let _ = sender.try_send(ExecutorEvent::mcp_call_failed(
                         call_details,
                         Value::String(error.to_string()),
@@ -157,7 +169,7 @@ impl WorkflowExecutor {
         };
         let rendered_result = Value::String(render_mcp_prompt_result(&result));
 
-        if let Some(sender) = event_sender {
+        if let Some(sender) = mcp_render_context.event_sender {
             let _ = sender.try_send(ExecutorEvent::mcp_call_completed(
                 call_details,
                 rendered_result.clone(),
@@ -176,18 +188,13 @@ impl WorkflowExecutor {
         evaluation_context: &EvaluationContext,
         import_name: &str,
     ) -> Result<Value, ExecutorError> {
+        let parameter_tool_call_tracker = ToolCallTracker::default();
+        let tool_call_execution_context = ToolCallExecutionContext::new(evaluation_context, None, &parameter_tool_call_tracker);
+
         McpImportBindings::new(import_parameters, call_parameters).evaluate_json(
             import_name,
             McpImportBindingEvaluationKind::CallParameter,
-            |parameter, field_context| {
-                self.evaluate_runtime_expression(
-                    &parameter.value,
-                    evaluation_context,
-                    &field_context,
-                    None,
-                    &ToolCallTracker::default(),
-                )
-            },
+            |parameter, field_context| self.evaluate_runtime_expression(&parameter.value, tool_call_execution_context, &field_context),
         )
     }
 
@@ -198,18 +205,15 @@ impl WorkflowExecutor {
         evaluation_context: &EvaluationContext,
         import_name: &str,
     ) -> Result<Value, ExecutorError> {
+        let binding_tool_call_tracker = ToolCallTracker::default();
+        let tool_call_execution_context = ToolCallExecutionContext::new(evaluation_context, None, &binding_tool_call_tracker);
+
         McpImportBindings::new(import_parameters, override_binding_fields).evaluate_json_with_local_kind(
             import_name,
             McpImportBindingEvaluationKind::ImportParameter,
             McpImportBindingEvaluationKind::ImportBinding,
             |binding_field, field_context| {
-                self.evaluate_runtime_expression(
-                    &binding_field.value,
-                    evaluation_context,
-                    &field_context,
-                    None,
-                    &ToolCallTracker::default(),
-                )
+                self.evaluate_runtime_expression(&binding_field.value, tool_call_execution_context, &field_context)
             },
         )
     }
@@ -220,18 +224,13 @@ impl WorkflowExecutor {
         evaluation_context: &EvaluationContext,
         import_name: &str,
     ) -> Result<Value, ExecutorError> {
+        let parameter_tool_call_tracker = ToolCallTracker::default();
+        let tool_call_execution_context = ToolCallExecutionContext::new(evaluation_context, None, &parameter_tool_call_tracker);
+
         McpImportBindings::new(&[], parameters).evaluate_json(
             import_name,
             McpImportBindingEvaluationKind::ImportParameter,
-            |parameter, field_context| {
-                self.evaluate_runtime_expression(
-                    &parameter.value,
-                    evaluation_context,
-                    &field_context,
-                    None,
-                    &ToolCallTracker::default(),
-                )
-            },
+            |parameter, field_context| self.evaluate_runtime_expression(&parameter.value, tool_call_execution_context, &field_context),
         )
     }
 
