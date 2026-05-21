@@ -1,6 +1,6 @@
 use super::{validate_workflow, SingletonDeclarationKind, ValidationContext, ValidationIssue};
 use crate::dsl::macros::{parse_inline_workflow, workflow_source};
-use crate::dsl::{parse_workflow, ReferenceKeyword};
+use crate::dsl::{parse_workflow, ReferenceKeyword, Workflow};
 use crate::semantic::InferenceSetting;
 
 macro_rules! assert_issues_contain {
@@ -1489,6 +1489,101 @@ fn reports_agent_dependency_cycles_from_interpolated_prompt_bindings() {
                 && agent_names.contains(&"alpha".to_owned())
                 && agent_names.contains(&"beta".to_owned())
     );
+}
+
+#[test]
+fn reports_dependency_cycles_from_table_cases() {
+    enum DependencyCycleExpectation {
+        Dynamic { field_names: Vec<String> },
+        Agent { agent_names: Vec<String> },
+    }
+
+    struct DependencyCycleCase {
+        workflow: Workflow,
+        expectation: DependencyCycleExpectation,
+    }
+
+    let dependency_cycle_cases = [
+        DependencyCycleCase {
+            workflow: parse_inline_workflow! {
+                dynamic {
+                    current: dynamic.current
+                }
+            },
+            expectation: DependencyCycleExpectation::Dynamic {
+                field_names: vec!["current".to_string()],
+            },
+        },
+        DependencyCycleCase {
+            workflow: parse_inline_workflow! {
+                input {
+                    topic: string
+                }
+
+                dynamic {
+                    alpha: dynamic.beta
+                    beta: dynamic.gamma
+                    gamma: dynamic.alpha
+                    outside: input.topic
+                }
+            },
+            expectation: DependencyCycleExpectation::Dynamic {
+                field_names: vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()],
+            },
+        },
+        DependencyCycleCase {
+            workflow: parse_inline_workflow! {
+                agent alpha {
+                    instruction: agent.alpha.value
+                }
+            },
+            expectation: DependencyCycleExpectation::Agent {
+                agent_names: vec!["alpha".to_string()],
+            },
+        },
+        DependencyCycleCase {
+            workflow: parse_inline_workflow! {
+                agent alpha {
+                    instruction: agent.beta.value
+                }
+
+                agent beta {
+                    context: agent.gamma.value
+                }
+
+                agent gamma {
+                    instruction: agent.alpha.value
+                }
+            },
+            expectation: DependencyCycleExpectation::Agent {
+                agent_names: vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()],
+            },
+        },
+    ];
+
+    for dependency_cycle_case in dependency_cycle_cases {
+        let validation_report = validate_workflow(&dependency_cycle_case.workflow);
+        let validation_issues = validation_report.issues();
+
+        match dependency_cycle_case.expectation {
+            DependencyCycleExpectation::Dynamic { field_names } => {
+                assert_issues_contain!(
+                    validation_issues,
+                    ValidationIssue::DynamicDependencyCycle {
+                        field_names: reported_field_names
+                    } if reported_field_names == &field_names
+                );
+            }
+            DependencyCycleExpectation::Agent { agent_names } => {
+                assert_issues_contain!(
+                    validation_issues,
+                    ValidationIssue::AgentDependencyCycle {
+                        agent_names: reported_agent_names
+                    } if reported_agent_names == &agent_names
+                );
+            }
+        }
+    }
 }
 
 #[test]

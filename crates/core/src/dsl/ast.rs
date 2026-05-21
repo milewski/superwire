@@ -2727,7 +2727,8 @@ pub struct ReferenceAccess {
 #[cfg(test)]
 mod tests {
     use super::{
-        Declaration, ForClauseKeyword, SchemaDeclaration, SourcePosition, SourceSpan, TypeExpression, TypedField, VariantCase, Workflow,
+        Declaration, Expression, ForClauseKeyword, McpImportBindings, ObjectField, SchemaDeclaration, SourcePosition, SourceSpan,
+        TypeExpression, TypedField, VariantCase, Workflow,
     };
     use crate::dsl::structure::Agent;
     use serde_json::json;
@@ -2857,6 +2858,45 @@ mod tests {
                 "subject": ""
             })
         );
+    }
+
+    #[test]
+    fn merges_mcp_import_bindings_with_local_overrides_in_order() {
+        let shared_fields = vec![
+            ObjectField {
+                name: "project_id".to_string(),
+                value: Expression::NumberLiteral("1".to_string()),
+                span: test_source_span(),
+            },
+            ObjectField {
+                name: "type".to_string(),
+                value: Expression::StringLiteral("shared".to_string()),
+                span: test_source_span(),
+            },
+        ];
+        let local_fields = vec![
+            ObjectField {
+                name: "type".to_string(),
+                value: Expression::StringLiteral("local".to_string()),
+                span: test_source_span(),
+            },
+            ObjectField {
+                name: "task_id".to_string(),
+                value: Expression::NumberLiteral("42".to_string()),
+                span: test_source_span(),
+            },
+        ];
+
+        let effective_fields = McpImportBindings::new(&shared_fields, &local_fields).effective_fields();
+        let effective_field_names = effective_fields
+            .iter()
+            .map(|effective_field| effective_field.name.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(effective_field_names, vec!["project_id", "type", "task_id"]);
+        assert_eq!(effective_fields[0].value, Expression::NumberLiteral("1".to_string()));
+        assert_eq!(effective_fields[1].value, Expression::StringLiteral("local".to_string()));
+        assert_eq!(effective_fields[2].value, Expression::NumberLiteral("42".to_string()));
     }
 
     fn typed_field(field_name: &str, field_type: TypeExpression) -> TypedField {

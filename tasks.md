@@ -31,7 +31,7 @@
   Description: Introduce trait-backed fake MCP interactions for unit and integration tests while preserving real TCP tests for framing coverage.
   Rationale: Most MCP tests care about request/response behavior, not sockets. Removing unnecessary TCP makes tests faster and less flaky.
 
-- [~] Add property-style or table-driven tests for MCP item normalization, binding merge behavior, type compatibility, reference parsing, dependency cycles, and formatter idempotence.
+- [x] Add property-style or table-driven tests for MCP item normalization, binding merge behavior, type compatibility, reference parsing, dependency cycles, and formatter idempotence.
   Description: Cover high-risk pure logic with focused cases outside full workflow execution.
   Rationale: Pure tests run quickly and catch edge cases before expensive runtime or LSP tests are needed.
 
@@ -330,4 +330,3 @@
 - Executor support now uses `superwire_core::testing::WorkflowSource` and schema helpers, and core/LSP inline source helpers share the core workflow template API. CLI tests have not been migrated to shared command/test helpers yet.
 - Reference/expression method locality is partially complete. `Reference` now owns direct keyword-name extraction, tool/import-name extraction, and agent-dependency collection, while `Expression` owns referenced-name extraction, agent tool binding field access, and pure tool-call traversal; remaining work should move reference path/projection validation and secret-reference detection onto owning AST types or shared semantic services.
 - `McpImportBindings` now owns shared/local AST field merging for MCP batch imports. Remaining work should move runtime JSON evaluation and diagnostic display for evaluated bindings into the same domain boundary.
-- Formatter fixture idempotence coverage is complete. The broader Phase 1 pure-logic test item remains partial because MCP item normalization, binding merge behavior, type compatibility, reference parsing, and dependency cycle table-driven tests are still outstanding.

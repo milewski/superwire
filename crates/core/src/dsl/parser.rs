@@ -434,6 +434,114 @@ mod tests {
     }
 
     #[test]
+    fn parses_reference_paths_with_keyword_roots_and_optional_accesses() {
+        struct ExpectedReferenceAccess {
+            field: &'static str,
+            optional: bool,
+        }
+
+        struct ReferenceParseCase {
+            output_field_name: &'static str,
+            root_keyword: ReferenceKeyword,
+            accesses: &'static [ExpectedReferenceAccess],
+            rendered_path: &'static str,
+        }
+
+        let workflow = parse_inline_workflow! {
+            input {
+                topic: string
+            }
+
+            agent reviewer {
+                instruction: input.topic
+
+                output {
+                    value: maybe string
+                }
+            }
+
+            output {
+                topic: input.topic
+                required_agent_value: agent.reviewer.value
+                optional_agent_value: agent.reviewer?.value
+                secret_value: secrets.api_key
+            }
+        };
+        let output_declaration = workflow.find_output().expect("workflow should include output declaration");
+        let reference_parse_cases = [
+            ReferenceParseCase {
+                output_field_name: "topic",
+                root_keyword: ReferenceKeyword::Input,
+                accesses: &[ExpectedReferenceAccess {
+                    field: "topic",
+                    optional: false,
+                }],
+                rendered_path: "input.topic",
+            },
+            ReferenceParseCase {
+                output_field_name: "required_agent_value",
+                root_keyword: ReferenceKeyword::Agent,
+                accesses: &[
+                    ExpectedReferenceAccess {
+                        field: "reviewer",
+                        optional: false,
+                    },
+                    ExpectedReferenceAccess {
+                        field: "value",
+                        optional: false,
+                    },
+                ],
+                rendered_path: "agent.reviewer.value",
+            },
+            ReferenceParseCase {
+                output_field_name: "optional_agent_value",
+                root_keyword: ReferenceKeyword::Agent,
+                accesses: &[
+                    ExpectedReferenceAccess {
+                        field: "reviewer",
+                        optional: false,
+                    },
+                    ExpectedReferenceAccess {
+                        field: "value",
+                        optional: true,
+                    },
+                ],
+                rendered_path: "agent.reviewer?.value",
+            },
+            ReferenceParseCase {
+                output_field_name: "secret_value",
+                root_keyword: ReferenceKeyword::Secrets,
+                accesses: &[ExpectedReferenceAccess {
+                    field: "api_key",
+                    optional: false,
+                }],
+                rendered_path: "secrets.api_key",
+            },
+        ];
+
+        for reference_parse_case in reference_parse_cases {
+            let output_field = output_declaration
+                .fields
+                .iter()
+                .find(|output_field| output_field.name == reference_parse_case.output_field_name)
+                .expect("output field should exist");
+            let Expression::Reference(reference) = &output_field.value else {
+                panic!("output field should be a reference");
+            };
+
+            assert_eq!(reference.root, ReferenceRoot::Keyword(reference_parse_case.root_keyword));
+            assert_eq!(reference.accesses.len(), reference_parse_case.accesses.len());
+
+            for (reference_access, expected_access) in reference.accesses.iter().zip(reference_parse_case.accesses) {
+                assert_eq!(reference_access.field, expected_access.field);
+                assert_eq!(reference_access.optional, expected_access.optional);
+            }
+
+            assert_eq!(reference.render_path(), reference_parse_case.rendered_path);
+        }
+    }
+
+    #[test]
     fn parses_tools_entries_and_binding_overrides() {
         let workflow = parse_inline_workflow! {
             agent assistant_with_tools {

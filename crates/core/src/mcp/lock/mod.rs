@@ -251,15 +251,46 @@ mod tests {
 
     #[test]
     fn normalizes_mcp_item_names_for_lookup() {
-        assert_eq!(
-            McpServerLock::normalize_item_name("dynamic-summary-prompt"),
-            "dynamic_summary_prompt"
-        );
-        assert_eq!(McpServerLock::normalize_item_name("DynamicSummaryPrompt"), "dynamic_summary_prompt");
-        assert_eq!(
-            McpServerLock::normalize_item_name("dynamic summary prompt"),
-            "dynamic_summary_prompt"
-        );
+        struct NormalizationCase {
+            item_name: &'static str,
+            normalized_name: &'static str,
+        }
+
+        let normalization_cases = [
+            NormalizationCase {
+                item_name: "dynamic-summary-prompt",
+                normalized_name: "dynamic_summary_prompt",
+            },
+            NormalizationCase {
+                item_name: "DynamicSummaryPrompt",
+                normalized_name: "dynamic_summary_prompt",
+            },
+            NormalizationCase {
+                item_name: "dynamic summary prompt",
+                normalized_name: "dynamic_summary_prompt",
+            },
+            NormalizationCase {
+                item_name: "dynamic__summary---prompt",
+                normalized_name: "dynamic_summary_prompt",
+            },
+            NormalizationCase {
+                item_name: "FetchTaskData2",
+                normalized_name: "fetch_task_data2",
+            },
+            NormalizationCase {
+                item_name: "  _task  ",
+                normalized_name: "task",
+            },
+        ];
+
+        for normalization_case in normalization_cases {
+            assert_eq!(
+                McpServerLock::normalize_item_name(normalization_case.item_name),
+                normalization_case.normalized_name,
+                "normalization failed for {}",
+                normalization_case.item_name
+            );
+        }
     }
 
     #[test]

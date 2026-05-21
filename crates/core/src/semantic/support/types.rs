@@ -1015,10 +1015,10 @@ pub fn value_kind_name(value: &Value) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{workflow_type_from_dsl, workflow_type_to_json_schema, WorkflowType};
+    use super::{ensure_type_matches, workflow_type_from_dsl, workflow_type_to_json_schema, WorkflowType};
     use crate::dsl::{SourcePosition, SourceSpan, TypeExpression, TypedField, VariantCase};
     use serde_json::json;
-    use std::collections::HashMap;
+    use std::collections::{BTreeMap, HashMap};
 
     #[test]
     fn lowers_nullable_enum_to_string_enum_or_null() {
@@ -1037,6 +1037,75 @@ mod tests {
                 WorkflowType::Null
             ])
         );
+    }
+
+    #[test]
+    fn checks_type_compatibility_for_nested_and_nullable_types() {
+        struct TypeCompatibilityCase {
+            expected_type: WorkflowType,
+            actual_type: WorkflowType,
+            matches: bool,
+        }
+
+        let expected_object_fields = BTreeMap::from([
+            ("project_id".to_string(), WorkflowType::Integer),
+            ("title".to_string(), WorkflowType::String),
+        ]);
+        let actual_object_fields = BTreeMap::from([
+            ("title".to_string(), WorkflowType::String),
+            ("project_id".to_string(), WorkflowType::Integer),
+        ]);
+        let missing_object_fields = BTreeMap::from([("project_id".to_string(), WorkflowType::Integer)]);
+        let type_compatibility_cases = [
+            TypeCompatibilityCase {
+                expected_type: WorkflowType::String,
+                actual_type: WorkflowType::String,
+                matches: true,
+            },
+            TypeCompatibilityCase {
+                expected_type: WorkflowType::Any,
+                actual_type: WorkflowType::Object(actual_object_fields.clone()),
+                matches: true,
+            },
+            TypeCompatibilityCase {
+                expected_type: WorkflowType::Object(expected_object_fields.clone()),
+                actual_type: WorkflowType::Object(actual_object_fields),
+                matches: true,
+            },
+            TypeCompatibilityCase {
+                expected_type: WorkflowType::Object(expected_object_fields),
+                actual_type: WorkflowType::Object(missing_object_fields),
+                matches: false,
+            },
+            TypeCompatibilityCase {
+                expected_type: WorkflowType::Array {
+                    item_type: Box::new(WorkflowType::String),
+                    fixed_length: Some(2),
+                },
+                actual_type: WorkflowType::Array {
+                    item_type: Box::new(WorkflowType::String),
+                    fixed_length: Some(3),
+                },
+                matches: false,
+            },
+            TypeCompatibilityCase {
+                expected_type: WorkflowType::nullable(WorkflowType::String),
+                actual_type: WorkflowType::Union(vec![WorkflowType::Null, WorkflowType::String]),
+                matches: true,
+            },
+            TypeCompatibilityCase {
+                expected_type: WorkflowType::String,
+                actual_type: WorkflowType::nullable(WorkflowType::String),
+                matches: false,
+            },
+        ];
+
+        for type_compatibility_case in type_compatibility_cases {
+            assert_eq!(
+                ensure_type_matches(&type_compatibility_case.expected_type, &type_compatibility_case.actual_type),
+                type_compatibility_case.matches
+            );
+        }
     }
 
     #[test]
