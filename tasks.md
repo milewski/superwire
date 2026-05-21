@@ -247,7 +247,7 @@
   Description: Separate lock persistence, workflow application, validation, and item lookup logic.
   Rationale: Lock behavior spans CLI, runtime, LSP, and core validation, so separate responsibilities reduce accidental regressions.
 
-- [ ] Consider introducing an `McpClient` trait for executor and lock discovery fakes.
+- [x] Consider introducing an `McpClient` trait for executor and lock discovery fakes.
   Description: Define a trait boundary if tests need in-process MCP clients without concrete HTTP/TCP behavior.
   Rationale: A trait enables faster tests, but should only be added if it does not create unnecessary abstraction.
 
@@ -331,4 +331,5 @@
 - Executor support now uses `superwire_core::testing::WorkflowSource` and schema helpers, and core/LSP inline source helpers share the core workflow template API. CLI tests have not been migrated to shared command/test helpers yet.
 - Reference/expression method locality is partially complete. `Reference` now owns direct keyword-name extraction, tool/import-name extraction, and agent-dependency collection, while `Expression` owns referenced-name extraction, agent tool binding field access, and pure tool-call traversal; remaining work should move reference path/projection validation and secret-reference detection onto owning AST types or shared semantic services.
 - `McpImportBindings` now owns shared/local AST field merging for MCP batch imports. Remaining work should move runtime JSON evaluation and diagnostic display for evaluated bindings into the same domain boundary.
+- An `McpClient` trait was considered and intentionally deferred. The concrete client remains appropriate until the open in-process fake MCP/client task adds a real alternate implementation that would justify the trait boundary.
 - Formatter fixture idempotence coverage is complete. The broader Phase 1 pure-logic test item remains partial because MCP item normalization, binding merge behavior, type compatibility, reference parsing, and dependency cycle table-driven tests are still outstanding.
