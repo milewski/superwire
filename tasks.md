@@ -279,7 +279,7 @@
   Description: Ensure completions, hovers, diagnostics, definitions, symbols, and folding read from cached document state.
   Rationale: LSP responsiveness depends on avoiding repeated expensive work.
 
-- [~] Replace repeated linear scans with maps in hot semantic paths.
+- [x] Replace repeated linear scans with maps in hot semantic paths.
   Description: Use maps for declaration, tool, schema, model, provider, graph node, and completion lookup where order is not the main requirement.
   Rationale: Large workflows make repeated scans expensive.
 
@@ -328,4 +328,3 @@
 ## Incomplete Handoff Notes
 
 - Executor support now uses `superwire_core::testing::WorkflowSource` and schema helpers, and core/LSP inline source helpers share the core workflow template API. CLI tests have not been migrated to shared command/test helpers yet.
-- Additional map lookup slice completed for `Workflow::find_model`/`find_provider` callers in `crates/core/src/semantic/ir.rs`, executor runtime MCP server/import lookups through `WorkflowExecutorLookups` in `crates/executor/src/runtime/{mod.rs,mcp.rs,tools.rs}`, and repeated completion exclusion checks in `crates/lsp/src/document/semantic_index/{completion.rs,mcp.rs}`. Remaining work is intentionally left for a wider cache design: `McpServerLock::find_tool_with_name` callers in `crates/lsp/src/document/semantic_index/mcp.rs` still depend on exact-then-normalized lookup order across server locks, and `TypeExpression` object-field traversal in `crates/core/src/dsl/ast/types.rs` plus the fallback field-span path in `crates/lsp/src/document/semantic_index/definitions.rs` still scan vectors where preserving duplicate-field behavior likely needs a reusable semantic type/span cache rather than one-off maps.

@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use superwire_core::dsl::{SourceSpan, TypeExpression};
-use superwire_core::mcp::McpLock;
+use superwire_core::mcp::{McpLock, McpServerToolLookup};
 use superwire_core::semantic::{ProviderDriver, SemanticToolingSnapshot, WorkflowSemanticIndex};
 
 #[derive(Debug, Clone)]
@@ -58,6 +58,7 @@ pub struct SemanticIndex {
     pub(super) has_output_declaration: bool,
     pub tooling_snapshot: SemanticToolingSnapshot,
     pub mcp_lock: Option<McpLock>,
+    pub(super) mcp_server_tool_lookups: HashMap<String, McpServerToolLookup>,
     pub workflow_semantics: Option<WorkflowSemanticIndex>,
 }
 

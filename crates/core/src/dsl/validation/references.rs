@@ -1,6 +1,6 @@
 use super::super::ast::{
     AgentDeclaration, AgentForLoop, AgentProperty, Declaration, Expression, MatchBranch, ObjectField, Reference, ReferenceKeyword,
-    SourceSpan, StringTemplatePart, TypeExpression, Workflow,
+    SourceSpan, StringTemplatePart, TypeExpression, TypeExpressionFieldCache, Workflow,
 };
 use super::report::{ValidationContext, ValidationReport};
 use super::tools::validate_agent_tool_bindings;
@@ -873,6 +873,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
 
     fn validate_reference_path(&mut self, reference: &Reference, start_type: TypeExpression, context: ValidationContext) {
         let mut candidate_types = vec![start_type];
+        let mut field_cache = TypeExpressionFieldCache::new();
 
         for reference_access in reference.projection_accesses() {
             if candidate_types.iter().any(TypeExpression::can_be_null) && !reference_access.optional {
@@ -884,10 +885,11 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             let mut next_candidate_types = Vec::new();
 
             for candidate_type in &candidate_types {
-                candidate_type.collect_field_types_for_access(
+                candidate_type.collect_field_types_for_access_with_cache(
                     reference_access.field.as_str(),
                     &mut |schema_name| self.validation_index.schema_type_expression(schema_name, SourceSpan::generated()),
                     &mut next_candidate_types,
+                    &mut field_cache,
                 );
             }
 

@@ -31,5 +31,5 @@ pub use mcp::{
 pub use reference::{Reference, ReferenceAccess, ReferenceRoot};
 pub use span::{SourcePosition, SourceSpan};
 pub use tool::{ToolDeclaration, ToolSource};
-pub use types::{TypeExpression, TypedField, VariantCase};
+pub use types::{TypeExpression, TypeExpressionFieldCache, TypedField, VariantCase};
 pub use workflow::Workflow;

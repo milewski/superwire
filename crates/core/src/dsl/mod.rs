@@ -15,8 +15,8 @@ pub use ast::{
     ModelCallArgumentName, ModelDeclaration, ModelDeclarationPropertyName, ModelUsage, ModelUsagePropertyName, NamedArgument,
     NullFallbackExpression, ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, ReferenceKeyword,
     ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall,
-    ToolCallKeyword, ToolDeclaration, ToolDeclarationIter, ToolPropertyName, ToolSource, TypeExpression, TypedField, VariantCase,
-    VariantProjectionExpression, Workflow,
+    ToolCallKeyword, ToolDeclaration, ToolDeclarationIter, ToolPropertyName, ToolSource, TypeExpression, TypeExpressionFieldCache,
+    TypedField, VariantCase, VariantProjectionExpression, Workflow,
 };
 pub use formatter::{format_workflow_source, DslFormatError};
 pub use parser::{parse_workflow, DslParseError};

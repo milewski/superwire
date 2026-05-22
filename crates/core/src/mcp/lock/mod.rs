@@ -13,6 +13,8 @@ mod name_resolution;
 mod project;
 mod validate;
 
+pub use name_resolution::McpServerToolLookup;
+
 pub const PROJECT_MCP_LOCK_FILE_NAME: &str = "superwire.lock";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -244,7 +246,7 @@ impl McpLockResolutionContext {
 #[cfg(test)]
 mod tests {
     use super::{McpLock, McpPromptArgumentLock, McpServerLock, McpToolLock};
-    use crate::dsl::Declaration;
+    use crate::dsl::{Declaration, McpToolSource, SourceSpan, ToolSource};
     use crate::parse_inline_workflow;
     use serde_json::json;
     use std::collections::BTreeMap;
@@ -321,6 +323,75 @@ mod tests {
         );
         assert_eq!(resource_declaration.source.item_name, "project-readme");
         assert_eq!(prompt_declaration.source.item_name, "summarize-task-prompt");
+    }
+
+    #[test]
+    fn cached_tool_lookup_preserves_exact_before_normalized_resolution() {
+        let mut tools = BTreeMap::new();
+        let mut normalized_tool_lock = fetch_task_data_tool_lock();
+        let mut exact_tool_lock = fetch_task_data_tool_lock();
+        normalized_tool_lock.name = "FetchTaskData".to_string();
+        exact_tool_lock.name = "fetch_task_data".to_string();
+        tools.insert("FetchTaskData".to_string(), normalized_tool_lock);
+        tools.insert("fetch_task_data".to_string(), exact_tool_lock);
+
+        let server_lock = McpServerLock {
+            tools,
+            ..McpServerLock::default()
+        };
+        let tool_lookup = server_lock.tool_lookup();
+
+        let Some((exact_tool_name, _mcp_tool_lock)) = tool_lookup.find_tool_with_name(&server_lock, "fetch_task_data") else {
+            panic!("exact tool lookup should resolve");
+        };
+        let Some((normalized_tool_name, _mcp_tool_lock)) = tool_lookup.find_tool_with_name(&server_lock, "fetch task data") else {
+            panic!("normalized tool lookup should resolve");
+        };
+
+        assert_eq!(exact_tool_name, "fetch_task_data");
+        assert_eq!(normalized_tool_name, "FetchTaskData");
+    }
+
+    #[test]
+    fn unscoped_tool_lookup_preserves_server_order_before_later_exact_matches() {
+        let mut first_server_tools = BTreeMap::new();
+        let mut second_server_tools = BTreeMap::new();
+        let mut normalized_tool_lock = fetch_task_data_tool_lock();
+        let mut exact_tool_lock = fetch_task_data_tool_lock();
+        normalized_tool_lock.name = "FetchTaskData".to_string();
+        exact_tool_lock.name = "fetch_task_data".to_string();
+        first_server_tools.insert("FetchTaskData".to_string(), normalized_tool_lock);
+        second_server_tools.insert("fetch_task_data".to_string(), exact_tool_lock);
+
+        let mcp_lock = McpLock {
+            servers: BTreeMap::from([
+                (
+                    "alpha".to_string(),
+                    McpServerLock {
+                        tools: first_server_tools,
+                        ..McpServerLock::default()
+                    },
+                ),
+                (
+                    "beta".to_string(),
+                    McpServerLock {
+                        tools: second_server_tools,
+                        ..McpServerLock::default()
+                    },
+                ),
+            ]),
+        };
+        let tool_source = ToolSource::Mcp(McpToolSource {
+            server_name: None,
+            tool_name: "fetch_task_data".to_string(),
+            span: SourceSpan::generated(),
+        });
+
+        let Some((resolved_tool_name, _mcp_tool_lock)) = mcp_lock.find_tool_with_name(&tool_source) else {
+            panic!("unscoped tool lookup should resolve");
+        };
+
+        assert_eq!(resolved_tool_name, "FetchTaskData");
     }
 
     #[test]

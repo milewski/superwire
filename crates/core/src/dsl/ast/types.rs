@@ -3,6 +3,52 @@ use serde_json::{Map, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::hash::BuildHasher;
 
+#[derive(Debug, Default)]
+pub struct TypeExpressionFieldCache {
+    object_field_indices: HashMap<TypeExpressionFieldCollectionKey, HashMap<String, usize>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct TypeExpressionFieldCollectionKey {
+    field_names: Vec<String>,
+}
+
+impl TypeExpressionFieldCollectionKey {
+    fn from_typed_fields(typed_fields: &[TypedField]) -> Self {
+        Self {
+            field_names: typed_fields.iter().map(|typed_field| typed_field.name.clone()).collect(),
+        }
+    }
+}
+
+impl TypeExpressionFieldCache {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn typed_field<'fields>(&mut self, typed_fields: &'fields [TypedField], field_name: &str) -> Option<&'fields TypedField> {
+        let field_index = self.typed_field_index(typed_fields, field_name)?;
+
+        typed_fields.get(field_index)
+    }
+
+    fn typed_field_index(&mut self, typed_fields: &[TypedField], field_name: &str) -> Option<usize> {
+        let field_collection_key = TypeExpressionFieldCollectionKey::from_typed_fields(typed_fields);
+        let field_indices = self.object_field_indices.entry(field_collection_key).or_insert_with(|| {
+            let mut field_indices = HashMap::new();
+
+            for (field_index, typed_field) in typed_fields.iter().enumerate() {
+                field_indices.entry(typed_field.name.clone()).or_insert(field_index);
+            }
+
+            field_indices
+        });
+
+        field_indices.get(field_name).copied()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypedField {
     pub name: String,
@@ -240,19 +286,32 @@ impl TypeExpression {
 
     #[must_use]
     pub fn field_type_at_path<'expression>(&'expression self, field_path: &[&str]) -> Option<&'expression TypeExpression> {
+        let mut field_cache = TypeExpressionFieldCache::new();
+
+        self.field_type_at_path_with_cache(field_path, &mut field_cache)
+    }
+
+    #[must_use]
+    pub fn field_type_at_path_with_cache<'expression>(
+        &'expression self,
+        field_path: &[&str],
+        field_cache: &mut TypeExpressionFieldCache,
+    ) -> Option<&'expression TypeExpression> {
         let Some((field_name, remaining_field_path)) = field_path.split_first() else {
             return Some(self);
         };
 
         match self {
             Self::Object(typed_fields) => {
-                let typed_field = typed_fields.iter().find(|typed_field| typed_field.name == *field_name)?;
+                let typed_field = field_cache.typed_field(typed_fields, field_name)?;
 
-                typed_field.field_type.field_type_at_path(remaining_field_path)
+                typed_field
+                    .field_type
+                    .field_type_at_path_with_cache(remaining_field_path, field_cache)
             }
             Self::Union(type_expressions) => {
                 for type_expression in type_expressions {
-                    if let Some(field_type) = type_expression.field_type_at_path(field_path) {
+                    if let Some(field_type) = type_expression.field_type_at_path_with_cache(field_path, field_cache) {
                         return Some(field_type);
                     }
                 }
@@ -289,11 +348,26 @@ impl TypeExpression {
     where
         SchemaFieldSpanLookup: FnMut(&str, &[&str]) -> Option<SourceSpan>,
     {
+        let mut field_cache = TypeExpressionFieldCache::new();
+
+        self.field_span_at_path_with_cache(field_path, schema_field_span_lookup, &mut field_cache)
+    }
+
+    #[must_use]
+    pub fn field_span_at_path_with_cache<SchemaFieldSpanLookup>(
+        &self,
+        field_path: &[&str],
+        schema_field_span_lookup: &mut SchemaFieldSpanLookup,
+        field_cache: &mut TypeExpressionFieldCache,
+    ) -> Option<SourceSpan>
+    where
+        SchemaFieldSpanLookup: FnMut(&str, &[&str]) -> Option<SourceSpan>,
+    {
         let (field_name, remaining_field_path) = field_path.split_first()?;
 
         match self {
             Self::Object(typed_fields) => {
-                let typed_field = typed_fields.iter().find(|typed_field| typed_field.name == *field_name)?;
+                let typed_field = field_cache.typed_field(typed_fields, field_name)?;
 
                 if remaining_field_path.is_empty() {
                     return Some(typed_field.span);
@@ -301,7 +375,7 @@ impl TypeExpression {
 
                 typed_field
                     .field_type
-                    .field_span_at_path(remaining_field_path, schema_field_span_lookup)
+                    .field_span_at_path_with_cache(remaining_field_path, schema_field_span_lookup, field_cache)
             }
             Self::SchemaReference(schema_name) => schema_field_span_lookup(schema_name, field_path),
             Self::Variant { discriminator, cases } => {
@@ -313,7 +387,9 @@ impl TypeExpression {
             }
             Self::Union(type_expressions) => {
                 for type_expression in type_expressions {
-                    if let Some(field_span) = type_expression.field_span_at_path(field_path, schema_field_span_lookup) {
+                    if let Some(field_span) =
+                        type_expression.field_span_at_path_with_cache(field_path, schema_field_span_lookup, field_cache)
+                    {
                         return Some(field_span);
                     }
                 }
@@ -342,24 +418,39 @@ impl TypeExpression {
         field_path: &[&str],
         named_schemas: &HashMap<String, TypeExpression, HashBuilder>,
     ) -> Option<TypeExpression> {
+        let mut field_cache = TypeExpressionFieldCache::new();
+
+        self.resolved_field_type_at_path_with_cache(field_path, named_schemas, &mut field_cache)
+    }
+
+    #[must_use]
+    pub fn resolved_field_type_at_path_with_cache<HashBuilder: BuildHasher>(
+        &self,
+        field_path: &[&str],
+        named_schemas: &HashMap<String, TypeExpression, HashBuilder>,
+        field_cache: &mut TypeExpressionFieldCache,
+    ) -> Option<TypeExpression> {
         let Some((field_name, remaining_field_path)) = field_path.split_first() else {
             return Some(self.clone());
         };
 
         match self {
             Self::Object(typed_fields) => {
-                let typed_field = typed_fields.iter().find(|typed_field| typed_field.name == *field_name)?;
+                let typed_field = field_cache.typed_field(typed_fields, field_name)?;
 
                 typed_field
                     .field_type
-                    .resolved_field_type_at_path(remaining_field_path, named_schemas)
+                    .resolved_field_type_at_path_with_cache(remaining_field_path, named_schemas, field_cache)
             }
-            Self::SchemaReference(schema_name) => named_schemas
-                .get(schema_name)?
-                .resolved_field_type_at_path(field_path, named_schemas),
+            Self::SchemaReference(schema_name) => {
+                named_schemas
+                    .get(schema_name)?
+                    .resolved_field_type_at_path_with_cache(field_path, named_schemas, field_cache)
+            }
             Self::Union(type_expressions) => {
                 for type_expression in type_expressions {
-                    if let Some(field_type) = type_expression.resolved_field_type_at_path(field_path, named_schemas) {
+                    if let Some(field_type) = type_expression.resolved_field_type_at_path_with_cache(field_path, named_schemas, field_cache)
+                    {
                         return Some(field_type);
                     }
                 }
@@ -465,8 +556,9 @@ impl TypeExpression {
         SchemaTypeLookup: FnMut(&str) -> Option<Self>,
     {
         let mut field_types = Vec::new();
+        let mut field_cache = TypeExpressionFieldCache::new();
 
-        self.collect_field_types_for_access(field_name, &mut schema_type_lookup, &mut field_types);
+        self.collect_field_types_for_access_with_cache(field_name, &mut schema_type_lookup, &mut field_types, &mut field_cache);
 
         field_types
     }
@@ -479,15 +571,29 @@ impl TypeExpression {
     ) where
         SchemaTypeLookup: FnMut(&str) -> Option<Self>,
     {
+        let mut field_cache = TypeExpressionFieldCache::new();
+
+        self.collect_field_types_for_access_with_cache(field_name, schema_type_lookup, field_types, &mut field_cache);
+    }
+
+    pub fn collect_field_types_for_access_with_cache<SchemaTypeLookup>(
+        &self,
+        field_name: &str,
+        schema_type_lookup: &mut SchemaTypeLookup,
+        field_types: &mut Vec<Self>,
+        field_cache: &mut TypeExpressionFieldCache,
+    ) where
+        SchemaTypeLookup: FnMut(&str) -> Option<Self>,
+    {
         match self {
             Self::Object(typed_fields) => {
-                if let Some(typed_field) = typed_fields.iter().find(|typed_field| typed_field.name == field_name) {
+                if let Some(typed_field) = field_cache.typed_field(typed_fields, field_name) {
                     field_types.push(typed_field.field_type.clone());
                 }
             }
             Self::SchemaReference(schema_name) => {
                 if let Some(schema_type) = schema_type_lookup(schema_name) {
-                    schema_type.collect_field_types_for_access(field_name, schema_type_lookup, field_types);
+                    schema_type.collect_field_types_for_access_with_cache(field_name, schema_type_lookup, field_types, field_cache);
                 }
             }
             Self::Variant { discriminator, cases } => {
@@ -497,7 +603,7 @@ impl TypeExpression {
             }
             Self::Union(type_expressions) => {
                 for type_expression in type_expressions {
-                    type_expression.collect_field_types_for_access(field_name, schema_type_lookup, field_types);
+                    type_expression.collect_field_types_for_access_with_cache(field_name, schema_type_lookup, field_types, field_cache);
                 }
             }
             Self::String
@@ -729,6 +835,20 @@ mod tests {
         });
 
         assert_eq!(field_types, vec![TypeExpression::StringEnum("open".to_string())]);
+    }
+
+    #[test]
+    fn cached_object_field_lookup_preserves_first_duplicate_field() {
+        let type_expression = TypeExpression::Object(vec![
+            typed_field("status", TypeExpression::String),
+            typed_field("status", TypeExpression::Number),
+        ]);
+
+        assert_eq!(type_expression.field_type_at_path(&["status"]), Some(&TypeExpression::String));
+        assert_eq!(
+            type_expression.field_types_for_access("status", |_schema_name| None),
+            vec![TypeExpression::String]
+        );
     }
 
     fn typed_field(field_name: &str, field_type: TypeExpression) -> TypedField {

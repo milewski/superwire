@@ -224,8 +224,7 @@ impl SemanticIndex {
             tool_names
                 .iter()
                 .filter_map(|tool_name| {
-                    server_lock
-                        .find_tool_with_name(tool_name)
+                    self.find_mcp_tool_lock_in_server(server_name, server_lock, tool_name)
                         .map(|(_resolved_tool_name, mcp_tool_lock)| mcp_tool_lock)
                 })
                 .collect::<Vec<_>>()
@@ -280,15 +279,27 @@ impl SemanticIndex {
         if let Some(server_name) = server_name {
             let server_lock = mcp_lock.servers.get(server_name)?;
 
-            return server_lock
-                .find_tool_with_name(mcp_tool_name)
+            return self
+                .find_mcp_tool_lock_in_server(server_name, server_lock, mcp_tool_name)
                 .map(|(_resolved_tool_name, mcp_tool_lock)| mcp_tool_lock);
         }
 
-        mcp_lock.servers.values().find_map(|server_lock| {
-            server_lock
-                .find_tool_with_name(mcp_tool_name)
+        mcp_lock.servers.iter().find_map(|(server_name, server_lock)| {
+            self.find_mcp_tool_lock_in_server(server_name, server_lock, mcp_tool_name)
                 .map(|(_resolved_tool_name, mcp_tool_lock)| mcp_tool_lock)
         })
+    }
+
+    fn find_mcp_tool_lock_in_server<'lock>(
+        &self,
+        server_name: &str,
+        server_lock: &'lock McpServerLock,
+        mcp_tool_name: &str,
+    ) -> Option<(String, &'lock McpToolLock)> {
+        if let Some(tool_lookup) = self.mcp_server_tool_lookups.get(server_name) {
+            return tool_lookup.find_tool_with_name(server_lock, mcp_tool_name);
+        }
+
+        server_lock.tool_lookup().find_tool_with_name(server_lock, mcp_tool_name)
     }
 }

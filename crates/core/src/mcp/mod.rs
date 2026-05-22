@@ -8,5 +8,6 @@ pub use client::{HttpMcpClientFactory, McpClient, McpClientBackend, McpClientFac
 pub use config::McpServerConfig;
 pub use error::McpError;
 pub use lock::{
-    McpLock, McpLockResolutionContext, McpPromptArgumentLock, McpServerLock, McpToolLock, ProjectMcpLock, PROJECT_MCP_LOCK_FILE_NAME,
+    McpLock, McpLockResolutionContext, McpPromptArgumentLock, McpServerLock, McpServerToolLookup, McpToolLock, ProjectMcpLock,
+    PROJECT_MCP_LOCK_FILE_NAME,
 };

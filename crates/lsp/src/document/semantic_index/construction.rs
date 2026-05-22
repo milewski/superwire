@@ -24,6 +24,7 @@ impl SemanticIndex {
 
     fn from_workflow_parts(workflow: &Workflow, mcp_lock: Option<McpLock>, workflow_semantics: Option<WorkflowSemanticIndex>) -> Self {
         let tooling_snapshot = SemanticToolingSnapshot::from_workflow(workflow);
+        let mcp_server_tool_lookups = Self::mcp_server_tool_lookups(mcp_lock.as_ref());
         let mut semantic_index = Self {
             providers: HashMap::new(),
             provider_locations: Vec::new(),
@@ -77,6 +78,7 @@ impl SemanticIndex {
             has_output_declaration: false,
             tooling_snapshot,
             mcp_lock,
+            mcp_server_tool_lookups,
             workflow_semantics,
         };
 
@@ -492,8 +494,21 @@ impl SemanticIndex {
             has_output_declaration: false,
             tooling_snapshot: tooling_snapshot.clone(),
             mcp_lock: None,
+            mcp_server_tool_lookups: HashMap::new(),
             workflow_semantics: None,
         }
+    }
+
+    fn mcp_server_tool_lookups(mcp_lock: Option<&McpLock>) -> HashMap<String, superwire_core::mcp::McpServerToolLookup> {
+        let Some(mcp_lock) = mcp_lock else {
+            return HashMap::new();
+        };
+
+        mcp_lock
+            .servers
+            .iter()
+            .map(|(server_name, server_lock)| (server_name.clone(), server_lock.tool_lookup()))
+            .collect()
     }
 
     fn tool_index_from_snapshot(tooling_snapshot: &SemanticToolingSnapshot) -> (HashMap<String, ToolSummary>, Vec<String>, Vec<NamedSpan>) {

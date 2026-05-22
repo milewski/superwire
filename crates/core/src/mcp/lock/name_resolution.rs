@@ -1,21 +1,47 @@
 use super::{McpPromptArgumentLock, McpServerLock, McpToolLock};
+use std::collections::HashMap;
 
-impl McpServerLock {
+#[derive(Debug, Clone, Default)]
+pub struct McpServerToolLookup {
+    normalized_tool_names: HashMap<String, String>,
+}
+
+impl McpServerToolLookup {
     #[must_use]
-    pub fn find_tool_with_name(&self, requested_tool_name: &str) -> Option<(String, &McpToolLock)> {
-        if let Some(mcp_tool_lock) = self.tools.get(requested_tool_name) {
+    pub fn find_tool_with_name<'server>(
+        &self,
+        server_lock: &'server McpServerLock,
+        requested_tool_name: &str,
+    ) -> Option<(String, &'server McpToolLock)> {
+        if let Some(mcp_tool_lock) = server_lock.tools.get(requested_tool_name) {
             return Some((requested_tool_name.to_string(), mcp_tool_lock));
         }
 
-        let normalized_requested_name = Self::normalize_item_name(requested_tool_name);
+        let normalized_requested_name = McpServerLock::normalize_item_name(requested_tool_name);
+        let resolved_tool_name = self.normalized_tool_names.get(&normalized_requested_name)?;
+        let mcp_tool_lock = server_lock.tools.get(resolved_tool_name)?;
 
-        for (tool_name, mcp_tool_lock) in &self.tools {
-            if Self::normalize_item_name(tool_name) == normalized_requested_name {
-                return Some((tool_name.clone(), mcp_tool_lock));
-            }
+        Some((resolved_tool_name.clone(), mcp_tool_lock))
+    }
+}
+
+impl McpServerLock {
+    #[must_use]
+    pub fn tool_lookup(&self) -> McpServerToolLookup {
+        let mut normalized_tool_names = HashMap::new();
+
+        for tool_name in self.tools.keys() {
+            normalized_tool_names
+                .entry(Self::normalize_item_name(tool_name))
+                .or_insert_with(|| tool_name.clone());
         }
 
-        None
+        McpServerToolLookup { normalized_tool_names }
+    }
+
+    #[must_use]
+    pub fn find_tool_with_name(&self, requested_tool_name: &str) -> Option<(String, &McpToolLock)> {
+        self.tool_lookup().find_tool_with_name(self, requested_tool_name)
     }
 
     #[must_use]

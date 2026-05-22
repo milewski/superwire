@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, HashMap};
 
 use lsp_types::Position;
-use superwire_core::dsl::{Reference, ReferenceAccess, ReferenceKeyword, ReferenceRoot, SourceSpan, TypeExpression};
+use superwire_core::dsl::{
+    Reference, ReferenceAccess, ReferenceKeyword, ReferenceRoot, SourceSpan, TypeExpression, TypeExpressionFieldCache,
+};
 use superwire_core::semantic::{ReferenceResolutionScope, SemanticDeclarationKey, SemanticFieldRoot};
 
 use super::super::reference::ReferenceCompletionPath;
@@ -288,12 +290,18 @@ impl SemanticIndex {
     }
 
     fn schema_field_span(&self, schema_name: &str, field_accesses: &[String]) -> Option<SourceSpan> {
+        let field_access_segments = field_accesses.iter().map(String::as_str).collect::<Vec<_>>();
+
+        self.schema_field_span_segments(schema_name, field_access_segments.as_slice())
+    }
+
+    fn schema_field_span_segments(&self, schema_name: &str, field_accesses: &[&str]) -> Option<SourceSpan> {
         if field_accesses.is_empty() {
             return self.schema_span(schema_name);
         }
 
         let mut schema_field_location_segments = Self::schema_field_location_prefix(schema_name);
-        schema_field_location_segments.extend(field_accesses.iter().cloned());
+        schema_field_location_segments.extend(field_accesses.iter().map(|field_access| (*field_access).to_string()));
 
         let schema_field_location_key = Self::field_location_key(schema_field_location_segments.as_slice());
 
@@ -303,62 +311,33 @@ impl SemanticIndex {
 
         let schema_summary = self.schemas.get(schema_name)?;
         let first_field_name = field_accesses.first()?;
-        let first_field_type = schema_summary.fields.get(first_field_name)?;
+        let first_field_type = schema_summary.fields.get(*first_field_name)?;
 
         if field_accesses.len() == 1 {
             return None;
         }
 
-        self.field_span_for_type_access_path(first_field_type, &field_accesses[1..])
+        self.field_span_for_type_access_segments(first_field_type, &field_accesses[1..])
     }
 
     fn field_span_for_type_access_path(&self, root_type_expression: &TypeExpression, field_accesses: &[String]) -> Option<SourceSpan> {
+        let field_access_segments = field_accesses.iter().map(String::as_str).collect::<Vec<_>>();
+
+        self.field_span_for_type_access_segments(root_type_expression, field_access_segments.as_slice())
+    }
+
+    fn field_span_for_type_access_segments(&self, root_type_expression: &TypeExpression, field_accesses: &[&str]) -> Option<SourceSpan> {
         if field_accesses.is_empty() {
             return None;
         }
 
-        match root_type_expression {
-            TypeExpression::Object(typed_fields) => {
-                let first_field_name = field_accesses.first()?;
-                let typed_field = typed_fields.iter().find(|typed_field| typed_field.name == *first_field_name)?;
+        let mut field_cache = TypeExpressionFieldCache::new();
 
-                if field_accesses.len() == 1 {
-                    return Some(typed_field.span);
-                }
-
-                self.field_span_for_type_access_path(&typed_field.field_type, &field_accesses[1..])
-            }
-            TypeExpression::SchemaReference(schema_name) => self.schema_field_span(schema_name, field_accesses),
-            TypeExpression::Variant { discriminator, cases } => {
-                if field_accesses.len() == 1 && field_accesses.first().is_some_and(|field_access| field_access == discriminator) {
-                    return cases.first().map(|variant_case| variant_case.span);
-                }
-
-                None
-            }
-            TypeExpression::Union(union_members) => {
-                for union_member in union_members {
-                    if let Some(field_span) = self.field_span_for_type_access_path(union_member, field_accesses) {
-                        return Some(field_span);
-                    }
-                }
-
-                None
-            }
-            TypeExpression::String
-            | TypeExpression::Number
-            | TypeExpression::Float
-            | TypeExpression::Boolean
-            | TypeExpression::Null
-            | TypeExpression::AnyObject
-            | TypeExpression::StringEnum(_)
-            | TypeExpression::StringEnumReference(_)
-            | TypeExpression::Array {
-                item_type: _,
-                fixed_length: _,
-            }
-            | TypeExpression::Tuple(_) => None,
-        }
+        root_type_expression.field_span_at_path_with_cache(
+            field_accesses,
+            &mut |schema_name, schema_field_path| self.schema_field_span_segments(schema_name, schema_field_path),
+            &mut field_cache,
+        )
     }
 
     fn field_span_for_type_set_access_path(
