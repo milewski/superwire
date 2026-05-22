@@ -26,10 +26,13 @@ COPY crates/executor/Cargo.toml crates/executor/Cargo.toml
 
 RUN mkdir -p crates/core/src && echo "" > crates/core/src/lib.rs \
     && mkdir -p crates/lsp/src && echo "" > crates/lsp/src/lib.rs \
+    && echo "" > crates/lsp/src/main.rs \
+    && mkdir -p crates/lsp/benches && echo "" > crates/lsp/benches/completion_filtering.rs \
     && mkdir -p crates/cli/src && echo "" > crates/cli/src/main.rs \
     && mkdir -p crates/executor/src && echo "" > crates/executor/src/lib.rs \
+    && mkdir -p crates/executor/benches && echo "" > crates/executor/benches/runtime.rs \
     && cargo fetch \
-    && rm -rf crates/*/src
+    && rm -rf crates/*/src crates/*/benches
 
 COPY crates/ crates/
 
