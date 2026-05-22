@@ -117,16 +117,30 @@ where
 
         tokio::spawn(async move {
             let workflow_started_at = Instant::now();
-            let execution_result =
-                run_streamed_execution(request, model_provider, event_sender.clone(), max_concurrency, workflow_started_at).await;
 
-            if let Err(error) = execution_result {
-                let _ = event_sender
-                    .send(ExecutorEvent::workflow_failed(
-                        error.to_string(),
-                        Some(workflow_started_at.elapsed()),
-                    ))
-                    .await;
+            tokio::select! {
+                execution_result = run_streamed_execution(
+                    request,
+                    model_provider,
+                    event_sender.clone(),
+                    max_concurrency,
+                    workflow_started_at,
+                ) => {
+                    if let Err(error) = execution_result {
+                        let _ = event_sender
+                            .send(ExecutorEvent::workflow_failed(
+                                error.to_string(),
+                                Some(workflow_started_at.elapsed()),
+                            ))
+                            .await;
+                    }
+                }
+                () = event_sender.closed() => {
+                    // Dropping the receiver means the SSE client is gone. The
+                    // workflow future is dropped here so slow LLM/MCP work does
+                    // not continue without a listener.
+                    log::info!("streamed workflow execution cancelled because the event receiver closed");
+                }
             }
         });
 

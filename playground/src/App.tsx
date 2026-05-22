@@ -268,7 +268,7 @@ export default function App() {
 
     if (includeInput) {
       body.input = parseJsonObject(currentTab.inputJson, 'input');
-      body.options = { include_events: true };
+      body.options = { include_events: true, max_concurrency: 5 };
     }
 
     return body;

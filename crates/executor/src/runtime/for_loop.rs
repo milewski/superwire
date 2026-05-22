@@ -3,12 +3,10 @@ use crate::model::ModelProvider;
 use crate::runtime::state::RuntimeState;
 use futures::stream::{FuturesUnordered, StreamExt};
 use serde_json::Value;
-use std::sync::Arc;
 use superwire_core::dsl::AgentForLoopPattern;
 use superwire_core::semantic::support::expression::evaluate_expression;
 use superwire_core::semantic::support::types::value_kind_name;
 use superwire_core::semantic::PlannedAgent;
-use tokio::sync::Semaphore;
 
 impl WorkflowExecutor {
     pub(in crate::runtime) async fn execute_for_loop_agent<ModelProviderType>(
@@ -16,7 +14,6 @@ impl WorkflowExecutor {
         planned_agent: &PlannedAgent,
         runtime_state: &RuntimeState,
         model_provider: &ModelProviderType,
-        max_concurrency: usize,
         agent_execution_context: &AgentExecutionContext,
     ) -> Result<CompletedAgentExecution, ExecutorError>
     where
@@ -50,8 +47,6 @@ impl WorkflowExecutor {
             });
         }
 
-        let concurrency_limit = max_concurrency.max(1);
-        let semaphore = Arc::new(Semaphore::new(concurrency_limit));
         let mut pending_iterations = FuturesUnordered::new();
         let agent_name = planned_agent.name.clone();
         let tool_call_tracker = runtime_state.tool_call_tracker();
@@ -60,28 +55,23 @@ impl WorkflowExecutor {
             let mut iteration_state = runtime_state.clone();
             loop_pattern.bind_loop_variables(item, &mut iteration_state)?;
 
-            let semaphore_clone = semaphore.clone();
             let iteration_execution_context = AgentExecutionContext {
                 event_sender: agent_execution_context.event_sender.clone(),
                 import_context: agent_execution_context.import_context.clone(),
                 tool_call_tracker: tool_call_tracker.clone(),
+                runtime_concurrency_limiter: agent_execution_context.runtime_concurrency_limiter.clone(),
             };
+            let runtime_concurrency_limiter = iteration_execution_context.runtime_concurrency_limiter.clone();
 
             pending_iterations.push(async move {
-                let permit = semaphore_clone.acquire_owned().await.map_err(|error| ExecutorError::Other {
-                    message: format!("failed to acquire concurrency permit: {error}"),
-                })?;
-                let result = self
-                    .execute_agent(AgentRunContext {
+                runtime_concurrency_limiter
+                    .run(self.execute_agent(AgentRunContext {
                         planned_agent,
                         runtime_state: &iteration_state,
                         model_provider,
                         agent_execution_context: &iteration_execution_context,
-                    })
-                    .await;
-                drop(permit);
-
-                result
+                    }))
+                    .await
             });
         }
 

@@ -77,7 +77,7 @@ impl Default for ExecutionOptions {
 }
 
 fn default_max_concurrency() -> usize {
-    10
+    5
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

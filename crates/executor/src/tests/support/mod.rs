@@ -7,7 +7,9 @@ use crate::service::ExecutorService;
 use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 // ---------------------------------------------------------------------------
 // Mock providers
@@ -163,6 +165,73 @@ impl ModelProvider for FailingModelProvider {
             agent_name: "failing-provider".to_string(),
             message: self.message.clone(),
         })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ConcurrentTrackingModelProvider {
+    active_requests: Arc<AtomicUsize>,
+    max_active_requests: Arc<AtomicUsize>,
+    response_delay: Duration,
+}
+
+impl ConcurrentTrackingModelProvider {
+    pub fn new(response_delay: Duration) -> Self {
+        Self {
+            active_requests: Arc::new(AtomicUsize::new(0)),
+            max_active_requests: Arc::new(AtomicUsize::new(0)),
+            response_delay,
+        }
+    }
+
+    pub fn max_active_requests(&self) -> usize {
+        self.max_active_requests.load(Ordering::SeqCst)
+    }
+
+    pub fn active_requests(&self) -> usize {
+        self.active_requests.load(Ordering::SeqCst)
+    }
+}
+
+#[async_trait]
+impl ModelProvider for ConcurrentTrackingModelProvider {
+    async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ExecutorError> {
+        let active_request_guard = ActiveRequestGuard::new(self.active_requests.clone());
+        let active_request_count = active_request_guard.active_request_count();
+
+        self.max_active_requests.fetch_max(active_request_count, Ordering::SeqCst);
+        tokio::time::sleep(self.response_delay).await;
+
+        Ok(ModelResponse {
+            output: serde_json::json!({ "value": request.agent_name }),
+            context: serde_json::json!({ "agent": request.agent_name }),
+        })
+    }
+}
+
+struct ActiveRequestGuard {
+    active_requests: Arc<AtomicUsize>,
+    active_request_count: usize,
+}
+
+impl ActiveRequestGuard {
+    fn new(active_requests: Arc<AtomicUsize>) -> Self {
+        let active_request_count = active_requests.fetch_add(1, Ordering::SeqCst) + 1;
+
+        Self {
+            active_requests,
+            active_request_count,
+        }
+    }
+
+    fn active_request_count(&self) -> usize {
+        self.active_request_count
+    }
+}
+
+impl Drop for ActiveRequestGuard {
+    fn drop(&mut self) {
+        self.active_requests.fetch_sub(1, Ordering::SeqCst);
     }
 }
 

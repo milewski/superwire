@@ -2068,11 +2068,16 @@ textarea {
   background: color-mix(in srgb, var(--graph-agent) 18%, transparent);
 }
 
+.graph-node__execution-strip button[data-status="waiting"]::before {
+  background: color-mix(in srgb, var(--graph-agent) 62%, transparent);
+}
+
 .graph-node__execution-strip button[data-status="failed"]::before {
   background: var(--danger);
   box-shadow: none;
 }
 
+.graph-node__execution-strip button[data-status="waiting"],
 .graph-node__execution-strip button[data-status="idle"] {
   opacity: 0.72;
 }

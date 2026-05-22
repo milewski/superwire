@@ -2,11 +2,12 @@ use super::fixtures;
 use super::support;
 use crate::event::ExecutorEventKind;
 use crate::service::ExecutorService;
-use crate::tests::support::{request_with_input, TestModelProvider};
+use crate::tests::support::{request_with_input, ConcurrentTrackingModelProvider, TestModelProvider};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
+use std::time::Duration;
 use superwire_core::workflow_source;
 
 #[tokio::test]
@@ -89,6 +90,38 @@ async fn failure_emits_workflow_failed_event() {
 
     assert_eq!(kinds.first(), Some(&ExecutorEventKind::WorkflowStarted));
     assert_eq!(kinds.last(), Some(&ExecutorEventKind::WorkflowFailed));
+}
+
+#[tokio::test]
+async fn dropping_stream_receiver_cancels_running_workflow() {
+    let model_provider = ConcurrentTrackingModelProvider::new(Duration::from_secs(5));
+    let service = ExecutorService::new(model_provider.clone());
+    let request = support::request(fixtures::MINIMUM);
+    let mut receiver = service.execute_stream(request);
+
+    while let Some(event) = receiver.recv().await {
+        if event.kind == ExecutorEventKind::AgentStarted {
+            break;
+        }
+    }
+
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while model_provider.active_requests() == 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("model request should start");
+
+    drop(receiver);
+
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while model_provider.active_requests() > 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("dropping the event receiver should cancel the running workflow");
 }
 
 #[tokio::test]

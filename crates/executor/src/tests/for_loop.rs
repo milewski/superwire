@@ -1,7 +1,8 @@
 use crate::api::ExecutionOptions;
 use crate::service::ExecutorService;
-use crate::tests::support::{request_with_input, ScriptedModelProvider, TestModelProvider};
+use crate::tests::support::{request_with_input, ConcurrentTrackingModelProvider, ScriptedModelProvider, TestModelProvider};
 use serde_json::{json, Value};
+use std::time::Duration;
 use superwire_core::workflow_source;
 
 #[tokio::test]
@@ -269,6 +270,47 @@ async fn for_loop_respects_max_concurrency() {
         output,
         json!({ "values": [{ "value": "a" }, { "value": "b" }, { "value": "c" }, { "value": "d" }, { "value": "e" }] })
     );
+}
+
+#[tokio::test]
+async fn for_loop_iterations_run_in_parallel_with_configured_limit() {
+    let workflow_source = workflow_source! {
+        provider openai from openai {
+            endpoint: "http://localhost:1234/v1"
+            api_key: "test-api-key"
+        }
+
+        model openai_model from openai {
+            id: "model-a"
+        }
+
+        agent writer for number in [1, 2, 3, 4, 5] {
+            model: model.openai_model
+            instruction: "Write {{ number }}"
+            output {
+                value: string
+            }
+        }
+
+        output {
+            values: agent.writer
+        }
+    };
+    let model_provider = ConcurrentTrackingModelProvider::new(Duration::from_millis(20));
+    let service = ExecutorService::new(model_provider.clone());
+    let mut request = crate::tests::support::request(workflow_source);
+
+    request.options = ExecutionOptions {
+        include_events: false,
+        max_concurrency: 2,
+    };
+
+    service
+        .execute(request)
+        .await
+        .expect("for-loop with max_concurrency=2 should execute");
+
+    assert_eq!(model_provider.max_active_requests(), 2);
 }
 
 #[tokio::test]

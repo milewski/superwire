@@ -21,13 +21,15 @@ use crate::runtime::state::RuntimeState;
 use crate::runtime::tools::ExpressionMcpExecutionPlanExt;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
+use std::future::Future;
+use std::sync::Arc;
 use superwire_core::dsl::{
     AgentProperty, Declaration, Expression, McpPromptImportDeclaration, McpResourceImportDeclaration, McpServerDeclaration, Workflow,
 };
 use superwire_core::mcp::McpClientPool;
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
 use superwire_core::semantic::{ExecutionPlan, WorkflowExecutionGraph};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Semaphore};
 
 #[derive(Debug, Clone)]
 pub(in crate::runtime) struct CompletedAgentExecution {
@@ -120,6 +122,31 @@ pub(in crate::runtime) struct AgentExecutionContext {
     pub(in crate::runtime) event_sender: Option<mpsc::Sender<ExecutorEvent>>,
     pub(in crate::runtime) import_context: String,
     pub(in crate::runtime) tool_call_tracker: ToolCallTracker,
+    pub(in crate::runtime) runtime_concurrency_limiter: RuntimeConcurrencyLimiter,
+}
+
+#[derive(Debug, Clone)]
+pub(in crate::runtime) struct RuntimeConcurrencyLimiter {
+    semaphore: Arc<Semaphore>,
+}
+
+impl RuntimeConcurrencyLimiter {
+    pub(in crate::runtime) fn new(max_concurrency: usize) -> Self {
+        Self {
+            semaphore: Arc::new(Semaphore::new(max_concurrency.max(1))),
+        }
+    }
+
+    pub(in crate::runtime) async fn run<Output, ExecutionFuture>(&self, execution_future: ExecutionFuture) -> Result<Output, ExecutorError>
+    where
+        ExecutionFuture: Future<Output = Result<Output, ExecutorError>>,
+    {
+        let _permit = self.semaphore.clone().acquire_owned().await.map_err(|error| ExecutorError::Other {
+            message: format!("failed to acquire runtime concurrency permit: {error}"),
+        })?;
+
+        execution_future.await
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

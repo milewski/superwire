@@ -1,4 +1,7 @@
-use super::{AgentExecutionContext, AgentRunContext, ExecutorError, RuntimeValidationContext, ToolCallExecutionContext, WorkflowExecutor};
+use super::{
+    AgentExecutionContext, AgentRunContext, ExecutorError, RuntimeConcurrencyLimiter, RuntimeValidationContext, ToolCallExecutionContext,
+    WorkflowExecutor,
+};
 use crate::event::ExecutorEvent;
 use crate::model::{ModelProvider, ToolCallTracker};
 use crate::runtime::state::RuntimeState;
@@ -25,6 +28,7 @@ impl WorkflowExecutor {
         })?;
         let mut runtime_state = RuntimeState::new(runtime_configuration.input_values, runtime_configuration.secret_values);
         let tool_call_tracker = ToolCallTracker::default();
+        let runtime_concurrency_limiter = RuntimeConcurrencyLimiter::new(max_concurrency);
 
         log::info!("executing workflow runtime");
 
@@ -62,17 +66,12 @@ impl WorkflowExecutor {
                 event_sender: event_sender.clone(),
                 import_context: import_context.clone(),
                 tool_call_tracker: tool_call_tracker.clone(),
+                runtime_concurrency_limiter: runtime_concurrency_limiter.clone(),
             };
 
             for planned_agent in for_loop_agents {
                 let completed_execution = self
-                    .execute_for_loop_agent(
-                        planned_agent,
-                        &runtime_state_snapshot,
-                        model_provider,
-                        max_concurrency,
-                        &agent_execution_context,
-                    )
+                    .execute_for_loop_agent(planned_agent, &runtime_state_snapshot, model_provider, &agent_execution_context)
                     .await?;
                 completed_execution.apply_to_runtime_state(&mut runtime_state);
             }
@@ -82,15 +81,17 @@ impl WorkflowExecutor {
             for planned_agent in regular_agents {
                 let runtime_state_snapshot = runtime_state_snapshot.clone();
                 let agent_execution_context = agent_execution_context.clone();
+                let runtime_concurrency_limiter = agent_execution_context.runtime_concurrency_limiter.clone();
 
                 pending_executions.push(async move {
-                    self.execute_agent(AgentRunContext {
-                        planned_agent,
-                        runtime_state: &runtime_state_snapshot,
-                        model_provider,
-                        agent_execution_context: &agent_execution_context,
-                    })
-                    .await
+                    runtime_concurrency_limiter
+                        .run(self.execute_agent(AgentRunContext {
+                            planned_agent,
+                            runtime_state: &runtime_state_snapshot,
+                            model_provider,
+                            agent_execution_context: &agent_execution_context,
+                        }))
+                        .await
                 });
             }
 

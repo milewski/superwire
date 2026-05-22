@@ -7,7 +7,7 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::Path;
 use axum::extract::State;
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
-use axum::response::sse::Sse;
+use axum::response::sse::{KeepAlive, Sse};
 use axum::response::Redirect;
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
@@ -15,6 +15,7 @@ use axum::{Json, Router};
 use futures::{SinkExt, StreamExt};
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::time::Duration;
 use superwire_lsp::server::LanguageServer;
 use tokio::fs;
 use tokio::net::TcpListener;
@@ -100,8 +101,9 @@ where
         ExecuteResponseKind::EventStream => {
             let event_receiver = state.service.execute_stream(request);
             let event_stream = ReceiverStream::new(event_receiver).map(event_to_sse_result);
+            let keep_alive = KeepAlive::new().interval(Duration::from_secs(10)).text("workflow stream active");
 
-            Ok(Sse::new(event_stream).into_response())
+            Ok(Sse::new(event_stream).keep_alive(keep_alive).into_response())
         }
     }
 }
