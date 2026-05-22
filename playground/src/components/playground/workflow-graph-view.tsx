@@ -351,9 +351,6 @@ function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
 
   return (
     <article className={`graph-node graph-node--${node.kind}`} data-collapsed={visiblyCollapsed ? 'true' : 'false'} data-density={config.density} data-status={status} data-running={activeRunCount > 0 ? 'true' : 'false'}>
-      <svg className="graph-node__running-stroke" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-        <rect x="1.5" y="1.5" width="97" height="97" rx="5" pathLength="100" />
-      </svg>
       <GraphNodeHandles node={node} collapsed={visiblyCollapsed} showExpandedInstructionHandle={!node.instruction} />
       <button type="button" className="graph-node__header nodrag" aria-expanded={!visiblyCollapsed} onClick={() => setCollapsed((open) => !open)} disabled={config.collapseAll}>
         <div className="graph-node__identity">

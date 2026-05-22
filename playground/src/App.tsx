@@ -1,21 +1,20 @@
-import { Braces, Copy, Download, GitBranch, Moon, Pencil, Play, Plus, RefreshCcw, Square, Sun, Trash2, Workflow } from 'lucide-react';
+import { Copy, Download, GitBranch, Moon, Pencil, Play, Plus, RefreshCcw, Square, Sun, Trash2, Workflow } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import JsonCodeEditor from '@/components/json-code-editor';
 import PanelCard from '@/components/panel-card';
 import EventLog, { EventGroupingMode } from '@/components/playground/event-log';
-import JsonRuntimeEditor from '@/components/playground/json-runtime-editor';
 import OutputBox from '@/components/playground/output-box';
 import PlaygroundTabChip from '@/components/playground/tab-chip';
 import RunStateBadge from '@/components/playground/run-state-badge';
 import StatusPill from '@/components/playground/status-pill';
-import ViewHeader from '@/components/playground/view-header';
 import WorkflowGraphView from '@/components/playground/workflow-graph-view';
 import logoSource from '../../documentation/docs/public/logo-horizontal.svg';
-import type { ExecutorEvent, PlaygroundView, WorkflowExecutionGraph, WorkflowTab } from './types';
+import type { ExecutorEvent, PlaygroundView, WorkflowEditorView, WorkflowExecutionGraph, WorkflowTab } from './types';
 import WireEditor from './WireEditor';
 import { parseWorkflowSourceMetadata, workflowSourceWithMetadata, workflowSourceWithoutMetadata } from './workflowMetadata';
 import {
@@ -54,7 +53,6 @@ export default function App() {
   const [tabs, setTabs] = useState<WorkflowTab[]>(() => [createWorkflowTab('Launch brief')]);
   const [activeTabId, setActiveTabId] = useState('');
   const [darkMode, setDarkMode] = useState(true);
-  const [runtimeOpen, setRuntimeOpen] = useState(true);
   const [outputOpen, setOutputOpen] = useState(true);
   const [eventsOpen, setEventsOpen] = useState(true);
   const [eventGroupingMode, setEventGroupingMode] = useState<EventGroupingMode>(EventGroupingMode.Chronological);
@@ -71,8 +69,11 @@ export default function App() {
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
   const canRun = activeTab?.runState !== 'running';
   const activeView: PlaygroundView = activeTab?.activeView ?? 'workflow';
-  const shouldShowTemplatePicker = activeView === 'workflow' && (activeTab?.source.trim() ?? '') === '';
-  const editorMessageTone = resolveEditorMessageTone(activeTab);
+  const activeEditorView: WorkflowEditorView = activeTab?.activeEditorView ?? 'code';
+  const shouldShowTemplatePicker = activeView === 'workflow' && activeEditorView === 'code' && (activeTab?.source.trim() ?? '') === '';
+  const activeJsonValidationError = activeTab ? editorJsonValidationError(activeTab, activeEditorView) : null;
+  const editorMessageTone = activeJsonValidationError ? 'error' : resolveEditorMessageTone(activeTab);
+  const editorMessage = activeJsonValidationError ?? activeTab?.message ?? 'Ready.';
   const activeCodeFragment = activeTab?.codeFragments.find((fragment) => fragment.id === activeTab.activeCodeFragmentId) ?? activeTab?.codeFragments[0];
   const activeCodeFragmentSourceMap = activeTab && activeCodeFragment
     ? sourceMapForFragment(activeTab.codeFragments, activeTab.codeFragmentsUseMarkers, activeCodeFragment.id)
@@ -158,6 +159,10 @@ export default function App() {
 
   function setTabView(nextView: PlaygroundView) {
     updateActiveTab((tab) => ({ ...tab, activeView: nextView }));
+  }
+
+  function setWorkflowEditorView(nextView: WorkflowEditorView) {
+    updateActiveTab((tab) => ({ ...tab, activeEditorView: nextView }));
   }
 
   function toggleTheme() {
@@ -275,7 +280,7 @@ export default function App() {
   }
 
   function setActiveCodeFragment(fragmentId: string) {
-    updateActiveTab((tab) => ({ ...tab, activeCodeFragmentId: fragmentId }));
+    updateActiveTab((tab) => ({ ...tab, activeCodeFragmentId: fragmentId, activeEditorView: 'code' }));
   }
 
   function addCodeFragment() {
@@ -288,6 +293,7 @@ export default function App() {
       ...tab,
       codeFragments: nextFragments,
       activeCodeFragmentId: codeFragment.id,
+      activeEditorView: 'code',
       codeFragmentsUseMarkers: true,
       source: workflowSourceFromCodeFragments(nextFragments, true),
       graphState: 'idle',
@@ -350,6 +356,7 @@ export default function App() {
           source: '',
           codeFragments: [codeFragment],
           activeCodeFragmentId: codeFragment.id,
+          activeEditorView: 'code',
           codeFragmentsUseMarkers: false,
           graphState: 'idle',
           graphMessage: 'Graph needs to be regenerated after source changes.',
@@ -685,6 +692,22 @@ export default function App() {
     }
   }
 
+  function formatActiveEditor() {
+    if (activeEditorView === 'input') {
+      formatRuntimeJson('inputJson');
+
+      return;
+    }
+
+    if (activeEditorView === 'secrets') {
+      formatRuntimeJson('secretsJson');
+
+      return;
+    }
+
+    void formatWorkflow();
+  }
+
   function applyWorkflowTemplate(template: WorkflowTemplate) {
     const parsedResult = parseWorkflowSourceFragments(template.source, template.name);
 
@@ -693,6 +716,7 @@ export default function App() {
       source: template.source,
       codeFragments: parsedResult.fragments,
       activeCodeFragmentId: parsedResult.fragments[0]?.id ?? tab.activeCodeFragmentId,
+      activeEditorView: 'code',
       codeFragmentsUseMarkers: parsedResult.useMarkers,
       inputJson: JSON.stringify(template.input, null, 2),
       secretsJson: JSON.stringify(template.secrets, null, 2),
@@ -729,13 +753,14 @@ export default function App() {
     }
 
     setTabView('workflow');
+    setWorkflowEditorView('code');
     setEditorJumpTarget({
       tabId: currentTab.id,
       fragmentId: selectedSourceMap.fragment.id,
       offset: Math.max(0, Math.min(fullOffset - selectedSourceMap.sourceStartOffset, selectedSourceMap.fragment.source.length)),
       sequence: Date.now(),
     });
-    updateTab(currentTab.id, (tab) => ({ ...tab, activeCodeFragmentId: selectedSourceMap.fragment.id }));
+    updateTab(currentTab.id, (tab) => ({ ...tab, activeCodeFragmentId: selectedSourceMap.fragment.id, activeEditorView: 'code' }));
   }
 
   async function loadGraph() {
@@ -829,6 +854,7 @@ export default function App() {
                       key={tab.id}
                       size="large"
                       active={tab.id === activeTab?.id}
+                      tone={workflowTabTone(tab)}
                       activeGlow
                       dragging={draggedTabId === tab.id}
                       dragOver={dragOverTabId === tab.id}
@@ -860,7 +886,6 @@ export default function App() {
                     <div className="playground__controls">
                       <nav className="playground-mode-switch" aria-label="Playground mode">
                         <Button variant={activeView === 'workflow' ? 'secondary' : 'ghost'} size="lg" className="playground-mode-switch__button" onClick={() => setTabView('workflow')}><Workflow /> Workflow</Button>
-                        <Button variant={activeView === 'runtime' ? 'secondary' : 'ghost'} size="lg" className="playground-mode-switch__button" onClick={() => setTabView('runtime')}><Braces /> Variables</Button>
                         <Button variant={activeView === 'graph' ? 'secondary' : 'ghost'} size="lg" className="playground-mode-switch__button" onClick={() => setTabView('graph')}><GitBranch /> Graph</Button>
                       </nav>
 
@@ -896,35 +921,66 @@ export default function App() {
                               </div>
                               <div className="workflow-fragment-actions">
                                 <Button variant="ghost" size="sm" onClick={exportWorkflowSource}><Download /> Export</Button>
-                                <Button variant="ghost" size="sm" onClick={formatWorkflow}><RefreshCcw /> Format</Button>
+                                <Button variant="ghost" size="sm" onClick={formatActiveEditor}><RefreshCcw /> Format</Button>
                                 <Button variant="outline" size="sm" onClick={addCodeFragment}><Plus /> Fragment</Button>
                               </div>
                             </div>
-                            <div className="workflow-fragment-tabs" aria-label="Workflow code fragments">
-                              {activeTab.codeFragments.map((fragment) => (
+                            <div className="workflow-editor-tabs" aria-label="Workflow editor tabs">
+                              <div className="workflow-editor-tabs__fragments" aria-label="Workflow code fragments">
+                                {activeTab.codeFragments.map((fragment) => (
+                                  <PlaygroundTabChip
+                                    key={fragment.id}
+                                    size="small"
+                                    active={activeEditorView === 'code' && fragment.id === activeTab.activeCodeFragmentId}
+                                    dragging={draggedCodeFragmentId === fragment.id}
+                                    dragOver={dragOverCodeFragmentId === fragment.id}
+                                    onDragStart={() => handleCodeFragmentDragStart(fragment.id)}
+                                    onDragOver={() => handleCodeFragmentDragOver(fragment.id)}
+                                    onDrop={() => handleCodeFragmentDrop(fragment.id)}
+                                    onDragEnd={clearCodeFragmentDragState}
+                                    trigger={(
+                                      <button type="button" className="playground-tab-chip__trigger" onClick={() => setActiveCodeFragment(fragment.id)}>
+                                        <span className="playground-tab-chip__title">{fragment.name}</span>
+                                      </button>
+                                    )}
+                                    actions={[
+                                      { label: `Rename ${fragment.name}`, icon: <Pencil />, onClick: () => openCodeFragmentRenameDialog(activeTab.id, fragment.id) },
+                                      { label: `Close ${fragment.name}`, icon: <Trash2 />, onClick: () => closeCodeFragment(fragment.id) },
+                                    ]}
+                                  />
+                                ))}
+                              </div>
+
+                              <div className="workflow-editor-tabs__variables" aria-label="Workflow variables">
                                 <PlaygroundTabChip
-                                  key={fragment.id}
                                   size="small"
-                                  active={fragment.id === activeTab.activeCodeFragmentId}
-                                  dragging={draggedCodeFragmentId === fragment.id}
-                                  dragOver={dragOverCodeFragmentId === fragment.id}
-                                  onDragStart={() => handleCodeFragmentDragStart(fragment.id)}
-                                  onDragOver={() => handleCodeFragmentDragOver(fragment.id)}
-                                  onDrop={() => handleCodeFragmentDrop(fragment.id)}
-                                  onDragEnd={clearCodeFragmentDragState}
+                                  active={activeEditorView === 'input'}
+                                  draggable={false}
+                                  dragging={false}
+                                  dragOver={false}
                                   trigger={(
-                                    <button type="button" className="playground-tab-chip__trigger" onClick={() => setActiveCodeFragment(fragment.id)}>
-                                      <span className="playground-tab-chip__title">{fragment.name}</span>
+                                    <button type="button" className="playground-tab-chip__trigger" onClick={() => setWorkflowEditorView('input')}>
+                                      <span className="playground-tab-chip__title">Input</span>
                                     </button>
                                   )}
-                                  actions={[
-                                    { label: `Rename ${fragment.name}`, icon: <Pencil />, onClick: () => openCodeFragmentRenameDialog(activeTab.id, fragment.id) },
-                                    { label: `Close ${fragment.name}`, icon: <Trash2 />, onClick: () => closeCodeFragment(fragment.id) },
-                                  ]}
+                                  actions={[]}
                                 />
-                              ))}
+                                <PlaygroundTabChip
+                                  size="small"
+                                  active={activeEditorView === 'secrets'}
+                                  draggable={false}
+                                  dragging={false}
+                                  dragOver={false}
+                                  trigger={(
+                                    <button type="button" className="playground-tab-chip__trigger" onClick={() => setWorkflowEditorView('secrets')}>
+                                      <span className="playground-tab-chip__title">Secrets</span>
+                                    </button>
+                                  )}
+                                  actions={[]}
+                                />
+                              </div>
                             </div>
-                            {activeCodeFragment && activeCodeFragmentSourceMap ? (
+                            {activeEditorView === 'code' && activeCodeFragment && activeCodeFragmentSourceMap ? (
                               <WireEditor
                                 key={`${activeTab.id}-${activeCodeFragment.id}`}
                                 value={activeCodeFragment.source}
@@ -939,8 +995,33 @@ export default function App() {
                                 onDefinitionJump={jumpToFullDocumentPosition}
                               />
                             ) : null}
+                            {activeEditorView === 'input' ? (
+                              <JsonCodeEditor
+                                key={`${activeTab.id}-input`}
+                                value={activeTab.inputJson}
+                                fullEditor
+                                className="workflow-editor__json"
+                                onChange={(inputJson) => updateActiveTab((tab) => ({ ...tab, inputJson, updatedAt: Date.now() }))}
+                              />
+                            ) : null}
+                            {activeEditorView === 'secrets' ? (
+                              <JsonCodeEditor
+                                key={`${activeTab.id}-secrets`}
+                                value={activeTab.secretsJson}
+                                fullEditor
+                                className="workflow-editor__json"
+                                onChange={(secretsJson) => updateActiveTab((tab) => ({
+                                  ...tab,
+                                  secretsJson,
+                                  graphState: 'idle',
+                                  graphMessage: 'Graph needs to be regenerated after secrets changes.',
+                                  graphData: null,
+                                  updatedAt: Date.now(),
+                                }))}
+                              />
+                            ) : null}
                             <div className={`workflow-editor__message workflow-editor__message--${editorMessageTone}`}>
-                              <span className="workflow-editor__message-line workflow-editor__message-line--full">{activeTab.message ?? 'Ready.'}</span>
+                              <span className="workflow-editor__message-line workflow-editor__message-line--full">{editorMessage}</span>
                             </div>
                           </Card>
                         </div>
@@ -953,25 +1034,6 @@ export default function App() {
                             <EventLog events={activeTab.eventLog} eventGroupingMode={eventGroupingMode} onEventGroupingModeChange={setEventGroupingMode} />
                           </PanelCard>
                         </div>
-                      </section>
-                    ) : null}
-
-                    {activeView === 'runtime' ? (
-                      <section className="runtime-view">
-                        <ViewHeader title="Variables" description="Edit workflow input and secrets as JSON objects. This view is intentionally wide so nested payloads stay readable." />
-                        <PanelCard collapsible open={runtimeOpen} title="Input and secrets" description="Variables are sent with every validation and run request." onToggle={() => setRuntimeOpen((currentValue) => !currentValue)}>
-                          <div className="runtime-variables runtime-variables--wide">
-                            <JsonRuntimeEditor title="Input" value={activeTab.inputJson} validationError={jsonObjectValidationError(activeTab.inputJson)} onFormat={() => formatRuntimeJson('inputJson')} onChange={(inputJson) => updateActiveTab((tab) => ({ ...tab, inputJson, updatedAt: Date.now() }))} />
-                            <JsonRuntimeEditor title="Secrets" secret value={activeTab.secretsJson} validationError={jsonObjectValidationError(activeTab.secretsJson)} onFormat={() => formatRuntimeJson('secretsJson')} onChange={(secretsJson) => updateActiveTab((tab) => ({
-                              ...tab,
-                              secretsJson,
-                              graphState: 'idle',
-                              graphMessage: 'Graph needs to be regenerated after secrets changes.',
-                              graphData: null,
-                              updatedAt: Date.now(),
-                            }))} />
-                          </div>
-                        </PanelCard>
                       </section>
                     ) : null}
 
@@ -1103,6 +1165,18 @@ function jsonObjectValidationError(source: string) {
   }
 }
 
+function editorJsonValidationError(activeTab: WorkflowTab, activeEditorView: WorkflowEditorView) {
+  if (activeEditorView === 'input') {
+    return jsonObjectValidationError(activeTab.inputJson);
+  }
+
+  if (activeEditorView === 'secrets') {
+    return jsonObjectValidationError(activeTab.secretsJson);
+  }
+
+  return null;
+}
+
 function requireActiveTab(activeTab: WorkflowTab | undefined) {
   if (!activeTab) {
     throw new Error('No active workflow tab.');
@@ -1173,6 +1247,10 @@ function resolveEditorMessageTone(activeTab: WorkflowTab | undefined): 'neutral'
   }
 
   return 'neutral';
+}
+
+function workflowTabTone(tab: WorkflowTab): 'default' | 'error' {
+  return tab.validationState === 'invalid' || tab.runState === 'failed' ? 'error' : 'default';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

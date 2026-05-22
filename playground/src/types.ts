@@ -1,7 +1,8 @@
 export type ValidationState = 'idle' | 'valid' | 'invalid' | 'running';
 export type RunState = 'idle' | 'running' | 'failed' | 'completed';
 export type GraphState = 'idle' | 'loading' | 'failed' | 'ready';
-export type PlaygroundView = 'workflow' | 'runtime' | 'graph';
+export type PlaygroundView = 'workflow' | 'graph';
+export type WorkflowEditorView = 'code' | 'input' | 'secrets';
 
 export interface ExecutorEvent {
   kind: string;
@@ -15,6 +16,7 @@ export interface WorkflowTab {
   id: string;
   name: string;
   activeView: PlaygroundView;
+  activeEditorView: WorkflowEditorView;
   source: string;
   codeFragments: WorkflowCodeFragment[];
   activeCodeFragmentId: string;

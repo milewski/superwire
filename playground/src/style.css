@@ -18,7 +18,7 @@
   --danger: #ff4d5f;
   --toggle-surface: color-mix(in srgb, var(--card) 94%, #cfcfcf 6%);
   --toggle-border: color-mix(in srgb, var(--border) 88%, #a3a3a3 12%);
-  --toggle-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+  --toggle-shadow: none;
   --toggle-text: color-mix(in srgb, var(--foreground) 82%, #000 18%);
   --toggle-active-surface: color-mix(in srgb, var(--superwire-accent) 18%, var(--card));
   --toggle-active-text: color-mix(in srgb, var(--foreground) 92%, #000 8%);
@@ -81,7 +81,7 @@
   --accent-soft: rgba(255, 127, 0, 0.18);
   --toggle-surface: color-mix(in srgb, var(--card) 88%, #000 12%);
   --toggle-border: color-mix(in srgb, var(--border) 90%, #ffffff 10%);
-  --toggle-shadow: 0 10px 26px rgba(0, 0, 0, 0.32);
+  --toggle-shadow: none;
   --toggle-text: color-mix(in srgb, var(--foreground) 88%, #fff 12%);
   --toggle-active-surface: color-mix(in srgb, var(--superwire-accent) 24%, var(--card));
   --toggle-active-text: var(--foreground);
@@ -278,12 +278,19 @@ textarea {
 }
 
 .playground-tab-chip {
-  @apply flex w-auto shrink-0 items-center gap-1 overflow-visible border transition-[border-color,background-color,box-shadow,opacity,transform] duration-200 ease-out;
+  @apply flex w-auto shrink-0 items-center gap-1 overflow-visible border transition-[border-color,background-color,opacity,transform] duration-200 ease-out;
   border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
   background: color-mix(in srgb, var(--card) 98%, var(--foreground) 2%);
-  box-shadow: 0 2px 6px rgba(22, 22, 22, 0.06);
+  box-shadow: none;
   color: var(--muted-foreground);
+}
+
+.playground-tab-chip[data-draggable="true"] {
   cursor: grab;
+}
+
+.playground-tab-chip[data-draggable="false"] {
+  cursor: default;
 }
 
 .playground-tab-chip[data-size="large"] {
@@ -297,7 +304,7 @@ textarea {
   box-shadow: none;
 }
 
-.playground-tab-chip:active {
+.playground-tab-chip[data-draggable="true"]:active {
   cursor: grabbing;
 }
 
@@ -349,12 +356,31 @@ textarea {
 }
 
 .playground-tab-chip[data-active="true"][data-active-glow="true"] {
-  box-shadow: 0 6px 16px color-mix(in srgb, var(--superwire-accent) 20%, transparent);
+  box-shadow: none;
+}
+
+.playground-tab-chip[data-tone="error"] {
+  border-color: color-mix(in srgb, var(--danger) 62%, var(--border));
+  background: color-mix(in srgb, var(--danger) 11%, var(--card));
+  color: var(--danger);
+}
+
+.playground-tab-chip[data-tone="error"] .playground-tab-chip__dot {
+  background: var(--danger);
+}
+
+.playground-tab-chip[data-tone="error"] .playground-tab-chip__trigger,
+.playground-tab-chip[data-tone="error"] .run-state-badge {
+  color: var(--danger);
+}
+
+.playground-tab-chip[data-tone="error"][data-active="true"][data-active-glow="true"] {
+  box-shadow: none;
 }
 
 .playground-tab-chip[data-drag-over="true"] {
   border-color: var(--superwire-accent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--superwire-accent) 65%, transparent);
+  box-shadow: none;
 }
 
 .playground-tab-chip[data-dragging="true"] {
@@ -528,10 +554,20 @@ textarea {
   height: 16px !important;
 }
 
-.workflow-fragment-tabs {
-  @apply flex min-h-12 items-center gap-2 overflow-x-auto px-4 py-2;
+.workflow-editor-tabs {
+  @apply flex min-h-12 items-center gap-3 px-4 py-2;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--card) 88%, var(--foreground) 12%);
+}
+
+.workflow-editor-tabs__fragments {
+  @apply flex min-w-0 flex-1 items-center gap-2 overflow-x-auto;
+}
+
+.workflow-editor-tabs__variables {
+  @apply ml-auto flex shrink-0 items-center gap-1 rounded-xl border p-1;
+  border-color: color-mix(in srgb, var(--border) 80%, transparent);
+  background: color-mix(in srgb, var(--card) 78%, var(--foreground) 22%);
 }
 
 .playground-actions {
@@ -698,6 +734,10 @@ textarea {
   color: var(--foreground);
 }
 
+.json-code-editor--full {
+  min-height: auto;
+}
+
 .json-code-editor .cm-editor,
 .json-code-editor .cm-scroller,
 .json-code-editor .cm-content {
@@ -722,9 +762,22 @@ textarea {
   line-height: 1.65;
 }
 
+.workflow-editor__json {
+  @apply rounded-none border-0;
+  background: color-mix(in srgb, var(--card) 96%, var(--foreground) 4%);
+}
+
+.workflow-editor__json .cm-content {
+  line-height: 1.65;
+}
+
 .json-code-editor:has(.cm-focused) {
   border-color: var(--superwire-accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.workflow-editor__json:has(.cm-focused) {
+  box-shadow: inset 0 0 0 1px var(--superwire-accent);
 }
 
 .json-code-editor-readonly {
@@ -1179,74 +1232,22 @@ textarea {
   cursor: grabbing;
 }
 
-.graph-node__running-stroke {
-  position: absolute;
-  inset: -2px;
-  z-index: 2;
-  width: calc(100% + 4px);
-  height: calc(100% + 4px);
-  border-radius: inherit;
-  overflow: visible;
-  pointer-events: none;
-}
-
-.graph-node__running-stroke rect {
-  fill: none;
-  opacity: 0;
-  stroke: var(--graph-agent);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-dasharray: 11 89;
-  stroke-dashoffset: 0;
-  vector-effect: non-scaling-stroke;
-  filter: none;
-}
-
 .graph-node[data-running="true"] {
-  border-color: color-mix(in srgb, var(--graph-agent) 42%, var(--border));
-  background: color-mix(in srgb, var(--card) 96%, var(--foreground) 4%);
+  border-color: color-mix(in srgb, var(--graph-agent) 36%, var(--graph-line));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--graph-agent) 5%, transparent), transparent 44%),
+    var(--graph-panel);
   box-shadow: none;
-  animation: graph-node-running-enter 420ms ease-out;
 }
 
-.graph-node[data-running="true"] .graph-node__running-stroke rect {
-  opacity: 1;
-  animation: graph-node-running-stroke 2.25s linear infinite;
+.graph-node[data-running="true"] .graph-node__header {
+  background: color-mix(in srgb, var(--graph-agent) 8%, transparent);
 }
 
-.graph-node[data-running="true"] .graph-node__title::after {
-  content: " running";
-  color: var(--graph-agent);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.dark .graph-node[data-running="true"] .graph-node__title::after {
-  color: var(--graph-agent);
-}
-
-@keyframes graph-node-running-stroke {
-  to {
-    stroke-dashoffset: -100;
-  }
-}
-
-@keyframes graph-node-running-enter {
-  0% {
-    box-shadow: none;
-    transform: scale(0.985);
-  }
-
-  70% {
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--graph-agent) 10%, transparent);
-  }
-
-  100% {
-    box-shadow: none;
-    transform: scale(1);
-  }
+.graph-node[data-running="true"] .graph-node__icon {
+  border-color: color-mix(in srgb, var(--graph-agent) 42%, var(--graph-line));
+  background: color-mix(in srgb, var(--graph-agent) 11%, transparent);
+  box-shadow: inset 3px 0 0 var(--graph-agent);
 }
 
 .graph-node[data-collapsed="true"] {
@@ -1930,26 +1931,8 @@ textarea {
   filter: saturate(0.9);
 }
 
-.graph-node__running-stroke {
-  inset: -3px;
-  width: calc(100% + 6px);
-  height: calc(100% + 6px);
-}
-
-.graph-node__running-stroke rect {
-  stroke: var(--graph-agent);
-  stroke-width: 2;
-  stroke-dasharray: 7 93;
-  filter: none;
-}
-
 .graph-node[data-running="true"] {
   border-color: color-mix(in srgb, var(--graph-agent) 46%, var(--graph-line));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--graph-agent) 12%, transparent);
-}
-
-.graph-node[data-running="true"] .graph-node__title::after {
-  content: none;
 }
 
 .graph-node__header {
@@ -2212,11 +2195,12 @@ textarea {
 }
 
 .graph-node__execution-strip button[data-status="running"] {
-  overflow: hidden;
+  overflow: visible;
 }
 
 .graph-node__execution-strip button[data-status="running"]::before {
-  background: color-mix(in srgb, var(--graph-agent) 18%, transparent);
+  background: var(--graph-agent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--graph-agent) 16%, transparent);
 }
 
 .graph-node__execution-strip button[data-status="waiting"]::before {
@@ -2240,12 +2224,13 @@ textarea {
 .graph-node__execution-strip button[data-status="running"]::after {
   content: "";
   position: absolute;
-  inset: 18%;
+  inset: -45%;
   width: auto;
   height: auto;
   border-radius: inherit;
-  background: var(--graph-agent);
-  animation: graph-execution-progress 1.15s ease-in-out infinite alternate;
+  border: 1px solid color-mix(in srgb, var(--graph-agent) 58%, transparent);
+  opacity: 0;
+  animation: graph-execution-pulse 1.4s ease-out infinite;
 }
 
 .graph-node__failure {
@@ -2327,13 +2312,20 @@ textarea {
   overflow: auto;
 }
 
-@keyframes graph-execution-progress {
-  from {
-    transform: translateX(-18%);
+@keyframes graph-execution-pulse {
+  0% {
+    opacity: 0.72;
+    transform: scale(0.62);
   }
 
-  to {
-    transform: translateX(18%);
+  70% {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.35);
   }
 }
 

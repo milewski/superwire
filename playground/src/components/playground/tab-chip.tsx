@@ -10,21 +10,25 @@ export interface PlaygroundTabChipAction {
 interface PlaygroundTabChipProps {
   size: 'large' | 'small';
   active: boolean;
+  tone?: 'default' | 'error';
   activeGlow?: boolean;
+  draggable?: boolean;
   dragging: boolean;
   dragOver: boolean;
   trigger: ReactNode;
   actions: PlaygroundTabChipAction[];
-  onDragStart: () => void;
-  onDragOver: () => void;
-  onDrop: () => void;
-  onDragEnd: () => void;
+  onDragStart?: () => void;
+  onDragOver?: () => void;
+  onDrop?: () => void;
+  onDragEnd?: () => void;
 }
 
 export default function PlaygroundTabChip({
   size,
   active,
+  tone = 'default',
   activeGlow = false,
+  draggable = true,
   dragging,
   dragOver,
   trigger,
@@ -37,15 +41,19 @@ export default function PlaygroundTabChip({
   const dragPreviewRef = useRef<HTMLElement | null>(null);
 
   function handleDragStart(dragEvent: DragEvent<HTMLDivElement>) {
+    if (!draggable) {
+      return;
+    }
+
     dragEvent.dataTransfer.effectAllowed = 'move';
     dragEvent.dataTransfer.setData('text/plain', '');
     setDragPreview(dragEvent);
-    onDragStart();
+    onDragStart?.();
   }
 
   function handleDragEnd() {
     removeDragPreview();
-    onDragEnd();
+    onDragEnd?.();
   }
 
   function setDragPreview(dragEvent: DragEvent<HTMLDivElement>) {
@@ -81,39 +89,43 @@ export default function PlaygroundTabChip({
   return (
     <div
       className="playground-tab-chip"
-      draggable
+      draggable={draggable}
       data-size={size}
       data-active={active ? 'true' : 'false'}
+      data-tone={tone}
       data-active-glow={activeGlow ? 'true' : 'false'}
+      data-draggable={draggable ? 'true' : 'false'}
       data-dragging={dragging ? 'true' : 'false'}
       data-drag-over={dragOver ? 'true' : 'false'}
-      onDragStart={handleDragStart}
-      onDragOver={(dragEvent) => {
+      onDragStart={draggable ? handleDragStart : undefined}
+      onDragOver={draggable ? (dragEvent) => {
         dragEvent.preventDefault();
-        onDragOver();
-      }}
-      onDrop={(dragEvent) => {
+        onDragOver?.();
+      } : undefined}
+      onDrop={draggable ? (dragEvent) => {
         dragEvent.preventDefault();
-        onDrop();
-      }}
-      onDragEnd={handleDragEnd}
+        onDrop?.();
+      } : undefined}
+      onDragEnd={draggable ? handleDragEnd : undefined}
     >
       {trigger}
 
-      <div className="playground-tab-chip__actions">
-        {actions.map((action) => (
-          <Button
-            key={action.label}
-            className="playground-tab-chip__action"
-            variant="ghost"
-            size="icon-sm"
-            aria-label={action.label}
-            onClick={action.onClick}
-          >
-            {action.icon}
-          </Button>
-        ))}
-      </div>
+      {actions.length > 0 ? (
+        <div className="playground-tab-chip__actions">
+          {actions.map((action) => (
+            <Button
+              key={action.label}
+              className="playground-tab-chip__action"
+              variant="ghost"
+              size="icon-sm"
+              aria-label={action.label}
+              onClick={action.onClick}
+            >
+              {action.icon}
+            </Button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

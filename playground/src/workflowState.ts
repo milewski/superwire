@@ -17,6 +17,7 @@ export function createWorkflowTab(name: string): WorkflowTab {
     id: uniqueId(),
     name,
     activeView: 'workflow',
+    activeEditorView: 'code',
     source: '',
     codeFragments: [codeFragment],
     activeCodeFragmentId: codeFragment.id,
@@ -76,6 +77,7 @@ export function normalizeWorkflowTab(tab: unknown): WorkflowTab {
     activeCodeFragmentId,
     codeFragmentsUseMarkers: restoredCodeFragments.useMarkers,
     activeView: normalizePlaygroundView(tab.activeView),
+    activeEditorView: normalizeWorkflowEditorView(tab.activeEditorView),
     inputJson: metadata.inputJson ?? (typeof tab.inputJson === 'string' ? tab.inputJson : JSON.stringify(fieldsToObject(tab.inputFields), null, 2)),
     secretsJson: metadata.secretsJson ?? (typeof tab.secretsJson === 'string' ? tab.secretsJson : JSON.stringify(fieldsToObject(tab.secretFields), null, 2)),
     eventLog: Array.isArray(tab.eventLog) ? tab.eventLog : [],
@@ -177,11 +179,15 @@ function normalizePlaygroundView(value: unknown): WorkflowTab['activeView'] {
     return 'graph';
   }
 
-  if (value === 'runtime') {
-    return 'runtime';
+  return 'workflow';
+}
+
+function normalizeWorkflowEditorView(value: unknown): WorkflowTab['activeEditorView'] {
+  if (value === 'input' || value === 'secrets') {
+    return value;
   }
 
-  return 'workflow';
+  return 'code';
 }
 
 function normalizeGraphState(value: unknown): WorkflowTab['graphState'] {
