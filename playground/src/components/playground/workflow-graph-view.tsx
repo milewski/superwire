@@ -373,12 +373,12 @@ function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
       ) : (
         <>
           {node.kind !== 'agent' && node.details.length > 0 ? <GraphDetails title={node.kind === 'mcp' ? 'MCP bindings' : 'Details'} details={node.details} collapsible={node.kind === 'mcp'} /> : null}
-          {visibleBindings.length > 0 ? <GraphBindings bindings={visibleBindings} /> : null}
-          <GraphPorts title="Inputs" ports={node.inputs} fallback={node.kind === 'input' ? 'External runtime values' : 'No upstream agent output'} config={config} collapsible={inputsCollapsible} targetHandleId={inputPortTargetHandleId(node)} />
+          {visibleBindings.length > 0 ? <GraphBindings bindings={visibleBindings} targetHandleId={node.kind === 'dynamic' && mcpTools.length > 0 ? 'mcp-access' : undefined} /> : null}
+          <GraphPorts title="Inputs" ports={node.inputs} fallback={inputPortFallback(node)} config={config} collapsible={inputsCollapsible} targetHandleId={inputPortTargetHandleId(node)} />
           <GraphPorts title="Outputs" ports={node.outputs} config={config} collapsible={outputsCollapsible} defaultOpen={node.kind !== 'agent'} showPortNames={node.kind !== 'agent' && node.kind !== 'output'} sourceHandleId={outputPortSourceHandleId(node)} />
           {outputEntries.length > 0 ? <GraphOutputAction node={node} outputEntries={outputEntries} onOpen={() => openOutput(0)} /> : null}
           {node.kind === 'mcp' && node.tools.length > 0 ? <GraphMcpDefinitions tools={node.tools} config={config} /> : null}
-          {node.kind === 'agent' && mcpTools.length > 0 ? <GraphMcpAccess tools={mcpTools} config={config} /> : null}
+          {(node.kind === 'agent' || node.kind === 'dynamic') && mcpTools.length > 0 ? <GraphMcpAccess tools={mcpTools} config={config} showTargetHandle={node.kind !== 'dynamic'} /> : null}
           {localTools.length > 0 ? <GraphTools title="Local tools" tools={localTools} config={config} /> : null}
         </>
       )}
@@ -402,7 +402,7 @@ function GraphNodeHandles({ node, collapsed, showExpandedInstructionHandle }: { 
       {hasCollapsedSourceHandle ? <span className="graph-node__collapsed-handle graph-node__collapsed-handle--right" aria-hidden="true" /> : null}
       {node.kind === 'model' ? <Handle id="client" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--client" isConnectable={false} /> : null}
       {node.kind === 'agent' ? <Handle id="instruction" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--instruction" isConnectable={false} /> : null}
-      {node.kind === 'agent' ? <Handle id="mcp-access" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--mcp-access" isConnectable={false} /> : null}
+      {node.kind === 'agent' || node.kind === 'dynamic' ? <Handle id="mcp-access" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--mcp-access" isConnectable={false} /> : null}
       {node.kind !== 'input' ? <Handle id="inputs" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--inputs" isConnectable={false} /> : null}
       {node.kind === 'provider' ? <Handle id="client" type="source" position={Position.Right} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--client" isConnectable={false} /> : null}
       {node.kind === 'model' ? <Handle id="model" type="source" position={Position.Right} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--model" isConnectable={false} /> : null}
@@ -584,10 +584,13 @@ function GraphDetails({ title, details, collapsible = false }: { title: string; 
   );
 }
 
-function GraphBindings({ bindings }: { bindings: WorkflowExecutionGraphNode['bindings'] }) {
+function GraphBindings({ bindings, targetHandleId }: { bindings: WorkflowExecutionGraphNode['bindings']; targetHandleId?: string }) {
   return (
     <section className="graph-node__section graph-node__bindings">
-      <span>Bindings</span>
+      <span className="graph-node__section-label">
+        {targetHandleId ? <Handle id={targetHandleId} type="target" position={Position.Left} className="graph-node__handle graph-node__handle--section graph-node__handle--mcp-access" isConnectable={false} /> : null}
+        Bindings
+      </span>
       <ul>
         {bindings.map((binding) => (
           <li key={`${binding.name}:${binding.expression}`}>
@@ -806,7 +809,7 @@ function GraphMcpDefinitions({ tools, config }: { tools: WorkflowExecutionGraphT
   );
 }
 
-function GraphMcpAccess({ tools, config }: { tools: WorkflowExecutionGraphTool[]; config: GraphConfig }) {
+function GraphMcpAccess({ tools, config, showTargetHandle = true }: { tools: WorkflowExecutionGraphTool[]; config: GraphConfig; showTargetHandle?: boolean }) {
   const [open, setOpen] = useState(false);
   const toolsByServerName = tools.reduce((groupedTools, tool) => {
     const serverName = tool.server_name ?? 'unknown';
@@ -823,7 +826,7 @@ function GraphMcpAccess({ tools, config }: { tools: WorkflowExecutionGraphTool[]
     <>
       <section className="graph-node__section graph-node__tools graph-node__mcp-access">
         <span className="graph-node__section-label">
-          <Handle id="mcp-access" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--section graph-node__handle--mcp-access" isConnectable={false} />
+          {showTargetHandle ? <Handle id="mcp-access" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--section graph-node__handle--mcp-access" isConnectable={false} /> : null}
           MCP access
         </span>
         <GraphToolSummaryButton title="View MCP access" tools={tools} detail={`${serverEntries.length} ${serverEntries.length === 1 ? 'server' : 'servers'}`} onOpen={() => setOpen(true)} />
@@ -1029,7 +1032,7 @@ function graphWithProviderModelDeclarations(graph: WorkflowExecutionGraph, decla
   const edgesById = new Map(graph.edges.map((edge) => [edge.id, edge]));
 
   for (const node of Array.from(nodesById.values())) {
-    if (node.kind !== 'agent') {
+    if (node.kind !== 'agent' && node.kind !== 'dynamic') {
       continue;
     }
 
@@ -1073,7 +1076,7 @@ function graphWithProviderModelDeclarations(graph: WorkflowExecutionGraph, decla
   }
 
   for (const node of Array.from(nodesById.values())) {
-    if (node.kind !== 'agent') {
+    if (node.kind !== 'agent' && node.kind !== 'dynamic') {
       continue;
     }
 
@@ -1902,6 +1905,18 @@ function inputPortTargetHandleId(node: WorkflowExecutionGraphNode) {
   return undefined;
 }
 
+function inputPortFallback(node: WorkflowExecutionGraphNode) {
+  if (node.kind === 'input') {
+    return 'External runtime values';
+  }
+
+  if (node.kind === 'dynamic') {
+    return 'No upstream runtime values';
+  }
+
+  return 'No upstream agent output';
+}
+
 function outputPortSourceHandleId(node: WorkflowExecutionGraphNode) {
   if (node.kind === 'provider') {
     return 'client';
@@ -2051,11 +2066,15 @@ function initialWorkflowGraphNodeRank(node: WorkflowGraphReactNode) {
     return 1;
   }
 
-  if (node.data.node.kind === 'output') {
-    return 3;
+  if (node.data.node.kind === 'dynamic') {
+    return 2;
   }
 
-  return 2;
+  if (node.data.node.kind === 'output') {
+    return 4;
+  }
+
+  return 3;
 }
 
 function compareWorkflowGraphNodesForLayout(leftNode: WorkflowGraphReactNode, rightNode: WorkflowGraphReactNode) {
@@ -2093,11 +2112,15 @@ function workflowGraphNodeKindLayoutWeight(nodeKind: WorkflowExecutionGraphNode[
     return 3;
   }
 
-  if (nodeKind === 'agent') {
+  if (nodeKind === 'dynamic') {
     return 4;
   }
 
-  return 5;
+  if (nodeKind === 'agent') {
+    return 5;
+  }
+
+  return 6;
 }
 
 function workflowGraphNodeWidth(node: WorkflowGraphReactNode) {
@@ -2123,6 +2146,10 @@ function nodePosition(node: WorkflowExecutionGraphNode, lastColumn: number, node
 
   if (node.kind === 'input') {
     return { x: 0, y: 430 };
+  }
+
+  if (node.kind === 'dynamic') {
+    return { x: 720, y: 430 + nodeKindIndex(node, nodes) * 260 };
   }
 
   if (node.kind === 'output') {
@@ -2161,7 +2188,7 @@ function nodeStatus(node: WorkflowExecutionGraphNode, activeRunCount: number, ou
     return 'running';
   }
 
-  if (node.kind === 'provider' || node.kind === 'model' || node.kind === 'mcp' || node.kind === 'input' || outputEntries.length > 0) {
+  if (node.kind === 'provider' || node.kind === 'model' || node.kind === 'mcp' || node.kind === 'input' || node.kind === 'dynamic' || outputEntries.length > 0) {
     return 'completed';
   }
 
@@ -2205,6 +2232,10 @@ function nodeSubtitle(node: WorkflowExecutionGraphNode) {
     return 'Runtime values';
   }
 
+  if (node.kind === 'dynamic') {
+    return 'Dynamic values';
+  }
+
   if (node.kind === 'output') {
     return 'Final payload';
   }
@@ -2231,6 +2262,10 @@ function nodeIcon(node: WorkflowExecutionGraphNode) {
 
   if (node.kind === 'input') {
     return <Layers3 />;
+  }
+
+  if (node.kind === 'dynamic') {
+    return <DatabaseZap />;
   }
 
   if (node.kind === 'output') {
@@ -2263,6 +2298,10 @@ function nodeColor(node: Node) {
 
   if (node.id === 'input') {
     return '#247ea3';
+  }
+
+  if (node.id === 'dynamic') {
+    return '#4f8b7b';
   }
 
   if (node.id === 'output') {

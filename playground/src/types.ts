@@ -63,7 +63,7 @@ export interface WorkflowExecutionGraphNode {
   loop_info: WorkflowExecutionGraphLoopInfo | null;
 }
 
-export type WorkflowExecutionGraphNodeKind = 'provider' | 'model' | 'mcp' | 'input' | 'agent' | 'output';
+export type WorkflowExecutionGraphNodeKind = 'provider' | 'model' | 'mcp' | 'input' | 'dynamic' | 'agent' | 'output';
 
 export interface WorkflowExecutionGraphDetail {
   name: string;
@@ -109,4 +109,4 @@ export interface WorkflowExecutionGraphEdge {
   kind: WorkflowExecutionGraphEdgeKind;
 }
 
-export type WorkflowExecutionGraphEdgeKind = 'provider_client' | 'model' | 'mcp_access' | 'input' | 'agent_dependency' | 'workflow_output';
+export type WorkflowExecutionGraphEdgeKind = 'provider_client' | 'model' | 'mcp_access' | 'input' | 'dynamic' | 'agent_dependency' | 'workflow_output';

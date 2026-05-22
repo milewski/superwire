@@ -449,6 +449,83 @@ impl Expression {
         }
     }
 
+    pub(crate) fn references_runtime(&self) -> bool {
+        let mut runtime_dependencies = HashSet::new();
+        self.collect_runtime_dependencies(&mut runtime_dependencies);
+
+        !runtime_dependencies.is_empty()
+    }
+
+    pub(crate) fn collect_runtime_dependencies<HashBuilder: BuildHasher>(
+        &self,
+        runtime_dependencies: &mut HashSet<ReferenceKeyword, HashBuilder>,
+    ) {
+        match self {
+            Self::Reference(reference) => {
+                reference.collect_runtime_dependency(runtime_dependencies);
+            }
+            Self::FunctionCall(function_call) => {
+                function_call.callee.collect_runtime_dependency(runtime_dependencies);
+
+                for call_argument in &function_call.arguments {
+                    call_argument.expression().collect_runtime_dependencies(runtime_dependencies);
+                }
+            }
+            Self::ToolCall(tool_call) => {
+                tool_call.callee.collect_runtime_dependency(runtime_dependencies);
+
+                for input_field in &tool_call.input_fields {
+                    input_field.value.collect_runtime_dependencies(runtime_dependencies);
+                }
+
+                for binding_field in &tool_call.binding_fields {
+                    binding_field.value.collect_runtime_dependencies(runtime_dependencies);
+                }
+            }
+            Self::McpCall(mcp_call) => {
+                mcp_call.callee.collect_runtime_dependency(runtime_dependencies);
+
+                for parameter_field in &mcp_call.parameter_fields {
+                    parameter_field.value.collect_runtime_dependencies(runtime_dependencies);
+                }
+            }
+            Self::NullFallback(null_fallback) => {
+                null_fallback.value.collect_runtime_dependencies(runtime_dependencies);
+                null_fallback.fallback.collect_runtime_dependencies(runtime_dependencies);
+            }
+            Self::VariantProjection(variant_projection) => {
+                variant_projection.value.collect_runtime_dependency(runtime_dependencies);
+            }
+            Self::Match(match_expression) => {
+                match_expression.value.collect_runtime_dependencies(runtime_dependencies);
+
+                for branch in &match_expression.branches {
+                    if let MatchBranch::Fallback { value, span: _ } = branch {
+                        value.collect_runtime_dependencies(runtime_dependencies);
+                    }
+                }
+            }
+            Self::ArrayLiteral(item_expressions) => {
+                for item_expression in item_expressions {
+                    item_expression.collect_runtime_dependencies(runtime_dependencies);
+                }
+            }
+            Self::ObjectLiteral(object_fields) => {
+                for object_field in object_fields {
+                    object_field.value.collect_runtime_dependencies(runtime_dependencies);
+                }
+            }
+            Self::StringTemplate(string_template) => {
+                for string_template_part in &string_template.parts {
+                    if let StringTemplatePart::Interpolation(interpolation_expression) = string_template_part {
+                        interpolation_expression.collect_runtime_dependencies(runtime_dependencies);
+                    }
+                }
+            }
+            Self::StringLiteral(_) | Self::NumberLiteral(_) | Self::BooleanLiteral(_) | Self::NullLiteral => {}
+        }
+    }
+
     #[must_use]
     pub fn to_type_expression(&self) -> Option<TypeExpression> {
         match self {

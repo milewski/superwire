@@ -197,6 +197,26 @@ impl Reference {
         referenced_dynamic_fields.insert(dynamic_field_name.to_string());
     }
 
+    pub(crate) fn collect_runtime_dependency<HashBuilder: BuildHasher>(
+        &self,
+        referenced_runtime_roots: &mut HashSet<ReferenceKeyword, HashBuilder>,
+    ) {
+        match self.root_keyword() {
+            Some(reference_keyword @ (ReferenceKeyword::Input | ReferenceKeyword::Secrets)) => {
+                referenced_runtime_roots.insert(reference_keyword);
+            }
+            Some(
+                ReferenceKeyword::Agent
+                | ReferenceKeyword::Dynamic
+                | ReferenceKeyword::Model
+                | ReferenceKeyword::Tool
+                | ReferenceKeyword::Resource
+                | ReferenceKeyword::Prompt,
+            )
+            | None => {}
+        }
+    }
+
     pub(crate) fn collect_agent_dependency<HashBuilder: BuildHasher>(&self, referenced_agents: &mut HashSet<String, HashBuilder>) {
         if !self.is_agent_root() {
             return;

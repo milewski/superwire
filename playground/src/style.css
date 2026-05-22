@@ -1275,6 +1275,11 @@ textarea {
   background: var(--graph-panel);
 }
 
+.graph-node--dynamic {
+  border-color: color-mix(in srgb, var(--graph-dynamic) 34%, var(--graph-line));
+  background: var(--graph-panel);
+}
+
 .graph-node--agent {
   border-color: color-mix(in srgb, var(--graph-agent) 28%, var(--graph-line));
 }
@@ -1332,8 +1337,9 @@ textarea {
   @apply mt-3 rounded-xl border p-3;
   border-color: color-mix(in srgb, var(--border) 78%, transparent);
   background: color-mix(in srgb, var(--background) 72%, transparent);
-  width: max-content;
+  width: 100%;
   min-width: 100%;
+  max-width: 520px;
 }
 
 .graph-node[data-density="compact"] .graph-node__section {
@@ -1359,6 +1365,7 @@ textarea {
 
 .graph-node__section li {
   @apply grid gap-1;
+  min-width: 0;
 }
 
 .graph-node__section code {
@@ -1380,10 +1387,12 @@ textarea {
   background: color-mix(in srgb, var(--card) 88%, transparent);
   color: var(--foreground);
   font-family: var(--font-mono);
-  overflow: visible;
+  overflow: auto;
   white-space: pre;
-  width: max-content;
+  width: 100%;
   min-width: 100%;
+  max-width: min(480px, 72vw);
+  max-height: 180px;
 }
 
 .graph-node__schema-line {
@@ -1634,6 +1643,10 @@ textarea {
   stroke: var(--superwire-accent);
 }
 
+.graph-edge--dynamic path {
+  stroke: var(--graph-dynamic);
+}
+
 .graph-edge--workflow_output path {
   stroke: var(--graph-output);
 }
@@ -1705,6 +1718,7 @@ textarea {
   --graph-output: #3f8f5f;
   --graph-model: #8065c8;
   --graph-mcp: #66735f;
+  --graph-dynamic: #4f8b7b;
   --graph-idle: color-mix(in srgb, var(--foreground) 36%, transparent);
   gap: 0.9rem;
 }
@@ -2376,7 +2390,10 @@ textarea {
 
 .graph-node__details li code,
 .graph-node__bindings li small {
+  display: block;
   min-width: 0;
+  width: 100%;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2558,6 +2575,10 @@ textarea {
 
 .graph-edge--mcp_access path {
   stroke: var(--graph-mcp);
+}
+
+.graph-edge--dynamic path {
+  stroke: var(--graph-dynamic);
 }
 
 .graph-edge--agent_dependency path {
