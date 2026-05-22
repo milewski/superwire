@@ -3,7 +3,6 @@ use crate::event::ExecutorEvent;
 use crate::model::{ModelToolDefinition, ToolCallTracker};
 use crate::runtime::state::RuntimeState;
 use serde_json::{Map, Value};
-use std::collections::HashMap;
 use superwire_core::semantic::support::types::validate_value_against_type;
 use superwire_core::semantic::PlannedAgent;
 use tokio::sync::mpsc;
@@ -39,7 +38,7 @@ impl WorkflowExecutor {
         tool_call_tracker: &ToolCallTracker,
     ) -> Result<Value, ExecutorError> {
         let mut output_fields = Map::new();
-        let evaluation_context = runtime_state.evaluation_context(HashMap::new());
+        let evaluation_context = runtime_state.evaluation_context();
         let tool_call_execution_context = ToolCallExecutionContext::new(&evaluation_context, event_sender, tool_call_tracker);
 
         for output_field in &self.execution_plan.output_declaration.fields {

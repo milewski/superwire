@@ -4,7 +4,6 @@ use crate::model::{ModelProvider, ToolCallTracker};
 use crate::runtime::state::RuntimeState;
 use futures::future::try_join_all;
 use serde_json::Value;
-use std::collections::HashMap;
 use superwire_core::dsl::Declaration;
 use tokio::sync::mpsc;
 
@@ -31,7 +30,7 @@ impl WorkflowExecutor {
 
         self.execute_workflow_dynamic_blocks(&mut runtime_state, event_sender.as_ref(), &tool_call_tracker)?;
 
-        let import_context = self.resolve_mcp_import_context(&runtime_state.evaluation_context(HashMap::new()))?;
+        let import_context = self.resolve_mcp_import_context(&runtime_state.evaluation_context())?;
 
         log::debug!(
             "workflow-level import context resolved: {}",
@@ -50,8 +49,7 @@ impl WorkflowExecutor {
                     .execution_plan
                     .planned_agents
                     .get(&agent_name)
-                    .expect("planned agent should exist")
-                    .clone();
+                    .expect("planned agent should exist");
 
                 if planned_agent.declaration.for_loop.is_some() {
                     for_loop_agents.push(planned_agent);
@@ -87,7 +85,7 @@ impl WorkflowExecutor {
 
                 pending_executions.push(async move {
                     self.execute_agent(AgentRunContext {
-                        planned_agent: &planned_agent,
+                        planned_agent,
                         runtime_state: &runtime_state_snapshot,
                         model_provider,
                         agent_execution_context: &agent_execution_context,
@@ -123,7 +121,7 @@ impl WorkflowExecutor {
             };
 
             for dynamic_field in &dynamic_block.fields {
-                let evaluation_context = runtime_state.evaluation_context(HashMap::new());
+                let evaluation_context = runtime_state.evaluation_context();
                 let tool_call_execution_context = ToolCallExecutionContext::new(&evaluation_context, event_sender, tool_call_tracker);
                 let field_value = self.evaluate_runtime_expression(
                     &dynamic_field.value,

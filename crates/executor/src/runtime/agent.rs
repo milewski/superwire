@@ -74,7 +74,7 @@ impl WorkflowExecutor {
             &agent_execution_context.tool_call_tracker,
         )?;
 
-        let evaluation_context = runtime_state.evaluation_context(agent_dynamic_values);
+        let evaluation_context = runtime_state.evaluation_context_with_bindings(&agent_dynamic_values);
 
         log::info!("starting agent `{}`", planned_agent.name);
 
@@ -159,11 +159,12 @@ impl WorkflowExecutor {
 
         let tool_call_execution_context =
             ToolCallExecutionContext::new(evaluation_context, None, &agent_execution_context.tool_call_tracker);
-        let agent_instruction = normalize_prompt(self.evaluate_runtime_expression(
+        let agent_instruction_value = self.evaluate_runtime_expression(
             instruction_expression,
             tool_call_execution_context,
             &format!("instruction for agent `{}`", planned_agent.name),
-        )?);
+        )?;
+        let agent_instruction = normalize_prompt(&agent_instruction_value);
         let prompt = if agent_execution_context.import_context.is_empty() {
             agent_instruction
         } else {
@@ -203,7 +204,7 @@ impl WorkflowExecutor {
             };
 
             for dynamic_field in &dynamic_block.fields {
-                let evaluation_context = runtime_state.evaluation_context(dynamic_values.clone());
+                let evaluation_context = runtime_state.evaluation_context_with_bindings(&dynamic_values);
                 let tool_call_execution_context = ToolCallExecutionContext::new(&evaluation_context, event_sender, tool_call_tracker);
                 let field_value = self.evaluate_runtime_expression(
                     &dynamic_field.value,

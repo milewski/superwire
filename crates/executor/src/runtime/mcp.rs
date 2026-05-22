@@ -291,17 +291,17 @@ impl WorkflowExecutor {
     }
 }
 
-pub(in crate::runtime) fn normalize_prompt(prompt_value: Value) -> String {
+pub(in crate::runtime) fn normalize_prompt(prompt_value: &Value) -> String {
     if let Some(prompt) = prompt_value.as_str() {
         return prompt.to_string();
     }
 
-    serde_json::to_string(&prompt_value).unwrap_or_else(|_| prompt_value.to_string())
+    serde_json::to_string(prompt_value).unwrap_or_else(|_| prompt_value.to_string())
 }
 
 fn render_mcp_prompt_result(result: &Value) -> String {
     let Some(messages) = result.get("messages").and_then(Value::as_array) else {
-        return normalize_prompt(result.clone());
+        return normalize_prompt(result);
     };
     let mut rendered_messages = Vec::new();
 
@@ -316,7 +316,7 @@ fn render_mcp_prompt_result(result: &Value) -> String {
 
 fn render_mcp_resource_result(result: &Value) -> String {
     let Some(contents) = result.get("contents").and_then(Value::as_array) else {
-        return normalize_prompt(result.clone());
+        return normalize_prompt(result);
     };
     let mut rendered_contents = Vec::new();
 
@@ -340,5 +340,5 @@ fn render_mcp_content_value(content: &Value) -> String {
         return blob.to_string();
     }
 
-    normalize_prompt(content.clone())
+    normalize_prompt(content)
 }

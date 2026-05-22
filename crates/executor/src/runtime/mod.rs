@@ -20,7 +20,6 @@ use crate::runtime::mcp::normalize_prompt;
 use crate::runtime::state::RuntimeState;
 use crate::runtime::tools::ExpressionMcpExecutionPlanExt;
 use serde_json::{Map, Value};
-use std::collections::HashMap;
 use superwire_core::dsl::{AgentProperty, Declaration, Expression, Workflow};
 use superwire_core::mcp::McpClientPool;
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
@@ -94,7 +93,7 @@ impl WorkflowExecutor {
     pub fn planned_execution_steps(&self, input: &Value, secrets: &Value, max_concurrency: usize) -> Result<Value, ExecutorError> {
         let runtime_configuration = self.resolve_runtime_configuration(RuntimeValidationContext { input, secrets })?;
         let runtime_state = RuntimeState::new(runtime_configuration.input_values, runtime_configuration.secret_values);
-        let evaluation_context = runtime_state.evaluation_context(HashMap::new());
+        let evaluation_context = runtime_state.evaluation_context();
         let mut steps = Vec::new();
 
         let dynamic_calls = self.planned_workflow_dynamic_calls(&evaluation_context)?;
@@ -201,7 +200,7 @@ impl WorkflowExecutor {
                         superwire_core::dsl::StringTemplatePart::Interpolation(interpolation_expression) => {
                             let interpolation_value =
                                 self.evaluate_runtime_expression(interpolation_expression, tool_call_execution_context, context)?;
-                            rendered_template.push_str(&normalize_prompt(interpolation_value));
+                            rendered_template.push_str(&normalize_prompt(&interpolation_value));
                         }
                     }
                 }

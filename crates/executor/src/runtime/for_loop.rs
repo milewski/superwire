@@ -3,7 +3,6 @@ use crate::model::ModelProvider;
 use crate::runtime::state::RuntimeState;
 use futures::stream::{FuturesUnordered, StreamExt};
 use serde_json::Value;
-use std::collections::HashMap;
 use std::sync::Arc;
 use superwire_core::dsl::AgentForLoopPattern;
 use superwire_core::semantic::support::expression::evaluate_expression;
@@ -14,7 +13,7 @@ use tokio::sync::Semaphore;
 impl WorkflowExecutor {
     pub(in crate::runtime) async fn execute_for_loop_agent<ModelProviderType>(
         &self,
-        planned_agent: PlannedAgent,
+        planned_agent: &PlannedAgent,
         runtime_state: &RuntimeState,
         model_provider: &ModelProviderType,
         max_concurrency: usize,
@@ -28,8 +27,8 @@ impl WorkflowExecutor {
             .for_loop
             .as_ref()
             .expect("for-loop agent must have for_loop");
-        let loop_pattern = for_loop.pattern.clone();
-        let evaluation_context = runtime_state.evaluation_context(HashMap::new());
+        let loop_pattern = &for_loop.pattern;
+        let evaluation_context = runtime_state.evaluation_context();
         let iterable_value = evaluate_expression(
             &for_loop.iterable,
             &evaluation_context,
@@ -62,7 +61,6 @@ impl WorkflowExecutor {
             loop_pattern.bind_loop_variables(item, &mut iteration_state)?;
 
             let semaphore_clone = semaphore.clone();
-            let agent_clone = planned_agent.clone();
             let iteration_execution_context = AgentExecutionContext {
                 event_sender: agent_execution_context.event_sender.clone(),
                 import_context: agent_execution_context.import_context.clone(),
@@ -75,7 +73,7 @@ impl WorkflowExecutor {
                 })?;
                 let result = self
                     .execute_agent(AgentRunContext {
-                        planned_agent: &agent_clone,
+                        planned_agent,
                         runtime_state: &iteration_state,
                         model_provider,
                         agent_execution_context: &iteration_execution_context,
