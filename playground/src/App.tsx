@@ -1,4 +1,4 @@
-import { Braces, Copy, GitBranch, Moon, Pencil, Play, Plus, RefreshCcw, Square, Sun, Trash2, Workflow } from 'lucide-react';
+import { Braces, Copy, Download, GitBranch, Moon, Pencil, Play, Plus, RefreshCcw, Square, Sun, Trash2, Workflow } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -9,6 +9,7 @@ import PanelCard from '@/components/panel-card';
 import EventLog, { EventGroupingMode } from '@/components/playground/event-log';
 import JsonRuntimeEditor from '@/components/playground/json-runtime-editor';
 import OutputBox from '@/components/playground/output-box';
+import PlaygroundTabChip from '@/components/playground/tab-chip';
 import RunStateBadge from '@/components/playground/run-state-badge';
 import StatusPill from '@/components/playground/status-pill';
 import ViewHeader from '@/components/playground/view-header';
@@ -16,12 +17,38 @@ import WorkflowGraphView from '@/components/playground/workflow-graph-view';
 import logoSource from '../../documentation/docs/public/logo-horizontal.svg';
 import type { ExecutorEvent, PlaygroundView, WorkflowExecutionGraph, WorkflowTab } from './types';
 import WireEditor from './WireEditor';
+import { parseWorkflowSourceMetadata, workflowSourceWithMetadata, workflowSourceWithoutMetadata } from './workflowMetadata';
+import {
+  createWorkflowCodeFragment,
+  parseWorkflowSourceFragments,
+  preserveWorkflowCodeFragmentIdentities,
+  sourceMapForFragment,
+  sourceMapForFullOffset,
+  uniqueCodeFragmentName,
+  workflowSourceFromCodeFragments,
+} from './workflowFragments';
 import { workflowTemplates, type WorkflowTemplate } from './workflowTemplates';
 import { createWorkflowTab, recoverWorkflowTabAfterReload, parseJsonObject, uniqueId } from './workflowState';
 
 const tabsStorageKey = 'superwire.playground.tabs.v3';
 const activeTabStorageKey = 'superwire.playground.activeTab.v3';
 const themeStorageKey = 'superwire.playground.theme';
+
+type RenameDialogTarget =
+  | { kind: 'workflow'; tabId: string }
+  | { kind: 'codeFragment'; tabId: string; fragmentId: string };
+
+interface EditorJumpTarget {
+  tabId: string;
+  fragmentId: string;
+  offset: number;
+  sequence: number;
+}
+
+interface LspPosition {
+  line: number;
+  character: number;
+}
 
 export default function App() {
   const [tabs, setTabs] = useState<WorkflowTab[]>(() => [createWorkflowTab('Launch brief')]);
@@ -32,10 +59,13 @@ export default function App() {
   const [eventsOpen, setEventsOpen] = useState(true);
   const [eventGroupingMode, setEventGroupingMode] = useState<EventGroupingMode>(EventGroupingMode.Chronological);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
-  const [renameDialogTabId, setRenameDialogTabId] = useState<string | null>(null);
+  const [renameDialogTarget, setRenameDialogTarget] = useState<RenameDialogTarget | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
   const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
+  const [draggedCodeFragmentId, setDraggedCodeFragmentId] = useState<string | null>(null);
+  const [dragOverCodeFragmentId, setDragOverCodeFragmentId] = useState<string | null>(null);
+  const [editorJumpTarget, setEditorJumpTarget] = useState<EditorJumpTarget | null>(null);
   const validationDebounceTimeoutRef = useRef<number | null>(null);
   const graphDebounceTimeoutRef = useRef<number | null>(null);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
@@ -43,6 +73,14 @@ export default function App() {
   const activeView: PlaygroundView = activeTab?.activeView ?? 'workflow';
   const shouldShowTemplatePicker = activeView === 'workflow' && (activeTab?.source.trim() ?? '') === '';
   const editorMessageTone = resolveEditorMessageTone(activeTab);
+  const activeCodeFragment = activeTab?.codeFragments.find((fragment) => fragment.id === activeTab.activeCodeFragmentId) ?? activeTab?.codeFragments[0];
+  const activeCodeFragmentSourceMap = activeTab && activeCodeFragment
+    ? sourceMapForFragment(activeTab.codeFragments, activeTab.codeFragmentsUseMarkers, activeCodeFragment.id)
+    : null;
+  const activeEditorJumpTarget =
+    activeTab && activeCodeFragment && editorJumpTarget?.tabId === activeTab.id && editorJumpTarget.fragmentId === activeCodeFragment.id
+      ? editorJumpTarget
+      : null;
 
   useEffect(() => {
     restoreFromStorage(setTabs, setActiveTabId, setDarkMode);
@@ -150,6 +188,7 @@ export default function App() {
       ...structuredClone(sourceTab),
       id: uniqueId(),
       name: `${sourceTab.name} copy`,
+      codeFragments: sourceTab.codeFragments.map((fragment) => createWorkflowCodeFragment(fragment.name, fragment.source)),
       runState: 'idle',
       validationState: 'idle',
       message: 'Duplicated workflow.',
@@ -160,6 +199,8 @@ export default function App() {
       graphData: null,
       updatedAt: Date.now(),
     };
+    tab.activeCodeFragmentId = tab.codeFragments[0]?.id ?? '';
+    tab.source = workflowSourceFromCodeFragments(tab.codeFragments, tab.codeFragmentsUseMarkers);
 
     setTabs((currentTabs) => [...currentTabs, tab]);
     setActiveTabId(tab.id);
@@ -233,6 +274,175 @@ export default function App() {
     setDragOverTabId(null);
   }
 
+  function setActiveCodeFragment(fragmentId: string) {
+    updateActiveTab((tab) => ({ ...tab, activeCodeFragmentId: fragmentId }));
+  }
+
+  function addCodeFragment() {
+    const currentTab = requireActiveTab(activeTab);
+    const fragmentName = uniqueCodeFragmentName(currentTab.codeFragments, `Fragment ${currentTab.codeFragments.length + 1}`);
+    const codeFragment = createWorkflowCodeFragment(fragmentName);
+    const nextFragments = [...currentTab.codeFragments, codeFragment];
+
+    updateTab(currentTab.id, (tab) => ({
+      ...tab,
+      codeFragments: nextFragments,
+      activeCodeFragmentId: codeFragment.id,
+      codeFragmentsUseMarkers: true,
+      source: workflowSourceFromCodeFragments(nextFragments, true),
+      graphState: 'idle',
+      graphMessage: 'Graph needs to be regenerated after source changes.',
+      graphData: null,
+      updatedAt: Date.now(),
+    }));
+  }
+
+  function updateActiveCodeFragmentSource(source: string) {
+    updateActiveTab((tab) => {
+      const nextFragments = tab.codeFragments.map((fragment) => (
+        fragment.id === tab.activeCodeFragmentId ? { ...fragment, source } : fragment
+      ));
+      const nextSourceBeforeParsing = workflowSourceFromCodeFragments(nextFragments, tab.codeFragmentsUseMarkers);
+      const metadata = parseWorkflowSourceMetadata(nextSourceBeforeParsing);
+
+      if (metadata.source !== nextSourceBeforeParsing) {
+        const parsedResult = parseWorkflowSourceFragments(metadata.source, metadata.name ?? tab.name);
+        const codeFragments = preserveWorkflowCodeFragmentIdentities(parsedResult.fragments, tab.codeFragments);
+        const activeCodeFragmentId = codeFragments.find((fragment) => fragment.id === tab.activeCodeFragmentId)?.id ?? codeFragments[0]?.id ?? tab.activeCodeFragmentId;
+
+        return {
+          ...tab,
+          name: metadata.name ?? tab.name,
+          source: workflowSourceFromCodeFragments(codeFragments, parsedResult.useMarkers),
+          codeFragments,
+          activeCodeFragmentId,
+          codeFragmentsUseMarkers: parsedResult.useMarkers,
+          inputJson: metadata.inputJson ?? tab.inputJson,
+          secretsJson: metadata.secretsJson ?? tab.secretsJson,
+          graphState: 'idle',
+          graphMessage: 'Graph needs to be regenerated after source changes.',
+          graphData: null,
+          updatedAt: Date.now(),
+        };
+      }
+
+      return {
+        ...tab,
+        source: workflowSourceWithoutMetadata(nextSourceBeforeParsing),
+        codeFragments: nextFragments,
+        graphState: 'idle',
+        graphMessage: 'Graph needs to be regenerated after source changes.',
+        graphData: null,
+        updatedAt: Date.now(),
+      };
+    });
+  }
+
+  function closeCodeFragment(fragmentId: string) {
+    const currentTab = requireActiveTab(activeTab);
+
+    if (currentTab.codeFragments.length === 1) {
+      updateTab(currentTab.id, (tab) => {
+        const codeFragment = createWorkflowCodeFragment(tab.name);
+
+        return {
+          ...tab,
+          source: '',
+          codeFragments: [codeFragment],
+          activeCodeFragmentId: codeFragment.id,
+          codeFragmentsUseMarkers: false,
+          graphState: 'idle',
+          graphMessage: 'Graph needs to be regenerated after source changes.',
+          graphData: null,
+          updatedAt: Date.now(),
+        };
+      });
+
+      return;
+    }
+
+    updateTab(currentTab.id, (tab) => {
+      const closedIndex = tab.codeFragments.findIndex((fragment) => fragment.id === fragmentId);
+      const nextFragments = tab.codeFragments.filter((fragment) => fragment.id !== fragmentId);
+      const nextActiveFragmentId =
+        tab.activeCodeFragmentId === fragmentId
+          ? nextFragments[Math.max(0, closedIndex - 1)]?.id ?? nextFragments[0]?.id ?? ''
+          : tab.activeCodeFragmentId;
+      const useMarkers = nextFragments.length > 1;
+
+      return {
+        ...tab,
+        source: workflowSourceFromCodeFragments(nextFragments, useMarkers),
+        codeFragments: nextFragments,
+        activeCodeFragmentId: nextActiveFragmentId,
+        codeFragmentsUseMarkers: useMarkers,
+        graphState: 'idle',
+        graphMessage: 'Graph needs to be regenerated after source changes.',
+        graphData: null,
+        updatedAt: Date.now(),
+      };
+    });
+  }
+
+  function reorderCodeFragment(draggedFragmentIdentifier: string, targetFragmentIdentifier: string) {
+    if (draggedFragmentIdentifier === targetFragmentIdentifier) {
+      return;
+    }
+
+    updateActiveTab((tab) => {
+      const draggedIndex = tab.codeFragments.findIndex((fragment) => fragment.id === draggedFragmentIdentifier);
+      const targetIndex = tab.codeFragments.findIndex((fragment) => fragment.id === targetFragmentIdentifier);
+
+      if (draggedIndex < 0 || targetIndex < 0) {
+        return tab;
+      }
+
+      const nextFragments = [...tab.codeFragments];
+      const [draggedFragment] = nextFragments.splice(draggedIndex, 1);
+
+      nextFragments.splice(targetIndex, 0, draggedFragment);
+
+      return {
+        ...tab,
+        codeFragments: nextFragments,
+        codeFragmentsUseMarkers: true,
+        source: workflowSourceFromCodeFragments(nextFragments, true),
+        graphState: 'idle',
+        graphMessage: 'Graph needs to be regenerated after source changes.',
+        graphData: null,
+        updatedAt: Date.now(),
+      };
+    });
+  }
+
+  function handleCodeFragmentDragStart(fragmentId: string) {
+    setDraggedCodeFragmentId(fragmentId);
+    setDragOverCodeFragmentId(fragmentId);
+  }
+
+  function handleCodeFragmentDragOver(fragmentId: string) {
+    if (!draggedCodeFragmentId || draggedCodeFragmentId === fragmentId) {
+      return;
+    }
+
+    setDragOverCodeFragmentId(fragmentId);
+  }
+
+  function handleCodeFragmentDrop(targetFragmentId: string) {
+    if (!draggedCodeFragmentId) {
+      return;
+    }
+
+    reorderCodeFragment(draggedCodeFragmentId, targetFragmentId);
+    setDraggedCodeFragmentId(null);
+    setDragOverCodeFragmentId(null);
+  }
+
+  function clearCodeFragmentDragState() {
+    setDraggedCodeFragmentId(null);
+    setDragOverCodeFragmentId(null);
+  }
+
   function openRenameDialog(tabId: string) {
     const sourceTab = tabs.find((tab) => tab.id === tabId);
 
@@ -241,22 +451,55 @@ export default function App() {
     }
 
     setRenameDraft(sourceTab.name);
-    setRenameDialogTabId(tabId);
+    setRenameDialogTarget({ kind: 'workflow', tabId });
+  }
+
+  function openCodeFragmentRenameDialog(tabId: string, fragmentId: string) {
+    const sourceTab = tabs.find((tab) => tab.id === tabId);
+    const sourceFragment = sourceTab?.codeFragments.find((fragment) => fragment.id === fragmentId);
+
+    if (!sourceTab || !sourceFragment) {
+      return;
+    }
+
+    setRenameDraft(sourceFragment.name);
+    setRenameDialogTarget({ kind: 'codeFragment', tabId, fragmentId });
   }
 
   function closeRenameDialog() {
-    setRenameDialogTabId(null);
+    setRenameDialogTarget(null);
     setRenameDraft('');
   }
 
   function submitRenameDialog() {
     const nextName = renameDraft.trim();
 
-    if (!renameDialogTabId || !nextName) {
+    if (!renameDialogTarget || !nextName) {
       return;
     }
 
-    updateTab(renameDialogTabId, (tab) => ({ ...tab, name: nextName, updatedAt: Date.now() }));
+    if (renameDialogTarget.kind === 'workflow') {
+      updateTab(renameDialogTarget.tabId, (tab) => ({ ...tab, name: nextName, updatedAt: Date.now() }));
+      closeRenameDialog();
+
+      return;
+    }
+
+    updateTab(renameDialogTarget.tabId, (tab) => {
+      const nextFragments = tab.codeFragments.map((fragment) => (
+        fragment.id === renameDialogTarget.fragmentId ? { ...fragment, name: nextName } : fragment
+      ));
+
+      return {
+        ...tab,
+        codeFragments: nextFragments,
+        source: workflowSourceFromCodeFragments(nextFragments, tab.codeFragmentsUseMarkers),
+        graphState: 'idle',
+        graphMessage: 'Graph needs to be regenerated after source changes.',
+        graphData: null,
+        updatedAt: Date.now(),
+      };
+    });
     closeRenameDialog();
   }
 
@@ -310,13 +553,14 @@ export default function App() {
 
   async function formatWorkflow() {
     const currentTab = requireActiveTab(activeTab);
+    const currentCodeFragment = currentTab.codeFragments.find((fragment) => fragment.id === currentTab.activeCodeFragmentId);
     updateActiveTab((tab) => ({ ...tab, message: 'Formatting workflow...' }));
 
     try {
       const response = await fetch('/format', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ workflow_source: currentTab.source }),
+        body: JSON.stringify({ workflow_source: workflowSourceWithoutMetadata(currentTab.source) }),
       });
       const payload = await response.json();
 
@@ -326,9 +570,20 @@ export default function App() {
         return;
       }
 
+      const parsedResult = parseWorkflowSourceFragments(payload.formatted_workflow_source, currentTab.name);
+      const formattedCodeFragments = preserveWorkflowCodeFragmentIdentities(parsedResult.fragments, currentTab.codeFragments);
+      const activeCodeFragmentId =
+        formattedCodeFragments.find((fragment) => fragment.id === currentTab.activeCodeFragmentId)?.id
+        ?? formattedCodeFragments.find((fragment) => fragment.name === currentCodeFragment?.name)?.id
+        ?? formattedCodeFragments[0]?.id
+        ?? currentTab.activeCodeFragmentId;
+
       updateTab(currentTab.id, (tab) => ({
         ...tab,
-        source: payload.formatted_workflow_source,
+        source: workflowSourceFromCodeFragments(formattedCodeFragments, parsedResult.useMarkers),
+        codeFragments: formattedCodeFragments,
+        activeCodeFragmentId,
+        codeFragmentsUseMarkers: parsedResult.useMarkers,
         validationState: 'valid',
         message: 'Workflow formatted.',
         graphState: 'idle',
@@ -431,9 +686,14 @@ export default function App() {
   }
 
   function applyWorkflowTemplate(template: WorkflowTemplate) {
+    const parsedResult = parseWorkflowSourceFragments(template.source, template.name);
+
     updateActiveTab((tab) => ({
       ...tab,
       source: template.source,
+      codeFragments: parsedResult.fragments,
+      activeCodeFragmentId: parsedResult.fragments[0]?.id ?? tab.activeCodeFragmentId,
+      codeFragmentsUseMarkers: parsedResult.useMarkers,
       inputJson: JSON.stringify(template.input, null, 2),
       secretsJson: JSON.stringify(template.secrets, null, 2),
       message: `Loaded template: ${template.name}.`,
@@ -446,6 +706,36 @@ export default function App() {
       graphData: null,
       updatedAt: Date.now(),
     }));
+  }
+
+  async function exportWorkflowSource() {
+    const currentTab = requireActiveTab(activeTab);
+
+    try {
+      await navigator.clipboard.writeText(workflowSourceWithMetadata(currentTab.source, currentTab.name, currentTab.inputJson, currentTab.secretsJson));
+      updateTab(currentTab.id, (tab) => ({ ...tab, message: 'Workflow source copied to clipboard.' }));
+    } catch (error) {
+      updateTab(currentTab.id, (tab) => ({ ...tab, validationState: 'invalid', message: errorMessage(error) }));
+    }
+  }
+
+  function jumpToFullDocumentPosition(position: LspPosition) {
+    const currentTab = requireActiveTab(activeTab);
+    const fullOffset = lspPositionToOffset(currentTab.source, position);
+    const selectedSourceMap = sourceMapForFullOffset(currentTab.codeFragments, currentTab.codeFragmentsUseMarkers, fullOffset);
+
+    if (!selectedSourceMap) {
+      return;
+    }
+
+    setTabView('workflow');
+    setEditorJumpTarget({
+      tabId: currentTab.id,
+      fragmentId: selectedSourceMap.fragment.id,
+      offset: Math.max(0, Math.min(fullOffset - selectedSourceMap.sourceStartOffset, selectedSourceMap.fragment.source.length)),
+      sequence: Date.now(),
+    });
+    updateTab(currentTab.id, (tab) => ({ ...tab, activeCodeFragmentId: selectedSourceMap.fragment.id }));
   }
 
   async function loadGraph() {
@@ -535,43 +825,30 @@ export default function App() {
               <Tabs value={activeTab?.id ?? ''} onValueChange={setActiveTabId} className="playground__tabs">
                 <TabsList variant="line" className="h-auto flex-wrap justify-start gap-3 bg-transparent p-0">
                   {tabs.map((tab) => (
-                    <div
+                    <PlaygroundTabChip
                       key={tab.id}
-                      className="playground-tabs__item"
-                      draggable
-                      data-dragging={draggedTabId === tab.id ? 'true' : 'false'}
-                      data-drag-over={dragOverTabId === tab.id ? 'true' : 'false'}
+                      size="large"
+                      active={tab.id === activeTab?.id}
+                      activeGlow
+                      dragging={draggedTabId === tab.id}
+                      dragOver={dragOverTabId === tab.id}
                       onDragStart={() => handleTabDragStart(tab.id)}
-                      onDragOver={(dragEvent) => {
-                        dragEvent.preventDefault();
-                        handleTabDragOver(tab.id);
-                      }}
-                      onDrop={(dragEvent) => {
-                        dragEvent.preventDefault();
-                        handleTabDrop(tab.id);
-                      }}
+                      onDragOver={() => handleTabDragOver(tab.id)}
+                      onDrop={() => handleTabDrop(tab.id)}
                       onDragEnd={clearTabDragState}
-                    >
-                      <TabsTrigger value={tab.id} className="playground-tabs__trigger">
-                        <span className="playground-tabs__dot" />
-                        <span className="playground-tabs__title">{tab.name}</span>
-                        <RunStateBadge state={tab.runState} />
-                      </TabsTrigger>
-
-                      <div className="playground-tabs__actions">
-                        <Button className="playground-tabs__action" variant="ghost" size="icon-sm" aria-label={`Rename ${tab.name}`} onClick={() => openRenameDialog(tab.id)}>
-                          <Pencil />
-                        </Button>
-
-                        <Button className="playground-tabs__action" variant="ghost" size="icon-sm" aria-label={`Duplicate ${tab.name}`} onClick={() => duplicateTabById(tab.id)}>
-                          <Copy />
-                        </Button>
-
-                        <Button className="playground-tabs__action" variant="ghost" size="icon-sm" aria-label={`Close ${tab.name}`} onClick={() => closeTab(tab.id)}>
-                          <Trash2 />
-                        </Button>
-                      </div>
-                    </div>
+                      trigger={(
+                        <TabsTrigger value={tab.id} className="playground-tab-chip__trigger">
+                          <span className="playground-tab-chip__dot" />
+                          <span className="playground-tab-chip__title">{tab.name}</span>
+                          <RunStateBadge state={tab.runState} />
+                        </TabsTrigger>
+                      )}
+                      actions={[
+                        { label: `Rename ${tab.name}`, icon: <Pencil />, onClick: () => openRenameDialog(tab.id) },
+                        { label: `Duplicate ${tab.name}`, icon: <Copy />, onClick: () => duplicateTabById(tab.id) },
+                        { label: `Close ${tab.name}`, icon: <Trash2 />, onClick: () => closeTab(tab.id) },
+                      ]}
+                    />
                   ))}
                   <Button variant="outline" size="lg" className="playground-tabs__new" onClick={addTab}><Plus /> Workflow</Button>
                 </TabsList>
@@ -589,7 +866,6 @@ export default function App() {
 
                       <div className="playground-actions">
                         <StatusPill state={activeTab.validationState} />
-                        <Button variant="ghost" size="lg" onClick={formatWorkflow}><RefreshCcw /> Format</Button>
                         <Button variant="ghost" size="lg" onClick={validateWorkflow}>Validate</Button>
                         {activeTab.runState === 'running' ? (
                           <Button variant="destructive" size="lg" onClick={stopRun}><Square /> Stop</Button>
@@ -618,23 +894,51 @@ export default function App() {
                               <div className="panel-card__title-block">
                                 <strong>{activeTab.name}</strong>
                               </div>
+                              <div className="workflow-fragment-actions">
+                                <Button variant="ghost" size="sm" onClick={exportWorkflowSource}><Download /> Export</Button>
+                                <Button variant="ghost" size="sm" onClick={formatWorkflow}><RefreshCcw /> Format</Button>
+                                <Button variant="outline" size="sm" onClick={addCodeFragment}><Plus /> Fragment</Button>
+                              </div>
                             </div>
-                            <WireEditor
-                              key={activeTab.id}
-                              value={activeTab.source}
-                              documentId={activeTab.id}
-                              darkMode={darkMode}
-                              inputJson={activeTab.inputJson}
-                              secretsJson={activeTab.secretsJson}
-                              onChange={(source) => updateActiveTab((tab) => ({
-                                ...tab,
-                                source,
-                                graphState: 'idle',
-                                graphMessage: 'Graph needs to be regenerated after source changes.',
-                                graphData: null,
-                                updatedAt: Date.now(),
-                              }))}
-                            />
+                            <div className="workflow-fragment-tabs" aria-label="Workflow code fragments">
+                              {activeTab.codeFragments.map((fragment) => (
+                                <PlaygroundTabChip
+                                  key={fragment.id}
+                                  size="small"
+                                  active={fragment.id === activeTab.activeCodeFragmentId}
+                                  dragging={draggedCodeFragmentId === fragment.id}
+                                  dragOver={dragOverCodeFragmentId === fragment.id}
+                                  onDragStart={() => handleCodeFragmentDragStart(fragment.id)}
+                                  onDragOver={() => handleCodeFragmentDragOver(fragment.id)}
+                                  onDrop={() => handleCodeFragmentDrop(fragment.id)}
+                                  onDragEnd={clearCodeFragmentDragState}
+                                  trigger={(
+                                    <button type="button" className="playground-tab-chip__trigger" onClick={() => setActiveCodeFragment(fragment.id)}>
+                                      <span className="playground-tab-chip__title">{fragment.name}</span>
+                                    </button>
+                                  )}
+                                  actions={[
+                                    { label: `Rename ${fragment.name}`, icon: <Pencil />, onClick: () => openCodeFragmentRenameDialog(activeTab.id, fragment.id) },
+                                    { label: `Close ${fragment.name}`, icon: <Trash2 />, onClick: () => closeCodeFragment(fragment.id) },
+                                  ]}
+                                />
+                              ))}
+                            </div>
+                            {activeCodeFragment && activeCodeFragmentSourceMap ? (
+                              <WireEditor
+                                key={`${activeTab.id}-${activeCodeFragment.id}`}
+                                value={activeCodeFragment.source}
+                                fullValue={activeTab.source}
+                                documentId={activeTab.id}
+                                documentOffset={activeCodeFragmentSourceMap.sourceStartOffset}
+                                darkMode={darkMode}
+                                inputJson={activeTab.inputJson}
+                                secretsJson={activeTab.secretsJson}
+                                jumpTarget={activeEditorJumpTarget}
+                                onChange={updateActiveCodeFragmentSource}
+                                onDefinitionJump={jumpToFullDocumentPosition}
+                              />
+                            ) : null}
                             <div className={`workflow-editor__message workflow-editor__message--${editorMessageTone}`}>
                               <span className="workflow-editor__message-line workflow-editor__message-line--full">{activeTab.message ?? 'Ready.'}</span>
                             </div>
@@ -682,15 +986,19 @@ export default function App() {
       </div>
     </main>
 
-      <Dialog open={renameDialogTabId !== null} onOpenChange={(open) => {
+      <Dialog open={renameDialogTarget !== null} onOpenChange={(open) => {
         if (!open) {
           closeRenameDialog();
         }
       }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Rename workflow tab</DialogTitle>
-            <DialogDescription>Use a short, clear name for this workflow tab.</DialogDescription>
+            <DialogTitle>{renameDialogTarget?.kind === 'codeFragment' ? 'Rename code fragment' : 'Rename workflow tab'}</DialogTitle>
+            <DialogDescription>
+              {renameDialogTarget?.kind === 'codeFragment'
+                ? 'Use a short, clear name for this fragment tab.'
+                : 'Use a short, clear name for this workflow tab.'}
+            </DialogDescription>
           </DialogHeader>
 
           <form
@@ -829,6 +1137,18 @@ async function responsePayload(response: Response): Promise<Record<string, unkno
 
 function stringPayloadValue(value: unknown) {
   return typeof value === 'string' ? value : null;
+}
+
+function lspPositionToOffset(source: string, position: LspPosition): number {
+  const lines = source.split('\n');
+  const targetLineIndex = Math.min(Math.max(position.line, 0), Math.max(lines.length - 1, 0));
+  let offset = 0;
+
+  for (let lineIndex = 0; lineIndex < targetLineIndex; lineIndex += 1) {
+    offset += (lines[lineIndex]?.length ?? 0) + 1;
+  }
+
+  return Math.min(offset + Math.max(position.character, 0), offset + (lines[targetLineIndex]?.length ?? 0));
 }
 
 function resolveEditorMessageTone(activeTab: WorkflowTab | undefined): 'neutral' | 'success' | 'error' {

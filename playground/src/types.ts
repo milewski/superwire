@@ -16,6 +16,9 @@ export interface WorkflowTab {
   name: string;
   activeView: PlaygroundView;
   source: string;
+  codeFragments: WorkflowCodeFragment[];
+  activeCodeFragmentId: string;
+  codeFragmentsUseMarkers: boolean;
   inputJson: string;
   secretsJson: string;
   validationState: ValidationState;
@@ -27,6 +30,12 @@ export interface WorkflowTab {
   graphMessage: string;
   graphData: WorkflowExecutionGraph | null;
   updatedAt: number;
+}
+
+export interface WorkflowCodeFragment {
+  id: string;
+  name: string;
+  source: string;
 }
 
 export interface WorkflowExecutionGraph {

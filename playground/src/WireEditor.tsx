@@ -10,11 +10,15 @@ import { wireLanguage } from './wireLanguage';
 
 interface WireEditorProps {
   value: string;
+  fullValue: string;
   documentId: string;
+  documentOffset: number;
   darkMode: boolean;
   inputJson: string;
   secretsJson: string;
-  onChange: (value: string) => void;
+  jumpTarget: EditorJumpTarget | null;
+  onChange: (value: string, cursorOffset: number) => void;
+  onDefinitionJump: (position: LspPosition) => void;
 }
 
 interface JsonRpcResponse {
@@ -49,6 +53,10 @@ interface LspHover {
   contents?: string | { value?: string };
 }
 
+interface LspLocation {
+  range: LspRange;
+}
+
 interface LspRange {
   start: LspPosition;
   end: LspPosition;
@@ -63,6 +71,11 @@ type PendingRequest = {
   resolve: (value: unknown) => void;
   reject: (reason?: unknown) => void;
 };
+
+interface EditorJumpTarget {
+  offset: number;
+  sequence: number;
+}
 
 class WebSocketLanguageClient {
   private socket: WebSocket | null = null;
@@ -261,11 +274,26 @@ const baseTheme = EditorView.theme({
   },
 });
 
-export default function WireEditor({ value, documentId, darkMode, inputJson, secretsJson, onChange }: WireEditorProps) {
+export default function WireEditor({
+  value,
+  fullValue,
+  documentId,
+  documentOffset,
+  darkMode,
+  inputJson,
+  secretsJson,
+  jumpTarget,
+  onChange,
+  onDefinitionJump,
+}: WireEditorProps) {
   const editorElementRef = useRef<HTMLDivElement | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
   const languageClientRef = useRef<WebSocketLanguageClient | null>(null);
   const onChangeRef = useRef(onChange);
+  const onDefinitionJumpRef = useRef(onDefinitionJump);
+  const fullValueRef = useRef(fullValue);
+  const documentOffsetRef = useRef(documentOffset);
+  const visibleValueRef = useRef(value);
   const documentVersionRef = useRef(1);
   const didSaveDebounceTimeoutRef = useRef<number | null>(null);
   const diagnosticsRef = useRef<LspDiagnostic[]>([]);
@@ -273,6 +301,10 @@ export default function WireEditor({ value, documentId, darkMode, inputJson, sec
   const documentUri = `file:///playground/${documentId}.wire`;
 
   onChangeRef.current = onChange;
+  onDefinitionJumpRef.current = onDefinitionJump;
+  fullValueRef.current = fullValue;
+  documentOffsetRef.current = documentOffset;
+  visibleValueRef.current = value;
 
   useEffect(() => {
     const endpoint = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/lsp`;
@@ -294,7 +326,10 @@ export default function WireEditor({ value, documentId, darkMode, inputJson, sec
         return;
       }
 
-      editorView.dispatch(setDiagnostics(editorView.state, diagnostics.map((diagnostic) => lspDiagnosticToCodeMirror(editorView.state, diagnostic))));
+      editorView.dispatch(setDiagnostics(
+        editorView.state,
+        diagnostics.flatMap((diagnostic) => lspDiagnosticToCodeMirror(editorView.state, diagnostic, fullValueRef.current, documentOffsetRef.current)),
+      ));
     });
 
     const editorView = new EditorView({
@@ -303,6 +338,10 @@ export default function WireEditor({ value, documentId, darkMode, inputJson, sec
         documentUri,
         languageClient,
         onChangeRef,
+        onDefinitionJumpRef,
+        fullValueRef,
+        documentOffsetRef,
+        visibleValueRef,
         documentVersionRef,
         didSaveDebounceTimeoutRef,
         diagnosticsRef,
@@ -325,7 +364,7 @@ export default function WireEditor({ value, documentId, darkMode, inputJson, sec
             uri: documentUri,
             languageId: 'wire',
             version: documentVersionRef.current,
-            text: value,
+            text: fullValue,
           },
         }).then(() => notifyRuntimeValues(languageClient, documentUri, inputJson, secretsJson));
       })
@@ -380,6 +419,35 @@ export default function WireEditor({ value, documentId, darkMode, inputJson, sec
     updateEditorHeight(editorView, setEditorHeight);
   }, [value]);
 
+  useEffect(() => {
+    const languageClient = languageClientRef.current;
+
+    if (!languageClient) {
+      return;
+    }
+
+    documentVersionRef.current += 1;
+    languageClient.notifyIfOpen('textDocument/didChange', {
+      textDocument: { uri: documentUri, version: documentVersionRef.current },
+      contentChanges: [{ text: fullValue }],
+    });
+  }, [documentUri, fullValue]);
+
+  useEffect(() => {
+    const editorView = editorViewRef.current;
+
+    if (!editorView || !jumpTarget) {
+      return;
+    }
+
+    const targetOffset = Math.max(0, Math.min(jumpTarget.offset, editorView.state.doc.length));
+    editorView.dispatch({
+      selection: { anchor: targetOffset },
+      effects: EditorView.scrollIntoView(targetOffset, { y: 'center' }),
+    });
+    editorView.focus();
+  }, [jumpTarget?.sequence]);
+
   return <div ref={editorElementRef} className="wire-editor-shell flex-1 overflow-hidden bg-transparent" style={{ height: `${editorHeight}px` }} />;
 }
 
@@ -412,7 +480,11 @@ function createEditorState(
   value: string,
   documentUri: string,
   languageClient: WebSocketLanguageClient,
-  onChangeRef: React.MutableRefObject<(value: string) => void>,
+  onChangeRef: React.MutableRefObject<(value: string, cursorOffset: number) => void>,
+  onDefinitionJumpRef: React.MutableRefObject<(position: LspPosition) => void>,
+  fullValueRef: React.MutableRefObject<string>,
+  documentOffsetRef: React.MutableRefObject<number>,
+  visibleValueRef: React.MutableRefObject<string>,
   documentVersionRef: React.MutableRefObject<number>,
   didSaveDebounceTimeoutRef: React.MutableRefObject<number | null>,
   diagnosticsRef: React.MutableRefObject<LspDiagnostic[]>,
@@ -431,26 +503,37 @@ function createEditorState(
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       wireLanguage(),
       history(),
-      linter((editorView) => diagnosticsRef.current.map((diagnostic) => lspDiagnosticToCodeMirror(editorView.state, diagnostic))),
-      autocompletion({ override: [lspCompletionSource(documentUri, languageClient)] }),
-      hoverTooltip((editorView: EditorView, position: number) => lspHoverTooltip(editorView, position, documentUri, languageClient)),
+      linter((editorView) => diagnosticsRef.current.flatMap((diagnostic) => (
+        lspDiagnosticToCodeMirror(editorView.state, diagnostic, fullValueRef.current, documentOffsetRef.current)
+      ))),
+      autocompletion({ override: [lspCompletionSource(documentUri, languageClient, fullValueRef, documentOffsetRef)] }),
+      hoverTooltip((_editorView: EditorView, position: number) => (
+        lspHoverTooltip(position, documentUri, languageClient, fullValueRef, documentOffsetRef)
+      )),
       keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
       tooltips({ parent: document.body }),
       baseTheme,
       EditorView.lineWrapping,
+      EditorView.domEventHandlers({
+        mousedown: (event, editorView) => handleDefinitionMouseDown(event, editorView, documentUri, languageClient, fullValueRef, documentOffsetRef, onDefinitionJumpRef),
+      }),
       EditorView.updateListener.of((update) => {
         if (!update.docChanged) {
           return;
         }
 
         const nextValue = update.state.doc.toString();
-        onChangeRef.current(nextValue);
+        const cursorOffset = update.state.selection.main.head;
+        const nextFullValue = fullValueForVisibleChange(fullValueRef.current, documentOffsetRef.current, visibleValueRef.current.length, nextValue);
+        visibleValueRef.current = nextValue;
+        fullValueRef.current = nextFullValue;
+        onChangeRef.current(nextValue, cursorOffset);
         updateEditorHeight(update.view, setEditorHeight);
         documentVersionRef.current += 1;
 
         void languageClient.notify('textDocument/didChange', {
           textDocument: { uri: documentUri, version: documentVersionRef.current },
-          contentChanges: [{ text: nextValue }],
+          contentChanges: [{ text: nextFullValue }],
         });
 
         if (didSaveDebounceTimeoutRef.current !== null) {
@@ -576,7 +659,57 @@ function updateEditorHeight(editorView: EditorView, setEditorHeight: (height: nu
   setEditorHeight(nextHeight);
 }
 
-function lspCompletionSource(documentUri: string, languageClient: WebSocketLanguageClient) {
+function fullValueForVisibleChange(fullValue: string, documentOffset: number, previousVisibleLength: number, nextVisibleValue: string) {
+  return `${fullValue.slice(0, documentOffset)}${nextVisibleValue}${fullValue.slice(documentOffset + previousVisibleLength)}`;
+}
+
+function handleDefinitionMouseDown(
+  event: MouseEvent,
+  editorView: EditorView,
+  documentUri: string,
+  languageClient: WebSocketLanguageClient,
+  fullValueRef: React.MutableRefObject<string>,
+  documentOffsetRef: React.MutableRefObject<number>,
+  onDefinitionJumpRef: React.MutableRefObject<(position: LspPosition) => void>,
+) {
+  if (!event.ctrlKey && !event.metaKey) {
+    return false;
+  }
+
+  const position = editorView.posAtCoords({ x: event.clientX, y: event.clientY });
+
+  if (position === null) {
+    return false;
+  }
+
+  event.preventDefault();
+
+  void languageClient
+    .request('textDocument/definition', {
+      textDocument: { uri: documentUri },
+      position: offsetToLspPosition(fullValueRef.current, documentOffsetRef.current + position),
+    })
+    .then((result) => {
+      const locations = Array.isArray(result) ? (result as LspLocation[]) : [];
+      const firstLocation = locations[0];
+
+      if (!firstLocation) {
+        return;
+      }
+
+      onDefinitionJumpRef.current(firstLocation.range.start);
+    })
+    .catch(() => undefined);
+
+  return true;
+}
+
+function lspCompletionSource(
+  documentUri: string,
+  languageClient: WebSocketLanguageClient,
+  fullValueRef: React.MutableRefObject<string>,
+  documentOffsetRef: React.MutableRefObject<number>,
+) {
   return async (completionContext: CompletionContext): Promise<CompletionResult | null> => {
     const word = completionContext.matchBefore(/[A-Za-z0-9_.]*/);
 
@@ -586,31 +719,43 @@ function lspCompletionSource(documentUri: string, languageClient: WebSocketLangu
 
     const result = (await languageClient.request('textDocument/completion', {
       textDocument: { uri: documentUri },
-      position: offsetToLspPosition(completionContext.state, completionContext.pos),
+      position: offsetToLspPosition(fullValueRef.current, documentOffsetRef.current + completionContext.pos),
     })) as CompletionList;
     const items = Array.isArray(result.items) ? result.items : [];
 
     return {
-      from: completionResultFrom(completionContext, items, word),
-      options: items.map((item) => completionItemToCodeMirror(completionContext.state, item)),
+      from: completionResultFrom(completionContext, items, word, fullValueRef.current, documentOffsetRef.current),
+      options: items.map((item) => completionItemToCodeMirror(item, fullValueRef.current, documentOffsetRef.current)),
     };
   };
 }
 
-function completionResultFrom(completionContext: CompletionContext, items: CompletionItem[], word: { from: number } | null) {
+function completionResultFrom(
+  completionContext: CompletionContext,
+  items: CompletionItem[],
+  word: { from: number } | null,
+  fullValue: string,
+  documentOffset: number,
+) {
   const firstTextEdit = items.find((item) => item.textEdit)?.textEdit;
 
   if (firstTextEdit) {
-    return lspPositionToOffset(completionContext.state, firstTextEdit.range.start);
+    return Math.max(0, lspPositionToOffset(fullValue, firstTextEdit.range.start) - documentOffset);
   }
 
   return word?.from ?? completionContext.pos;
 }
 
-async function lspHoverTooltip(editorView: EditorView, position: number, documentUri: string, languageClient: WebSocketLanguageClient) {
+async function lspHoverTooltip(
+  position: number,
+  documentUri: string,
+  languageClient: WebSocketLanguageClient,
+  fullValueRef: React.MutableRefObject<string>,
+  documentOffsetRef: React.MutableRefObject<number>,
+) {
   const result = (await languageClient.request('textDocument/hover', {
     textDocument: { uri: documentUri },
-    position: offsetToLspPosition(editorView.state, position),
+    position: offsetToLspPosition(fullValueRef.current, documentOffsetRef.current + position),
   })) as LspHover | null;
   const hoverText = hoverContentsToText(result?.contents);
 
@@ -630,7 +775,7 @@ async function lspHoverTooltip(editorView: EditorView, position: number, documen
   };
 }
 
-function completionItemToCodeMirror(editorState: EditorState, item: CompletionItem): Completion {
+function completionItemToCodeMirror(item: CompletionItem, fullValue: string, documentOffset: number): Completion {
   const completion: Completion = {
     label: item.label,
     type: 'keyword',
@@ -640,10 +785,13 @@ function completionItemToCodeMirror(editorState: EditorState, item: CompletionIt
 
   if (item.textEdit) {
     completion.apply = (editorView) => {
+      const editStartOffset = lspPositionToOffset(fullValue, item.textEdit!.range.start) - documentOffset;
+      const editEndOffset = lspPositionToOffset(fullValue, item.textEdit!.range.end) - documentOffset;
+
       editorView.dispatch({
         changes: {
-          from: lspPositionToOffset(editorState, item.textEdit!.range.start),
-          to: lspPositionToOffset(editorState, item.textEdit!.range.end),
+          from: Math.max(0, Math.min(editStartOffset, editorView.state.doc.length)),
+          to: Math.max(0, Math.min(editEndOffset, editorView.state.doc.length)),
           insert: item.textEdit!.newText.replace(/\$1/g, ''),
         },
       });
@@ -655,28 +803,49 @@ function completionItemToCodeMirror(editorState: EditorState, item: CompletionIt
   return completion;
 }
 
-function lspDiagnosticToCodeMirror(editorState: EditorState, diagnostic: LspDiagnostic): Diagnostic {
-  return {
-    from: lspPositionToOffset(editorState, diagnostic.range.start),
-    to: lspPositionToOffset(editorState, diagnostic.range.end),
+function lspDiagnosticToCodeMirror(editorState: EditorState, diagnostic: LspDiagnostic, fullValue: string, documentOffset: number): Diagnostic[] {
+  const fullStartOffset = lspPositionToOffset(fullValue, diagnostic.range.start);
+  const fullEndOffset = lspPositionToOffset(fullValue, diagnostic.range.end);
+  const visibleStartOffset = Math.max(fullStartOffset - documentOffset, 0);
+  const visibleEndOffset = Math.min(fullEndOffset - documentOffset, editorState.doc.length);
+
+  if (visibleEndOffset < 0 || visibleStartOffset > editorState.doc.length) {
+    return [];
+  }
+
+  return [{
+    from: visibleStartOffset,
+    to: Math.max(visibleStartOffset, visibleEndOffset),
     severity: diagnostic.severity === 1 ? 'error' : 'warning',
     message: diagnostic.message,
-  };
+  }];
 }
 
-function offsetToLspPosition(editorState: EditorState, offset: number): LspPosition {
-  const line = editorState.doc.lineAt(offset);
+function offsetToLspPosition(source: string, offset: number): LspPosition {
+  const safeOffset = Math.max(0, Math.min(offset, source.length));
+  let line = 0;
+  let lineStartOffset = 0;
 
-  return {
-    line: line.number - 1,
-    character: offset - line.from,
-  };
+  for (let characterIndex = 0; characterIndex < safeOffset; characterIndex += 1) {
+    if (source[characterIndex] === '\n') {
+      line += 1;
+      lineStartOffset = characterIndex + 1;
+    }
+  }
+
+  return { line, character: safeOffset - lineStartOffset };
 }
 
-function lspPositionToOffset(editorState: EditorState, position: LspPosition): number {
-  const line = editorState.doc.line(Math.min(position.line + 1, editorState.doc.lines));
+function lspPositionToOffset(source: string, position: LspPosition): number {
+  const lines = source.split('\n');
+  const targetLineIndex = Math.min(Math.max(position.line, 0), Math.max(lines.length - 1, 0));
+  let offset = 0;
 
-  return Math.min(line.from + position.character, line.to);
+  for (let lineIndex = 0; lineIndex < targetLineIndex; lineIndex += 1) {
+    offset += (lines[lineIndex]?.length ?? 0) + 1;
+  }
+
+  return Math.min(offset + Math.max(position.character, 0), offset + (lines[targetLineIndex]?.length ?? 0));
 }
 
 function completionDocumentationToText(documentation: CompletionItem['documentation']) {

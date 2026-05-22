@@ -1,0 +1,119 @@
+import { useRef, type DragEvent, type ReactNode } from 'react';
+import { Button } from '@/components/ui/button';
+
+export interface PlaygroundTabChipAction {
+  label: string;
+  icon: ReactNode;
+  onClick: () => void;
+}
+
+interface PlaygroundTabChipProps {
+  size: 'large' | 'small';
+  active: boolean;
+  activeGlow?: boolean;
+  dragging: boolean;
+  dragOver: boolean;
+  trigger: ReactNode;
+  actions: PlaygroundTabChipAction[];
+  onDragStart: () => void;
+  onDragOver: () => void;
+  onDrop: () => void;
+  onDragEnd: () => void;
+}
+
+export default function PlaygroundTabChip({
+  size,
+  active,
+  activeGlow = false,
+  dragging,
+  dragOver,
+  trigger,
+  actions,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+}: PlaygroundTabChipProps) {
+  const dragPreviewRef = useRef<HTMLElement | null>(null);
+
+  function handleDragStart(dragEvent: DragEvent<HTMLDivElement>) {
+    dragEvent.dataTransfer.effectAllowed = 'move';
+    dragEvent.dataTransfer.setData('text/plain', '');
+    setDragPreview(dragEvent);
+    onDragStart();
+  }
+
+  function handleDragEnd() {
+    removeDragPreview();
+    onDragEnd();
+  }
+
+  function setDragPreview(dragEvent: DragEvent<HTMLDivElement>) {
+    removeDragPreview();
+
+    const dragPreview = dragEvent.currentTarget.cloneNode(true) as HTMLElement;
+    dragPreview.classList.add('playground-tab-chip--drag-preview');
+    dragPreview.setAttribute('data-dragging', 'false');
+    dragPreview.setAttribute('data-drag-over', 'false');
+    dragPreview.style.width = `${dragEvent.currentTarget.offsetWidth}px`;
+    document.body.appendChild(dragPreview);
+    dragPreviewRef.current = dragPreview;
+
+    dragEvent.dataTransfer.setDragImage(
+      dragPreview,
+      dragEvent.currentTarget.offsetWidth / 2,
+      dragEvent.currentTarget.offsetHeight / 2,
+    );
+
+    window.requestAnimationFrame(() => {
+      if (dragPreviewRef.current === dragPreview) {
+        dragPreview.style.top = '-10000px';
+        dragPreview.style.left = '-10000px';
+      }
+    });
+  }
+
+  function removeDragPreview() {
+    dragPreviewRef.current?.remove();
+    dragPreviewRef.current = null;
+  }
+
+  return (
+    <div
+      className="playground-tab-chip"
+      draggable
+      data-size={size}
+      data-active={active ? 'true' : 'false'}
+      data-active-glow={activeGlow ? 'true' : 'false'}
+      data-dragging={dragging ? 'true' : 'false'}
+      data-drag-over={dragOver ? 'true' : 'false'}
+      onDragStart={handleDragStart}
+      onDragOver={(dragEvent) => {
+        dragEvent.preventDefault();
+        onDragOver();
+      }}
+      onDrop={(dragEvent) => {
+        dragEvent.preventDefault();
+        onDrop();
+      }}
+      onDragEnd={handleDragEnd}
+    >
+      {trigger}
+
+      <div className="playground-tab-chip__actions">
+        {actions.map((action) => (
+          <Button
+            key={action.label}
+            className="playground-tab-chip__action"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={action.label}
+            onClick={action.onClick}
+          >
+            {action.icon}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}

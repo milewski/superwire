@@ -1,4 +1,6 @@
 import type { ExecutorEvent, WorkflowTab } from './types';
+import { createWorkflowCodeFragment, parseWorkflowSourceFragments, workflowSourceFromCodeFragments } from './workflowFragments';
+import { parseWorkflowSourceMetadata } from './workflowMetadata';
 
 export function uniqueId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -9,11 +11,16 @@ export function uniqueId() {
 }
 
 export function createWorkflowTab(name: string): WorkflowTab {
+  const codeFragment = createWorkflowCodeFragment(name);
+
   return {
     id: uniqueId(),
     name,
     activeView: 'workflow',
     source: '',
+    codeFragments: [codeFragment],
+    activeCodeFragmentId: codeFragment.id,
+    codeFragmentsUseMarkers: false,
     inputJson: '{}',
     secretsJson: '{}',
     validationState: 'idle',
@@ -51,17 +58,64 @@ export function normalizeWorkflowTab(tab: unknown): WorkflowTab {
     return fallbackTab;
   }
 
+  const source = typeof tab.source === 'string' ? tab.source : fallbackTab.source;
+  const metadata = parseWorkflowSourceMetadata(source);
+  const restoredName = metadata.name ?? (typeof tab.name === 'string' ? tab.name : fallbackTab.name);
+  const restoredCodeFragments = normalizeWorkflowCodeFragments(tab.codeFragments, metadata.source, restoredName);
+  const activeCodeFragmentId =
+    typeof tab.activeCodeFragmentId === 'string' && restoredCodeFragments.fragments.some((fragment) => fragment.id === tab.activeCodeFragmentId)
+      ? tab.activeCodeFragmentId
+      : restoredCodeFragments.fragments[0]?.id ?? fallbackTab.activeCodeFragmentId;
+
   return {
     ...fallbackTab,
     ...tab,
+    name: restoredName,
+    source: workflowSourceFromCodeFragments(restoredCodeFragments.fragments, restoredCodeFragments.useMarkers),
+    codeFragments: restoredCodeFragments.fragments,
+    activeCodeFragmentId,
+    codeFragmentsUseMarkers: restoredCodeFragments.useMarkers,
     activeView: normalizePlaygroundView(tab.activeView),
-    inputJson: typeof tab.inputJson === 'string' ? tab.inputJson : JSON.stringify(fieldsToObject(tab.inputFields), null, 2),
-    secretsJson: typeof tab.secretsJson === 'string' ? tab.secretsJson : JSON.stringify(fieldsToObject(tab.secretFields), null, 2),
+    inputJson: metadata.inputJson ?? (typeof tab.inputJson === 'string' ? tab.inputJson : JSON.stringify(fieldsToObject(tab.inputFields), null, 2)),
+    secretsJson: metadata.secretsJson ?? (typeof tab.secretsJson === 'string' ? tab.secretsJson : JSON.stringify(fieldsToObject(tab.secretFields), null, 2)),
     eventLog: Array.isArray(tab.eventLog) ? tab.eventLog : [],
     graphState: normalizeGraphState(tab.graphState),
     graphMessage: typeof tab.graphMessage === 'string' ? tab.graphMessage : fallbackTab.graphMessage,
     graphData: isJsonObject(tab.graphData) ? (tab.graphData as unknown as WorkflowTab['graphData']) : null,
   };
+}
+
+function normalizeWorkflowCodeFragments(codeFragments: unknown, source: string, fallbackName: string) {
+  if (!Array.isArray(codeFragments)) {
+    return parseWorkflowSourceFragments(source, fallbackName);
+  }
+
+  const fragments = codeFragments.flatMap((fragment, fragmentIndex) => {
+    if (!isJsonObject(fragment)) {
+      return [];
+    }
+
+    return [
+      {
+        id: typeof fragment.id === 'string' ? fragment.id : uniqueId(),
+        name: typeof fragment.name === 'string' && fragment.name.trim() ? fragment.name.trim() : `Fragment ${fragmentIndex + 1}`,
+        source: typeof fragment.source === 'string' ? fragment.source : '',
+      },
+    ];
+  });
+
+  if (fragments.length === 0) {
+    return parseWorkflowSourceFragments(source, fallbackName);
+  }
+
+  return {
+    fragments,
+    useMarkers: codeFragments.length > 1 || sourceContainsMarkers(source),
+  };
+}
+
+function sourceContainsMarkers(source: string) {
+  return parseWorkflowSourceFragments(source, 'source').useMarkers;
 }
 
 export function recoverWorkflowTabAfterReload(tab: unknown): WorkflowTab {
