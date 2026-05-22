@@ -279,7 +279,7 @@
   Description: Ensure completions, hovers, diagnostics, definitions, symbols, and folding read from cached document state.
   Rationale: LSP responsiveness depends on avoiding repeated expensive work.
 
-- [ ] Replace repeated linear scans with maps in hot semantic paths.
+- [~] Replace repeated linear scans with maps in hot semantic paths.
   Description: Use maps for declaration, tool, schema, model, provider, graph node, and completion lookup where order is not the main requirement.
   Rationale: Large workflows make repeated scans expensive.
 
@@ -328,3 +328,4 @@
 ## Incomplete Handoff Notes
 
 - Executor support now uses `superwire_core::testing::WorkflowSource` and schema helpers, and core/LSP inline source helpers share the core workflow template API. CLI tests have not been migrated to shared command/test helpers yet.
+- Partial map lookup slice completed for `ToolingDeclarationIndex::symbol_span`, LSP `SemanticIndex` declaration span lookups in `crates/lsp/src/document/semantic_index/definitions.rs`, and execution graph provider/model/import lookup in `crates/core/src/semantic/graph.rs`. Remaining work: audit other hot scans such as `Workflow::find_*` callers in `crates/core/src/semantic/ir.rs` and executor runtime MCP/tool paths, repeated completion exclusion checks in `crates/lsp/src/document/semantic_index/completion.rs` and `mcp.rs`, and schema/type field scans in `TypeExpression` traversal where a reusable map or cached semantic type service would preserve behavior.

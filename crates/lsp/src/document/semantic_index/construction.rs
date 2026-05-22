@@ -27,19 +27,25 @@ impl SemanticIndex {
         let mut semantic_index = Self {
             providers: HashMap::new(),
             provider_locations: Vec::new(),
+            provider_location_index: HashMap::new(),
             models: HashMap::new(),
             model_locations: Vec::new(),
+            model_location_index: HashMap::new(),
             schemas: HashMap::new(),
             schema_names: Vec::new(),
             schema_locations: Vec::new(),
+            schema_location_index: HashMap::new(),
             schema_field_locations: HashMap::new(),
             tools: HashMap::new(),
             tool_names: Vec::new(),
             tool_locations: Vec::new(),
+            tool_location_index: HashMap::new(),
             resource_names: Vec::new(),
             resource_locations: Vec::new(),
+            resource_location_index: HashMap::new(),
             prompt_names: Vec::new(),
             prompt_locations: Vec::new(),
+            prompt_location_index: HashMap::new(),
             mcp_server_names: Vec::new(),
             mcp_server_locations: Vec::new(),
             input_fields: BTreeMap::new(),
@@ -65,6 +71,7 @@ impl SemanticIndex {
             typed_declaration_locations: Vec::new(),
             agent_output_locations: Vec::new(),
             agent_locations: Vec::new(),
+            agent_location_index: HashMap::new(),
             has_input_declaration: false,
             has_secrets_declaration: false,
             has_output_declaration: false,
@@ -181,10 +188,12 @@ impl SemanticIndex {
         );
 
         self.schema_names.push(schema_declaration.name.clone());
-        self.schema_locations.push(NamedSpan {
-            name: schema_declaration.name.clone(),
-            span: schema_declaration.span,
-        });
+        NamedSpan::push_indexed(
+            &mut self.schema_locations,
+            &mut self.schema_location_index,
+            schema_declaration.name.clone(),
+            schema_declaration.span,
+        );
         self.typed_declaration_locations.push(schema_declaration.span);
     }
 
@@ -236,27 +245,33 @@ impl SemanticIndex {
         );
 
         self.tool_names.push(tool_declaration.name.clone());
-        self.tool_locations.push(NamedSpan {
-            name: tool_declaration.name.clone(),
-            span: tool_declaration.span,
-        });
+        NamedSpan::push_indexed(
+            &mut self.tool_locations,
+            &mut self.tool_location_index,
+            tool_declaration.name.clone(),
+            tool_declaration.span,
+        );
         self.typed_declaration_locations.push(tool_declaration.span);
     }
 
     fn insert_resource_import_declaration(&mut self, resource_import_declaration: &superwire_core::dsl::McpResourceImportDeclaration) {
         self.resource_names.push(resource_import_declaration.name.clone());
-        self.resource_locations.push(NamedSpan {
-            name: resource_import_declaration.name.clone(),
-            span: resource_import_declaration.span,
-        });
+        NamedSpan::push_indexed(
+            &mut self.resource_locations,
+            &mut self.resource_location_index,
+            resource_import_declaration.name.clone(),
+            resource_import_declaration.span,
+        );
     }
 
     fn insert_prompt_import_declaration(&mut self, prompt_import_declaration: &superwire_core::dsl::McpPromptImportDeclaration) {
         self.prompt_names.push(prompt_import_declaration.name.clone());
-        self.prompt_locations.push(NamedSpan {
-            name: prompt_import_declaration.name.clone(),
-            span: prompt_import_declaration.span,
-        });
+        NamedSpan::push_indexed(
+            &mut self.prompt_locations,
+            &mut self.prompt_location_index,
+            prompt_import_declaration.name.clone(),
+            prompt_import_declaration.span,
+        );
     }
 
     fn insert_agent_declaration(&mut self, agent_declaration: &superwire_core::dsl::AgentDeclaration) {
@@ -329,10 +344,12 @@ impl SemanticIndex {
         }
 
         self.agent_names.push(agent_declaration.name.clone());
-        self.agent_locations.push(NamedSpan {
-            name: agent_declaration.name.clone(),
-            span: agent_declaration.span,
-        });
+        NamedSpan::push_indexed(
+            &mut self.agent_locations,
+            &mut self.agent_location_index,
+            agent_declaration.name.clone(),
+            agent_declaration.span,
+        );
     }
 
     pub fn from_text_fallback(source_text: &str) -> Self {
@@ -417,23 +434,33 @@ impl SemanticIndex {
                 span: named_symbol_span.span,
             })
             .collect::<Vec<_>>();
+        let provider_location_index = NamedSpan::first_span_map(&provider_locations);
+        let schema_location_index = NamedSpan::first_span_map(&schema_locations);
+        let tool_location_index = NamedSpan::first_span_map(&tool_locations);
+        let agent_location_index = NamedSpan::first_span_map(&agent_locations);
 
         Self {
             providers,
             provider_locations,
+            provider_location_index,
             models: HashMap::new(),
             model_locations: Vec::new(),
+            model_location_index: HashMap::new(),
             schemas,
             schema_names,
             schema_locations,
+            schema_location_index,
             schema_field_locations: HashMap::new(),
             tools,
             tool_names,
             tool_locations,
+            tool_location_index,
             resource_names: Vec::new(),
             resource_locations: Vec::new(),
+            resource_location_index: HashMap::new(),
             prompt_names: Vec::new(),
             prompt_locations: Vec::new(),
+            prompt_location_index: HashMap::new(),
             mcp_server_names: Vec::new(),
             mcp_server_locations: Vec::new(),
             input_fields: tooling_snapshot.input_fields().clone(),
@@ -459,6 +486,7 @@ impl SemanticIndex {
             typed_declaration_locations: Vec::new(),
             agent_output_locations: Vec::new(),
             agent_locations,
+            agent_location_index,
             has_input_declaration: !tooling_snapshot.input_fields().is_empty(),
             has_secrets_declaration: !tooling_snapshot.secrets_fields().is_empty(),
             has_output_declaration: false,
@@ -679,10 +707,12 @@ impl SemanticIndex {
         self.providers
             .insert(provider_declaration.name.clone(), ProviderSummary { driver: provider_driver });
 
-        self.provider_locations.push(NamedSpan {
-            name: provider_declaration.name.clone(),
-            span: provider_declaration.span,
-        });
+        NamedSpan::push_indexed(
+            &mut self.provider_locations,
+            &mut self.provider_location_index,
+            provider_declaration.name.clone(),
+            provider_declaration.span,
+        );
     }
 
     fn insert_model(&mut self, model_declaration: &ModelDeclaration) {
@@ -694,10 +724,12 @@ impl SemanticIndex {
             },
         );
 
-        self.model_locations.push(NamedSpan {
-            name: model_declaration.name.clone(),
-            span: model_declaration.span,
-        });
+        NamedSpan::push_indexed(
+            &mut self.model_locations,
+            &mut self.model_location_index,
+            model_declaration.name.clone(),
+            model_declaration.span,
+        );
         self.insert_inference_setting_locations(&model_declaration.properties, ModelDeclarationPropertyName::Inference.as_str());
     }
 

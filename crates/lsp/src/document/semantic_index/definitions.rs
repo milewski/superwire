@@ -376,44 +376,26 @@ impl SemanticIndex {
     }
 
     fn provider_span(&self, provider_name: &str) -> Option<SourceSpan> {
-        self.provider_locations
-            .iter()
-            .find(|provider_location| provider_location.name == provider_name)
-            .map(|provider_location| provider_location.span)
+        self.provider_location_index.get(provider_name).copied()
     }
 
     fn schema_span(&self, schema_name: &str) -> Option<SourceSpan> {
-        self.schema_locations
-            .iter()
-            .find(|schema_location| schema_location.name == schema_name)
-            .map(|schema_location| schema_location.span)
+        self.schema_location_index.get(schema_name).copied()
     }
 
     fn agent_span(&self, agent_name: &str) -> Option<SourceSpan> {
-        self.agent_locations
-            .iter()
-            .find(|agent_location| agent_location.name == agent_name)
-            .map(|agent_location| agent_location.span)
+        self.agent_location_index.get(agent_name).copied()
     }
 
     fn tool_span(&self, tool_name: &str) -> Option<SourceSpan> {
-        self.tool_locations
-            .iter()
-            .find(|tool_location| tool_location.name == tool_name)
-            .map(|tool_location| tool_location.span)
+        self.tool_location_index.get(tool_name).copied()
     }
 
     fn resource_span(&self, resource_name: &str) -> Option<SourceSpan> {
-        self.resource_locations
-            .iter()
-            .find(|resource_location| resource_location.name == resource_name)
-            .map(|resource_location| resource_location.span)
+        self.resource_location_index.get(resource_name).copied()
     }
 
     fn prompt_span(&self, prompt_name: &str) -> Option<SourceSpan> {
-        self.prompt_locations
-            .iter()
-            .find(|prompt_location| prompt_location.name == prompt_name)
-            .map(|prompt_location| prompt_location.span)
+        self.prompt_location_index.get(prompt_name).copied()
     }
 }

@@ -1,13 +1,13 @@
 use crate::dsl::{
     AgentExpressionPropertyName, AgentForLoop, AgentForLoopPattern, AgentProperty, CallArgument, DeclarationKeyword, Expression,
-    MatchBranch, ModelDeclaration, ModelDeclarationPropertyName, ObjectField, ProviderDeclaration, Reference, ReferenceKeyword,
-    StringTemplatePart, ToolSource, Workflow,
+    MatchBranch, McpPromptImportDeclaration, McpResourceImportDeclaration, ModelDeclaration, ModelDeclarationPropertyName, ObjectField,
+    ProviderDeclaration, Reference, ReferenceKeyword, StringTemplatePart, ToolSource, Workflow,
 };
 use crate::semantic::plan::{ExecutionPlan, PlannedAgent};
 use crate::semantic::support::types::workflow_type_to_json_schema;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct WorkflowExecutionGraph {
@@ -110,6 +110,24 @@ pub enum WorkflowExecutionGraphEdgeKind {
     WorkflowOutput,
 }
 
+struct WorkflowExecutionGraphLookups<'workflow> {
+    provider_declarations: HashMap<&'workflow str, &'workflow ProviderDeclaration>,
+    model_declarations: HashMap<&'workflow str, &'workflow ModelDeclaration>,
+    prompt_imports: HashMap<&'workflow str, &'workflow McpPromptImportDeclaration>,
+    resource_imports: HashMap<&'workflow str, &'workflow McpResourceImportDeclaration>,
+}
+
+impl<'workflow> WorkflowExecutionGraphLookups<'workflow> {
+    fn from_workflow(workflow: &'workflow Workflow) -> Self {
+        Self {
+            provider_declarations: workflow.provider_declarations_by_name(),
+            model_declarations: workflow.model_declarations_by_name(),
+            prompt_imports: workflow.prompt_imports_by_name(),
+            resource_imports: workflow.resource_imports_by_name(),
+        }
+    }
+}
+
 impl WorkflowExecutionGraph {
     #[must_use]
     pub fn stable_json(&self) -> String {
@@ -122,12 +140,13 @@ impl WorkflowExecutionGraph {
 impl ExecutionPlan {
     #[must_use]
     pub fn execution_graph(&self, workflow: &Workflow) -> WorkflowExecutionGraph {
-        let mut nodes = self.provider_and_model_graph_nodes(workflow);
+        let graph_lookups = WorkflowExecutionGraphLookups::from_workflow(workflow);
+        let mut nodes = self.provider_and_model_graph_nodes(&graph_lookups);
         nodes.push(self.workflow_input_graph_node());
 
         for (agent_index, agent_name) in self.agent_execution_order.iter().enumerate() {
             if let Some(planned_agent) = self.planned_agents.get(agent_name) {
-                nodes.push(planned_agent.execution_graph_node(self, workflow, agent_index));
+                nodes.push(planned_agent.execution_graph_node(self, &graph_lookups, agent_index));
             }
         }
 
@@ -140,7 +159,7 @@ impl ExecutionPlan {
         }
     }
 
-    fn provider_and_model_graph_nodes(&self, workflow: &Workflow) -> Vec<WorkflowExecutionGraphNode> {
+    fn provider_and_model_graph_nodes(&self, graph_lookups: &WorkflowExecutionGraphLookups<'_>) -> Vec<WorkflowExecutionGraphNode> {
         let mut nodes = Vec::new();
         let mut emitted_provider_names = HashSet::new();
         let mut emitted_model_names = HashSet::new();
@@ -151,7 +170,7 @@ impl ExecutionPlan {
             };
 
             if emitted_provider_names.insert(planned_agent.provider_name.clone()) {
-                if let Some(provider_declaration) = workflow.find_provider(&planned_agent.provider_name) {
+                if let Some(provider_declaration) = graph_lookups.provider_declarations.get(planned_agent.provider_name.as_str()) {
                     nodes.push(provider_declaration.execution_graph_node());
                 }
             }
@@ -161,7 +180,7 @@ impl ExecutionPlan {
             };
 
             if emitted_model_names.insert(model_name.clone()) {
-                if let Some(model_declaration) = workflow.find_model(&model_name) {
+                if let Some(model_declaration) = graph_lookups.model_declarations.get(model_name.as_str()) {
                     nodes.push(model_declaration.execution_graph_node());
                 }
             }
@@ -424,7 +443,12 @@ impl ModelDeclaration {
 }
 
 impl PlannedAgent {
-    fn execution_graph_node(&self, execution_plan: &ExecutionPlan, workflow: &Workflow, agent_index: usize) -> WorkflowExecutionGraphNode {
+    fn execution_graph_node(
+        &self,
+        execution_plan: &ExecutionPlan,
+        graph_lookups: &WorkflowExecutionGraphLookups<'_>,
+        agent_index: usize,
+    ) -> WorkflowExecutionGraphNode {
         WorkflowExecutionGraphNode {
             id: self.name.clone(),
             label: self.name.clone(),
@@ -440,7 +464,7 @@ impl PlannedAgent {
             instruction: self.instruction_label(),
             details: self.execution_graph_details(),
             bindings: self.execution_graph_bindings(),
-            tools: self.execution_graph_tools(execution_plan, workflow),
+            tools: self.execution_graph_tools(execution_plan, graph_lookups),
             execution_index: Some(agent_index),
             loop_info: self.execution_graph_loop_info(),
         }
@@ -543,7 +567,11 @@ impl PlannedAgent {
         self.declaration.model_usage()?.model_name().map(str::to_string)
     }
 
-    fn execution_graph_tools(&self, execution_plan: &ExecutionPlan, workflow: &Workflow) -> Vec<WorkflowExecutionGraphTool> {
+    fn execution_graph_tools(
+        &self,
+        execution_plan: &ExecutionPlan,
+        graph_lookups: &WorkflowExecutionGraphLookups<'_>,
+    ) -> Vec<WorkflowExecutionGraphTool> {
         let Some(Expression::ArrayLiteral(use_expressions)) = self.declaration.expression_property(AgentExpressionPropertyName::Uses)
         else {
             return Vec::new();
@@ -551,7 +579,7 @@ impl PlannedAgent {
         let mut tools = Vec::new();
 
         for use_expression in use_expressions {
-            if let Some(tool) = self.execution_graph_tool(use_expression, execution_plan, workflow) {
+            if let Some(tool) = self.execution_graph_tool(use_expression, execution_plan, graph_lookups) {
                 tools.push(tool);
             }
         }
@@ -563,14 +591,14 @@ impl PlannedAgent {
         &self,
         use_expression: &Expression,
         execution_plan: &ExecutionPlan,
-        workflow: &Workflow,
+        graph_lookups: &WorkflowExecutionGraphLookups<'_>,
     ) -> Option<WorkflowExecutionGraphTool> {
         let reference = use_expression.direct_reference()?;
 
         match reference.root_keyword()? {
             ReferenceKeyword::Tool => self.execution_graph_declared_tool(use_expression, reference, execution_plan),
-            ReferenceKeyword::Prompt => self.execution_graph_prompt(reference, workflow),
-            ReferenceKeyword::Resource => self.execution_graph_resource(reference, workflow),
+            ReferenceKeyword::Prompt => self.execution_graph_prompt(reference, graph_lookups),
+            ReferenceKeyword::Resource => self.execution_graph_resource(reference, graph_lookups),
             ReferenceKeyword::Agent
             | ReferenceKeyword::Dynamic
             | ReferenceKeyword::Input
@@ -608,9 +636,13 @@ impl PlannedAgent {
         })
     }
 
-    fn execution_graph_prompt(&self, reference: &Reference, workflow: &Workflow) -> Option<WorkflowExecutionGraphTool> {
+    fn execution_graph_prompt(
+        &self,
+        reference: &Reference,
+        graph_lookups: &WorkflowExecutionGraphLookups<'_>,
+    ) -> Option<WorkflowExecutionGraphTool> {
         let prompt_name = reference.import_name(ReferenceKeyword::Prompt)?;
-        let prompt_import = workflow.find_prompt_import(prompt_name)?;
+        let prompt_import = graph_lookups.prompt_imports.get(prompt_name)?;
 
         Some(WorkflowExecutionGraphTool {
             name: format!("render_{prompt_name}"),
@@ -624,9 +656,13 @@ impl PlannedAgent {
         })
     }
 
-    fn execution_graph_resource(&self, reference: &Reference, workflow: &Workflow) -> Option<WorkflowExecutionGraphTool> {
+    fn execution_graph_resource(
+        &self,
+        reference: &Reference,
+        graph_lookups: &WorkflowExecutionGraphLookups<'_>,
+    ) -> Option<WorkflowExecutionGraphTool> {
         let resource_name = reference.import_name(ReferenceKeyword::Resource)?;
-        let resource_import = workflow.find_resource_import(resource_name)?;
+        let resource_import = graph_lookups.resource_imports.get(resource_name)?;
 
         Some(WorkflowExecutionGraphTool {
             name: format!("read_{resource_name}"),

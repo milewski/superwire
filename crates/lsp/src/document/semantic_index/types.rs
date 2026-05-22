@@ -8,19 +8,25 @@ use superwire_core::semantic::{ProviderDriver, SemanticToolingSnapshot, Workflow
 pub struct SemanticIndex {
     pub providers: HashMap<String, ProviderSummary>,
     pub provider_locations: Vec<NamedSpan>,
+    pub(super) provider_location_index: HashMap<String, SourceSpan>,
     pub models: HashMap<String, ModelSummary>,
     pub model_locations: Vec<NamedSpan>,
+    pub(super) model_location_index: HashMap<String, SourceSpan>,
     pub schemas: HashMap<String, SchemaSummary>,
     pub schema_names: Vec<String>,
     pub schema_locations: Vec<NamedSpan>,
+    pub(super) schema_location_index: HashMap<String, SourceSpan>,
     pub(super) schema_field_locations: HashMap<String, SourceSpan>,
     pub tools: HashMap<String, ToolSummary>,
     pub tool_names: Vec<String>,
     pub tool_locations: Vec<NamedSpan>,
+    pub(super) tool_location_index: HashMap<String, SourceSpan>,
     pub resource_names: Vec<String>,
     pub resource_locations: Vec<NamedSpan>,
+    pub(super) resource_location_index: HashMap<String, SourceSpan>,
     pub prompt_names: Vec<String>,
     pub prompt_locations: Vec<NamedSpan>,
+    pub(super) prompt_location_index: HashMap<String, SourceSpan>,
     pub mcp_server_names: Vec<String>,
     pub mcp_server_locations: Vec<NamedSpan>,
     pub input_fields: BTreeMap<String, TypeExpression>,
@@ -46,6 +52,7 @@ pub struct SemanticIndex {
     pub typed_declaration_locations: Vec<SourceSpan>,
     pub agent_output_locations: Vec<SourceSpan>,
     pub agent_locations: Vec<NamedSpan>,
+    pub(super) agent_location_index: HashMap<String, SourceSpan>,
     pub(super) has_input_declaration: bool,
     pub(super) has_secrets_declaration: bool,
     pub(super) has_output_declaration: bool,
@@ -104,4 +111,29 @@ pub struct FieldMetadata {
 pub struct NamedSpan {
     pub name: String,
     pub span: SourceSpan,
+}
+
+impl NamedSpan {
+    pub(super) fn push_indexed(
+        location_collection: &mut Vec<Self>,
+        location_index: &mut HashMap<String, SourceSpan>,
+        name: impl Into<String>,
+        span: SourceSpan,
+    ) {
+        let location_name = name.into();
+
+        location_index.entry(location_name.clone()).or_insert(span);
+
+        location_collection.push(Self { name: location_name, span });
+    }
+
+    pub(super) fn first_span_map(locations: &[Self]) -> HashMap<String, SourceSpan> {
+        let mut location_index = HashMap::new();
+
+        for location in locations {
+            location_index.entry(location.name.clone()).or_insert(location.span);
+        }
+
+        location_index
+    }
 }

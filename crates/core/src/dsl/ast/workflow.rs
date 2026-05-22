@@ -38,11 +38,41 @@ impl Workflow {
     }
 
     #[must_use]
+    pub fn provider_declarations_by_name(&self) -> HashMap<&str, &ProviderDeclaration> {
+        let mut provider_declarations = HashMap::new();
+
+        for declaration in &self.declarations {
+            if let Declaration::Provider(provider_declaration) = declaration {
+                provider_declarations
+                    .entry(provider_declaration.name.as_str())
+                    .or_insert(provider_declaration);
+            }
+        }
+
+        provider_declarations
+    }
+
+    #[must_use]
     pub fn find_model(&self, model_name: &str) -> Option<&ModelDeclaration> {
         self.declarations.iter().find_map(|declaration| match declaration {
             Declaration::Model(model_declaration) if model_declaration.name == model_name => Some(model_declaration),
             _ => None,
         })
+    }
+
+    #[must_use]
+    pub fn model_declarations_by_name(&self) -> HashMap<&str, &ModelDeclaration> {
+        let mut model_declarations = HashMap::new();
+
+        for declaration in &self.declarations {
+            if let Declaration::Model(model_declaration) = declaration {
+                model_declarations
+                    .entry(model_declaration.name.as_str())
+                    .or_insert(model_declaration);
+            }
+        }
+
+        model_declarations
     }
 
     #[must_use]
@@ -131,6 +161,19 @@ impl Workflow {
         })
     }
 
+    #[must_use]
+    pub fn resource_imports_by_name(&self) -> HashMap<&str, &McpResourceImportDeclaration> {
+        let mut resource_imports = HashMap::new();
+
+        for resource_import_declaration in self.resource_imports() {
+            resource_imports
+                .entry(resource_import_declaration.name.as_str())
+                .or_insert(resource_import_declaration);
+        }
+
+        resource_imports
+    }
+
     pub fn prompt_imports(&self) -> impl Iterator<Item = &McpPromptImportDeclaration> {
         self.declarations.iter().flat_map(|declaration| match declaration {
             Declaration::McpPrompt(prompt_import_declaration) => std::slice::from_ref(prompt_import_declaration).iter(),
@@ -138,6 +181,19 @@ impl Workflow {
             Declaration::McpPromptBatch(prompt_batch_import_declaration) => prompt_batch_import_declaration.prompts.iter(),
             _ => [].iter(),
         })
+    }
+
+    #[must_use]
+    pub fn prompt_imports_by_name(&self) -> HashMap<&str, &McpPromptImportDeclaration> {
+        let mut prompt_imports = HashMap::new();
+
+        for prompt_import_declaration in self.prompt_imports() {
+            prompt_imports
+                .entry(prompt_import_declaration.name.as_str())
+                .or_insert(prompt_import_declaration);
+        }
+
+        prompt_imports
     }
 
     #[must_use]

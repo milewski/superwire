@@ -2,7 +2,7 @@ use crate::dsl::{
     parse_workflow, Declaration, DeclarationKeyword, ImportKeyword, SingletonDeclarationKind, SourcePosition, SourceSpan, ToolSource,
     TypeExpression, TypedField, Workflow,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ToolingSymbolCategory {
@@ -45,13 +45,22 @@ impl NamedSymbolSpan {
 #[derive(Debug, Clone, Default)]
 pub struct ToolingDeclarationIndex {
     symbols: Vec<NamedSymbolSpan>,
+    symbol_spans_by_category: HashMap<ToolingSymbolCategory, HashMap<String, SourceSpan>>,
 }
 
 impl ToolingDeclarationIndex {
     fn push_symbol(&mut self, category: ToolingSymbolCategory, name: impl Into<String>, span: SourceSpan) {
+        let symbol_name = name.into();
+
+        self.symbol_spans_by_category
+            .entry(category)
+            .or_default()
+            .entry(symbol_name.clone())
+            .or_insert(span);
+
         self.symbols.push(NamedSymbolSpan {
             category,
-            name: name.into(),
+            name: symbol_name,
             span,
         });
     }
@@ -67,9 +76,7 @@ impl ToolingDeclarationIndex {
 
     #[must_use]
     pub fn symbol_span(&self, category: ToolingSymbolCategory, symbol_name: &str) -> Option<SourceSpan> {
-        self.symbols_by_category(category)
-            .find(|named_symbol| named_symbol.name == symbol_name)
-            .map(|named_symbol| named_symbol.span)
+        self.symbol_spans_by_category.get(&category)?.get(symbol_name).copied()
     }
 
     #[must_use]
