@@ -1404,64 +1404,64 @@ textarea {
   color: var(--muted-foreground);
 }
 
+.graph-output-dialog__body {
+  @apply grid min-h-0 gap-3 overflow-hidden;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 .graph-output-dialog__entries {
-  @apply grid min-h-0 gap-3 overflow-y-auto pr-1;
+  /* Show eight result selectors at a time; loop outputs keep flowing right. */
+  --graph-output-entry-gap: 0.5rem;
+  --graph-output-entry-width: calc((100% - 3.5rem) / 8);
+  display: grid;
+  min-width: 0;
+  grid-auto-flow: column;
+  grid-auto-columns: max(8.5rem, var(--graph-output-entry-width));
+  gap: var(--graph-output-entry-gap);
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.25rem;
+  scroll-behavior: smooth;
+  scrollbar-gutter: stable;
 }
 
 .graph-output-dialog__entry {
-  @apply min-h-0 overflow-hidden rounded-xl border;
+  @apply flex min-w-0 cursor-pointer items-center justify-between gap-2 overflow-hidden rounded-xl border px-3 py-2 text-left;
   border-color: var(--graph-line);
   background: color-mix(in srgb, var(--graph-panel-soft) 88%, transparent);
-}
-
-.graph-output-dialog__entry summary {
-  @apply flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3;
   color: color-mix(in srgb, var(--foreground) 82%, transparent);
 }
 
-.graph-output-dialog__entry summary:hover {
-  background: color-mix(in srgb, var(--graph-panel-soft) 72%, transparent);
+.graph-output-dialog__entry:hover,
+.graph-output-dialog__entry[data-selected="true"] {
+  border-color: color-mix(in srgb, var(--graph-agent) 42%, var(--graph-line));
+  background: color-mix(in srgb, var(--graph-agent) 8%, var(--graph-panel-soft));
 }
 
-.graph-output-dialog__entry[open] summary {
-  border-bottom: 1px solid var(--graph-line);
-}
-
-.graph-output-dialog__entry summary::-webkit-details-marker {
-  display: none;
-}
-
-.graph-output-dialog__entry summary::before {
-  content: "+";
-  @apply inline-flex size-6 shrink-0 items-center justify-center rounded-md text-sm font-semibold;
-  border: 1px solid var(--graph-line);
-  background: color-mix(in srgb, var(--graph-panel) 94%, transparent);
-  color: var(--muted-foreground);
-}
-
-.graph-output-dialog__entry[open] summary::before {
-  content: "-";
-}
-
-.graph-output-dialog__entry summary strong {
-  @apply text-sm font-semibold;
+.graph-output-dialog__entry strong {
+  @apply min-w-0 truncate text-sm font-semibold;
   margin-right: auto;
 }
 
-.graph-output-dialog__entry summary small {
-  @apply rounded-md px-2 py-1 text-xs font-semibold;
+.graph-output-dialog__entry small {
+  @apply shrink-0 rounded-md px-2 py-1 text-xs font-semibold;
   border: 1px solid var(--graph-line);
   background: color-mix(in srgb, var(--graph-panel) 94%, transparent);
   color: var(--muted-foreground);
 }
 
 .graph-output-dialog__json {
-  @apply min-h-0 border-t;
+  @apply min-h-0 overflow-hidden border;
   border-color: var(--graph-line);
-  border-radius: 0;
+  border-radius: 12px;
   background: color-mix(in srgb, var(--graph-panel) 96%, var(--foreground) 4%);
+  height: 100%;
   max-height: none;
-  overflow: visible;
+}
+
+.graph-output-dialog__json .cm-editor {
+  height: 100%;
+  min-height: 0;
 }
 
 .graph-output-dialog__json .cm-activeLine {
@@ -1474,9 +1474,8 @@ textarea {
 }
 
 .graph-output-dialog__json .cm-scroller {
-  max-height: none;
-  overflow-x: auto;
-  overflow-y: visible;
+  max-height: 100%;
+  overflow: auto;
 }
 
 .graph-output-dialog__json .cm-content {
@@ -2014,11 +2013,19 @@ textarea {
 }
 
 .graph-node__execution-strip {
+  /* Loop agents can create many execution slots. Keep eight visible and let
+     the component auto-scroll instead of growing the node and shifting view. */
+  --graph-execution-slot-gap: 0.35rem;
+  --graph-execution-slot-width: calc((100% - 2.45rem) / 8);
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  gap: 0.35rem;
+  grid-auto-columns: max(1.3rem, var(--graph-execution-slot-width));
+  gap: var(--graph-execution-slot-gap);
+  overflow-x: auto;
+  overflow-y: hidden;
   padding: 0.75rem 1rem 0;
+  scroll-behavior: smooth;
+  scrollbar-gutter: stable;
 }
 
 .graph-node__execution-strip button {
@@ -2774,7 +2781,9 @@ textarea {
 }
 
 .graph-node__execution-strip {
-  gap: 0.3rem;
+  --graph-execution-slot-gap: 0.3rem;
+  --graph-execution-slot-width: calc((100% - 2.1rem) / 8);
+  gap: var(--graph-execution-slot-gap);
   padding: 0.7rem 0.9rem 0;
 }
 

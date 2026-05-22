@@ -102,7 +102,7 @@ export default function WorkflowGraphView({ graph, source, graphState, runState,
         {graph ? (
           <div className="graph-view__flow">
             <ReactFlowProvider>
-              <GraphCanvas nodes={nodes} edges={edges} graphSignature={graphSignature} layoutRequestCount={layoutRequestCount} />
+              <GraphCanvas nodes={nodes} edges={edges} graphSignature={graphSignature} layoutRequestCount={layoutRequestCount} runState={runState} />
             </ReactFlowProvider>
           </div>
         ) : (
@@ -131,10 +131,11 @@ function GraphStateBadge({ graphState }: { graphState: GraphState }) {
   );
 }
 
-function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignature, layoutRequestCount }: { nodes: WorkflowGraphReactNode[]; edges: Edge[]; graphSignature: string; layoutRequestCount: number }) {
+function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignature, layoutRequestCount, runState }: { nodes: WorkflowGraphReactNode[]; edges: Edge[]; graphSignature: string; layoutRequestCount: number; runState: RunState }) {
   const restoredViewportRef = useRef<Viewport | null>(restoreGraphViewport());
   const initialFitViewCompleteRef = useRef(false);
   const initialNodesRef = useRef<WorkflowGraphReactNode[] | null>(null);
+  const currentViewportRef = useRef<Viewport>(restoredViewportRef.current ?? defaultGraphViewport);
 
   if (initialNodesRef.current === null) {
     initialNodesRef.current = restoreOrLayoutGraphNodePositions(incomingNodes, incomingEdges);
@@ -142,7 +143,7 @@ function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignatur
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodesRef.current);
   const [edges, setEdges, onEdgesChange] = useEdgesState(incomingEdges);
-  const [viewport, setViewport] = useState<Viewport>(restoredViewportRef.current ?? defaultGraphViewport);
+  const [viewport, setViewport] = useState<Viewport>(currentViewportRef.current);
   const reactFlowInstance = useReactFlow();
 
   useEffect(() => {
@@ -163,12 +164,34 @@ function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignatur
   }, [graphSignature, setNodes]);
 
   useEffect(() => {
+    // Runtime events can arrive many times during loop agents. They may change
+    // labels, badges, and outputs, but must never fit, pan, or zoom the canvas.
     setNodes((currentNodes) => mergeRuntimeNodeUpdates(currentNodes, incomingNodes));
   }, [incomingNodes, setNodes]);
 
   useEffect(() => {
+    // Keep edge status updates data-only as well; viewport control stays with
+    // the user and the explicit Arrange action above.
     setEdges((currentEdges) => mergeRuntimeEdgeUpdates(currentEdges, incomingEdges));
   }, [incomingEdges, setEdges]);
+
+  useEffect(() => {
+    if (runState !== 'running') {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      const preservedViewport = currentViewportRef.current;
+      const actualViewport = reactFlowInstance.getViewport();
+
+      if (sameGraphViewport(actualViewport, preservedViewport)) {
+        return;
+      }
+
+      setViewport(preservedViewport);
+      void reactFlowInstance.setViewport(preservedViewport, { duration: 0 });
+    });
+  }, [incomingNodes, incomingEdges, reactFlowInstance, runState]);
 
   useEffect(() => {
     storeGraphNodePositions(nodes);
@@ -185,6 +208,7 @@ function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignatur
       void reactFlowInstance.fitView({ padding: 0.16, duration: 420 }).then(() => {
         const nextViewport = reactFlowInstance.getViewport();
 
+        currentViewportRef.current = nextViewport;
         setViewport(nextViewport);
         storeGraphViewport(nextViewport);
       });
@@ -192,6 +216,7 @@ function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignatur
   }, [layoutRequestCount, edges, reactFlowInstance, setNodes, setViewport]);
 
   function handleViewportChange(nextViewport: Viewport) {
+    currentViewportRef.current = nextViewport;
     setViewport(nextViewport);
     storeGraphViewport(nextViewport);
   }
@@ -206,7 +231,17 @@ function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignatur
       viewport={viewport}
       onViewportChange={handleViewportChange}
       onInit={(initializedReactFlowInstance) => {
-        if (restoredViewportRef.current || initialFitViewCompleteRef.current) {
+        if (restoredViewportRef.current) {
+          const restoredViewport = restoredViewportRef.current;
+
+          currentViewportRef.current = restoredViewport;
+          setViewport(restoredViewport);
+          void initializedReactFlowInstance.setViewport(restoredViewport, { duration: 0 });
+
+          return;
+        }
+
+        if (initialFitViewCompleteRef.current) {
           return;
         }
 
@@ -216,6 +251,7 @@ function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignatur
           void initializedReactFlowInstance.fitView({ padding: 0.16, duration: 0 }).then(() => {
             const nextViewport = initializedReactFlowInstance.getViewport();
 
+            currentViewportRef.current = nextViewport;
             setViewport(nextViewport);
             storeGraphViewport(nextViewport);
           });
@@ -225,7 +261,10 @@ function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignatur
       maxZoom={1.2}
       nodesConnectable={false}
       edgesReconnectable={false}
-      onMoveEnd={(_event, viewport: Viewport) => storeGraphViewport(viewport)}
+      onMoveEnd={(_event, viewport: Viewport) => {
+        currentViewportRef.current = viewport;
+        storeGraphViewport(viewport);
+      }}
     >
       <Background color="var(--graph-grid-dot)" gap={18} size={1.1} />
       <MiniMap pannable zoomable nodeColor={nodeColor} />
@@ -400,6 +439,18 @@ function NodeStatusBadge({ status, activeRunCount, outputEntries }: { status: Gr
 }
 
 function GraphExecutionStrip({ node, activeRunCount, outputEntries, failureEntry, onOpenOutput }: { node: WorkflowExecutionGraphNode; activeRunCount: number; outputEntries: GraphOutputEntry[]; failureEntry: GraphFailureEntry | null; onOpenOutput: (outputIndex: number) => void }) {
+  const executionStripElementRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const executionStripElement = executionStripElementRef.current;
+
+    if (!executionStripElement) {
+      return;
+    }
+
+    executionStripElement.scrollTo({ left: executionStripElement.scrollWidth, behavior: 'smooth' });
+  }, [activeRunCount, outputEntries.length, failureEntry]);
+
   if (node.kind !== 'agent') {
     return null;
   }
@@ -408,7 +459,7 @@ function GraphExecutionStrip({ node, activeRunCount, outputEntries, failureEntry
   const visibleSlotCount = graphExecutionSlotCount(node, completedCount, activeRunCount, failureEntry !== null);
 
   return (
-    <div className="graph-node__execution-strip" aria-label="Execution progress">
+    <div ref={executionStripElementRef} className="graph-node__execution-strip" aria-label="Execution progress">
       {Array.from({ length: visibleSlotCount }).map((_, slotIndex) => {
         const slotStatus = executionSlotStatus(slotIndex, completedCount, activeRunCount, failureEntry !== null);
 
@@ -579,6 +630,45 @@ function GraphOutputAction({ node, outputEntries, onOpen }: { node: WorkflowExec
 }
 
 function GraphOutputDialog({ node, outputEntries, open, openOutputIndex, onOpenChange }: { node: WorkflowExecutionGraphNode; outputEntries: GraphOutputEntry[]; open: boolean; openOutputIndex: number; onOpenChange: (open: boolean) => void }) {
+  const [selectedOutputIndex, setSelectedOutputIndex] = useState(openOutputIndex);
+  const entriesElementRef = useRef<HTMLDivElement | null>(null);
+  const previousOutputEntryCountRef = useRef(outputEntries.length);
+  const selectedOutputEntry = outputEntries[selectedOutputIndex] ?? outputEntries[0];
+
+  useEffect(() => {
+    setSelectedOutputIndex(Math.min(openOutputIndex, Math.max(outputEntries.length - 1, 0)));
+  }, [openOutputIndex, outputEntries.length]);
+
+  useEffect(() => {
+    if (!open) {
+      previousOutputEntryCountRef.current = outputEntries.length;
+
+      return;
+    }
+
+    if (outputEntries.length > previousOutputEntryCountRef.current) {
+      setSelectedOutputIndex(outputEntries.length - 1);
+    }
+
+    previousOutputEntryCountRef.current = outputEntries.length;
+  }, [open, outputEntries.length]);
+
+  useEffect(() => {
+    const entriesElement = entriesElementRef.current;
+
+    if (!entriesElement) {
+      return;
+    }
+
+    // Loop agents can add many outputs while the dialog is open. Keep the
+    // selector bounded and auto-scroll to the latest selected result.
+    entriesElement.querySelector<HTMLElement>('[data-selected="true"]')?.scrollIntoView({ behavior: 'smooth', inline: 'end', block: 'nearest' });
+  }, [selectedOutputIndex, outputEntries.length]);
+
+  if (!selectedOutputEntry) {
+    return null;
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="graph-output-dialog">
@@ -586,16 +676,24 @@ function GraphOutputDialog({ node, outputEntries, open, openOutputIndex, onOpenC
           <DialogTitle>{node.label} output</DialogTitle>
           <DialogDescription>{outputDescription(node, outputEntries)}</DialogDescription>
         </DialogHeader>
-        <div className="graph-output-dialog__entries">
-          {outputEntries.map((outputEntry, outputIndex) => (
-            <details key={`${outputEntry.title}-${outputIndex}-${openOutputIndex}`} className="graph-output-dialog__entry" open={outputIndex === openOutputIndex}>
-              <summary>
+        <div className="graph-output-dialog__body">
+          <div ref={entriesElementRef} className="graph-output-dialog__entries" role="tablist" aria-label={`${node.label} outputs`}>
+            {outputEntries.map((outputEntry, outputIndex) => (
+              <button
+                key={`${outputEntry.title}-${outputIndex}`}
+                type="button"
+                className="graph-output-dialog__entry"
+                role="tab"
+                data-selected={outputIndex === selectedOutputIndex ? 'true' : 'false'}
+                aria-selected={outputIndex === selectedOutputIndex}
+                onClick={() => setSelectedOutputIndex(outputIndex)}
+              >
                 <strong>{outputEntry.title}</strong>
                 <small>{outputByteSize(jsonByteSize(outputEntry.outputJson))}</small>
-              </summary>
-              <JsonCodeEditor value={outputEntry.outputJson} readOnly className="graph-output-dialog__json" />
-            </details>
-          ))}
+              </button>
+            ))}
+          </div>
+          <JsonCodeEditor value={selectedOutputEntry.outputJson} readOnly className="graph-output-dialog__json" />
         </div>
       </DialogContent>
     </Dialog>
@@ -2534,6 +2632,12 @@ function restoreGraphViewport(): Viewport | null {
 
 function storeGraphViewport(viewport: Viewport) {
   localStorage.setItem(graphViewportStorageKey, JSON.stringify(viewport));
+}
+
+function sameGraphViewport(currentViewport: Viewport, nextViewport: Viewport) {
+  const viewportTolerance = 0.001;
+
+  return Math.abs(currentViewport.x - nextViewport.x) < viewportTolerance && Math.abs(currentViewport.y - nextViewport.y) < viewportTolerance && Math.abs(currentViewport.zoom - nextViewport.zoom) < viewportTolerance;
 }
 
 function restoreOrLayoutGraphNodePositions(nodes: WorkflowGraphReactNode[], edges: Edge[]) {
