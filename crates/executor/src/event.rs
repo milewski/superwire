@@ -41,18 +41,19 @@ impl McpCallEventDetails {
     }
 
     #[must_use]
-    fn event_data(&self) -> serde_json::Map<String, Value> {
+    fn into_event_data(self) -> serde_json::Map<String, Value> {
+        let params = self.arguments.clone();
         let mut event_data = serde_json::Map::from_iter([
-            ("operation".to_string(), Value::String(self.operation.clone())),
-            ("target_name".to_string(), Value::String(self.target_name.clone())),
-            ("server_name".to_string(), Value::String(self.server_name.clone())),
-            ("item_name".to_string(), Value::String(self.item_name.clone())),
-            ("arguments".to_string(), self.arguments.clone()),
-            ("params".to_string(), self.arguments.clone()),
+            ("operation".to_string(), Value::String(self.operation)),
+            ("target_name".to_string(), Value::String(self.target_name)),
+            ("server_name".to_string(), Value::String(self.server_name)),
+            ("item_name".to_string(), Value::String(self.item_name)),
+            ("arguments".to_string(), self.arguments),
+            ("params".to_string(), params),
         ]);
 
-        if let Some(input_schema) = &self.input_schema {
-            event_data.insert("input_schema".to_string(), input_schema.clone());
+        if let Some(input_schema) = self.input_schema {
+            event_data.insert("input_schema".to_string(), input_schema);
         }
 
         event_data
@@ -218,14 +219,17 @@ impl ExecutorEvent {
 
     #[must_use]
     pub fn mcp_tool_validation_started(agent_name: String, tool_name: String, arguments: Value, input_schema: Value) -> Self {
+        let params = arguments.clone();
+        let event_data = Value::Object(serde_json::Map::from_iter([
+            ("tool_name".to_string(), Value::String(tool_name)),
+            ("arguments".to_string(), arguments),
+            ("params".to_string(), params),
+            ("input_schema".to_string(), input_schema),
+        ]));
+
         Self::new(ExecutorEventKind::McpToolValidationStarted)
             .with_agent_name(agent_name)
-            .with_data(serde_json::json!({
-                "tool_name": tool_name,
-                "arguments": arguments,
-                "params": arguments,
-                "input_schema": input_schema,
-            }))
+            .with_data(event_data)
     }
 
     #[must_use]
@@ -251,12 +255,12 @@ impl ExecutorEvent {
 
     #[must_use]
     pub fn mcp_call_started(details: McpCallEventDetails) -> Self {
-        Self::new(ExecutorEventKind::McpCallStarted).with_data(Value::Object(details.event_data()))
+        Self::new(ExecutorEventKind::McpCallStarted).with_data(Value::Object(details.into_event_data()))
     }
 
     #[must_use]
     pub fn mcp_call_completed(details: McpCallEventDetails, result: Value, raw_result: Value, duration: Duration) -> Self {
-        let mut event_data = details.event_data();
+        let mut event_data = details.into_event_data();
         event_data.insert("result".to_string(), result);
         event_data.insert("output".to_string(), raw_result.clone());
         event_data.insert("raw_result".to_string(), raw_result);
@@ -267,7 +271,7 @@ impl ExecutorEvent {
 
     #[must_use]
     pub fn mcp_call_failed(details: McpCallEventDetails, error: Value, duration: Duration) -> Self {
-        let mut event_data = details.event_data();
+        let mut event_data = details.into_event_data();
         event_data.insert("error".to_string(), error);
         event_data.insert("duration_ms".to_string(), serde_json::json!(duration_ms(duration)));
 

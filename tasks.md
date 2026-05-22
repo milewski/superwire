@@ -225,7 +225,7 @@
   Description: Add repeatable benchmark targets for representative small, medium, and large workflows.
   Rationale: Performance refactors need baselines to prove improvement and detect regressions.
 
-- [~] Reduce cloning in execution hot paths using borrowing or `Arc` where appropriate.
+- [x] Reduce cloning in execution hot paths using borrowing or `Arc` where appropriate.
   Description: Audit model requests, tool definitions, prompt strings, schemas, and JSON values for unnecessary cloning.
   Rationale: Large parallel workflows pay for avoidable allocation and cloning costs.
 
@@ -327,8 +327,4 @@
 
 ## Incomplete Handoff Notes
 
-- Runtime execution now avoids cloning planned agents during batch and for-loop scheduling, uses `Arc`-backed `RuntimeState`
-  snapshots, merges borrowed agent dynamic bindings into evaluation contexts, and normalizes prompt JSON by reference.
-  Remaining clone-reduction work should audit provider request construction, Cersei tool schema conversion, MCP event payload
-  duplication, and repeated JSON schema generation for model tool definitions.
 - Executor support now uses `superwire_core::testing::WorkflowSource` and schema helpers, and core/LSP inline source helpers share the core workflow template API. CLI tests have not been migrated to shared command/test helpers yet.

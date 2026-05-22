@@ -221,7 +221,7 @@ impl ExecutionPlan {
 
                 Some(WorkflowExecutionGraphPort {
                     name: format!("agent.{agent_name}"),
-                    schema: workflow_type_to_json_schema(&planned_agent.final_output_type),
+                    schema: planned_agent.final_output_schema.clone(),
                 })
             })
             .collect::<Vec<_>>();
@@ -432,7 +432,7 @@ impl PlannedAgent {
             inputs: self.execution_graph_inputs(execution_plan),
             outputs: vec![WorkflowExecutionGraphPort {
                 name: format!("agent.{}", self.name),
-                schema: workflow_type_to_json_schema(&self.final_output_type),
+                schema: self.final_output_schema.clone(),
             }],
             dependencies: self.dependencies.clone(),
             provider_name: Some(self.provider_name.clone()),
@@ -521,7 +521,7 @@ impl PlannedAgent {
         Some(WorkflowExecutionGraphLoopInfo {
             pattern: for_loop.pattern_label(),
             iterable_schema: json!({ "type": "array" }),
-            iteration_output_schema: workflow_type_to_json_schema(&self.iteration_output_type),
+            iteration_output_schema: self.iteration_output_schema.clone(),
         })
     }
 
@@ -533,7 +533,7 @@ impl PlannedAgent {
 
                 Some(WorkflowExecutionGraphPort {
                     name: format!("agent.{dependency_name}"),
-                    schema: workflow_type_to_json_schema(&planned_agent.final_output_type),
+                    schema: planned_agent.final_output_schema.clone(),
                 })
             })
             .collect()
@@ -603,8 +603,8 @@ impl PlannedAgent {
             item_name,
             description: typed_tool.declaration.description.clone(),
             max_calls: use_expression.max_calls_override().or(typed_tool.declaration.max_calls),
-            input_schema: workflow_type_to_json_schema(&typed_tool.input_type),
-            output_schema: workflow_type_to_json_schema(&typed_tool.output_type),
+            input_schema: typed_tool.input_schema.clone(),
+            output_schema: typed_tool.output_schema(),
         })
     }
 

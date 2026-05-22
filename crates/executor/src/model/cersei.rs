@@ -23,6 +23,7 @@ pub struct CerseiModelProvider;
 impl ModelProvider for CerseiModelProvider {
     async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ExecutorError> {
         let provider = request.provider_config.build_provider(&request)?;
+        let request_context = request.cersei_request_context()?;
         let mut last_error = None;
         let mut messages = vec![Message::user(request.prompt.clone())];
 
@@ -35,7 +36,7 @@ impl ModelProvider for CerseiModelProvider {
         );
 
         for round_index in 0..MAX_TOOL_CALL_ROUNDS {
-            let completion_request = self.build_completion_request(&request, messages.clone())?;
+            let completion_request = request_context.build_completion_request(&request.model_name, messages.clone());
 
             log::debug!(
                 "sending provider request through Cersei: agent={}, provider={}, round={}, messages={}, tools={}",
@@ -101,33 +102,33 @@ impl ModelProvider for CerseiModelProvider {
     }
 }
 
-impl CerseiModelProvider {
-    fn build_completion_request(&self, request: &ModelRequest, messages: Vec<Message>) -> Result<CompletionRequest, ExecutorError> {
-        let output_schema_text = serde_json::to_string(&request.output_schema).map_err(|error| ExecutorError::Model {
-            agent_name: request.agent_name.clone(),
-            message: format!("failed to serialize output schema: {error}"),
-        })?;
-        let mut completion_request = CompletionRequest::new(request.model_name.clone());
+struct CerseiRequestContext {
+    system_prompt: String,
+    tool_definitions: Vec<ToolDefinition>,
+    max_tokens: u32,
+    temperature: Option<f32>,
+    options: BTreeMap<String, Value>,
+}
 
-        completion_request.system = Some(format!(
-            "You are executing a deterministic workflow agent. You must finish by calling the internal `finalize` tool. Do not end with assistant text. For success, call `finalize` with type `success` and an `output` value that matches this JSON Schema: {output_schema_text}. If you cannot fulfill the request, call `finalize` with type `fail` and a clear `reason`. Never put failure or apology text in a success output."
-        ));
+impl CerseiRequestContext {
+    fn build_completion_request(&self, model_name: &str, messages: Vec<Message>) -> CompletionRequest {
+        let mut completion_request = CompletionRequest::new(model_name.to_string());
+
+        completion_request.system = Some(self.system_prompt.clone());
         completion_request.messages = messages;
-        completion_request.tools = request.tools.iter().map(ModelToolDefinition::to_cersei_tool_definition).collect();
-        completion_request.max_tokens = request.max_tokens();
-        completion_request.temperature = request.temperature();
+        completion_request.tools.clone_from(&self.tool_definitions);
+        completion_request.max_tokens = self.max_tokens;
+        completion_request.temperature = self.temperature;
 
-        for (setting_name, setting_value) in &request.inference {
-            if setting_name == InferenceParameter::MaxTokens.as_str() || setting_name == InferenceParameter::Temperature.as_str() {
-                continue;
-            }
-
+        for (setting_name, setting_value) in &self.options {
             completion_request.options.set(setting_name.clone(), setting_value.clone());
         }
 
-        Ok(completion_request)
+        completion_request
     }
+}
 
+impl CerseiModelProvider {
     fn execute_tool_calls(&self, request: &ModelRequest, tool_calls: &[CerseiToolCall]) -> Result<ToolCallRound, ExecutorError> {
         let mut messages = Vec::new();
 
@@ -187,22 +188,18 @@ impl CerseiModelProvider {
         let validation_started_at = Instant::now();
 
         if matches!(tool_definition.source, ModelToolSource::Mcp { .. }) {
-            request.send_mcp_tool_validation_started(
-                tool_definition.name.clone(),
-                arguments.clone(),
-                tool_definition.input_schema.clone(),
-            );
+            request.send_mcp_tool_validation_started(&tool_definition.name, &arguments, &tool_definition.input_schema);
         }
 
         if let Err(message) = validate_tool_arguments(&arguments, &tool_definition.input_schema) {
             let tool_error = tool_definition.argument_error(message);
 
             if matches!(tool_definition.source, ModelToolSource::Mcp { .. }) {
-                request.send_mcp_tool_validation_failed(tool_definition.name.clone(), tool_error.clone(), validation_started_at.elapsed());
+                request.send_mcp_tool_validation_failed(&tool_definition.name, &tool_error, validation_started_at.elapsed());
             }
 
             if !matches!(tool_definition.source, ModelToolSource::Finalize) {
-                request.send_tool_call_failed(tool_definition.name.clone(), tool_error.clone(), tool_call_started_at.elapsed());
+                request.send_tool_call_failed(&tool_definition.name, &tool_error, tool_call_started_at.elapsed());
             }
             log::warn!(
                 "rejected tool call before MCP dispatch: agent={}, tool={}, error={}",
@@ -215,7 +212,7 @@ impl CerseiModelProvider {
         }
 
         if matches!(tool_definition.source, ModelToolSource::Mcp { .. }) {
-            request.send_mcp_tool_validation_completed(tool_definition.name.clone(), validation_started_at.elapsed());
+            request.send_mcp_tool_validation_completed(&tool_definition.name, validation_started_at.elapsed());
         }
 
         if matches!(tool_definition.source, ModelToolSource::Finalize) {
@@ -322,6 +319,28 @@ struct McpImportTarget<'source> {
 }
 
 impl ModelRequest {
+    fn cersei_request_context(&self) -> Result<CerseiRequestContext, ExecutorError> {
+        let output_schema_text = serde_json::to_string(&self.output_schema).map_err(|error| ExecutorError::Model {
+            agent_name: self.agent_name.clone(),
+            message: format!("failed to serialize output schema: {error}"),
+        })?;
+        let options = self.cersei_options();
+
+        Ok(CerseiRequestContext {
+            system_prompt: format!(
+                "You are executing a deterministic workflow agent. You must finish by calling the internal `finalize` tool. Do not end with assistant text. For success, call `finalize` with type `success` and an `output` value that matches this JSON Schema: {output_schema_text}. If you cannot fulfill the request, call `finalize` with type `fail` and a clear `reason`. Never put failure or apology text in a success output."
+            ),
+            tool_definitions: self
+                .tools
+                .iter()
+                .map(ModelToolDefinition::to_cersei_tool_definition)
+                .collect(),
+            max_tokens: self.max_tokens(),
+            temperature: self.temperature(),
+            options,
+        })
+    }
+
     fn max_tokens(&self) -> u32 {
         self.inference
             .get(InferenceParameter::MaxTokens.as_str())
@@ -336,6 +355,17 @@ impl ModelRequest {
             .and_then(|value| serde_json::from_value::<f32>(value.clone()).ok())
     }
 
+    fn cersei_options(&self) -> BTreeMap<String, Value> {
+        self.inference
+            .iter()
+            .filter(|(setting_name, _)| {
+                setting_name.as_str() != InferenceParameter::MaxTokens.as_str()
+                    && setting_name.as_str() != InferenceParameter::Temperature.as_str()
+            })
+            .map(|(setting_name, setting_value)| (setting_name.clone(), setting_value.clone()))
+            .collect()
+    }
+
     fn call_limit_error(&self, tool_definition: &ModelToolDefinition) -> Option<Value> {
         let message = self
             .tool_call_tracker
@@ -343,7 +373,7 @@ impl ModelRequest {
             .err()?;
         let tool_error = tool_definition.call_limit_error(message);
 
-        self.send_tool_call_failed(tool_definition.name.clone(), tool_error.clone(), Duration::ZERO);
+        self.send_tool_call_failed(&tool_definition.name, &tool_error, Duration::ZERO);
         log::warn!(
             "rejected tool call at max_calls limit: agent={}, tool={}, error={}",
             self.agent_name,
@@ -474,7 +504,7 @@ impl ModelToolDefinition {
             Some(self.input_schema.clone()),
         );
 
-        request.send_mcp_call_started(call_details.clone());
+        request.send_mcp_call_started(&call_details);
         let started_at = Instant::now();
         log::info!(
             "dispatching MCP tool call: agent={}, tool={}, mcp_tool={}",
@@ -522,7 +552,7 @@ impl ModelToolDefinition {
             Some(self.input_schema.clone()),
         );
 
-        request.send_mcp_call_started(call_details.clone());
+        request.send_mcp_call_started(&call_details);
         let started_at = Instant::now();
         let result = match request.mcp_pool.get(&server_config)?.get_prompt(target.item_name, arguments) {
             Ok(result) => result,
@@ -562,7 +592,7 @@ impl ModelToolDefinition {
             Some(self.input_schema.clone()),
         );
 
-        request.send_mcp_call_started(call_details.clone());
+        request.send_mcp_call_started(&call_details);
         let started_at = Instant::now();
         let result = match request.mcp_pool.get(&server_config)?.read_resource(target.item_name, arguments) {
             Ok(result) => result,
@@ -827,15 +857,15 @@ fn normalize_instance_path(instance_path: &str) -> String {
 }
 
 trait ToolCallEventSender {
-    fn send_tool_call_failed(&self, tool_name: String, error: Value, duration: Duration);
+    fn send_tool_call_failed(&self, tool_name: &str, error: &Value, duration: Duration);
 
-    fn send_mcp_tool_validation_started(&self, tool_name: String, arguments: Value, input_schema: Value);
+    fn send_mcp_tool_validation_started(&self, tool_name: &str, arguments: &Value, input_schema: &Value);
 
-    fn send_mcp_tool_validation_failed(&self, tool_name: String, error: Value, duration: Duration);
+    fn send_mcp_tool_validation_failed(&self, tool_name: &str, error: &Value, duration: Duration);
 
-    fn send_mcp_tool_validation_completed(&self, tool_name: String, duration: Duration);
+    fn send_mcp_tool_validation_completed(&self, tool_name: &str, duration: Duration);
 
-    fn send_mcp_call_started(&self, details: McpCallEventDetails);
+    fn send_mcp_call_started(&self, details: &McpCallEventDetails);
 
     fn send_mcp_call_failed(&self, details: McpCallEventDetails, error: Value, duration: Duration);
 
@@ -843,47 +873,52 @@ trait ToolCallEventSender {
 }
 
 impl ToolCallEventSender for ModelRequest {
-    fn send_tool_call_failed(&self, tool_name: String, error: Value, duration: Duration) {
+    fn send_tool_call_failed(&self, tool_name: &str, error: &Value, duration: Duration) {
         if let Some(event_sender) = &self.event_sender {
-            let _ = event_sender.try_send(ExecutorEvent::tool_call_failed(self.agent_name.clone(), tool_name, error, duration));
+            let _ = event_sender.try_send(ExecutorEvent::tool_call_failed(
+                self.agent_name.clone(),
+                tool_name.to_string(),
+                error.clone(),
+                duration,
+            ));
         }
     }
 
-    fn send_mcp_tool_validation_started(&self, tool_name: String, arguments: Value, input_schema: Value) {
+    fn send_mcp_tool_validation_started(&self, tool_name: &str, arguments: &Value, input_schema: &Value) {
         if let Some(event_sender) = &self.event_sender {
             let _ = event_sender.try_send(ExecutorEvent::mcp_tool_validation_started(
                 self.agent_name.clone(),
-                tool_name,
-                arguments,
-                input_schema,
+                tool_name.to_string(),
+                arguments.clone(),
+                input_schema.clone(),
             ));
         }
     }
 
-    fn send_mcp_tool_validation_failed(&self, tool_name: String, error: Value, duration: Duration) {
+    fn send_mcp_tool_validation_failed(&self, tool_name: &str, error: &Value, duration: Duration) {
         if let Some(event_sender) = &self.event_sender {
             let _ = event_sender.try_send(ExecutorEvent::mcp_tool_validation_failed(
                 self.agent_name.clone(),
-                tool_name,
-                error,
+                tool_name.to_string(),
+                error.clone(),
                 duration,
             ));
         }
     }
 
-    fn send_mcp_tool_validation_completed(&self, tool_name: String, duration: Duration) {
+    fn send_mcp_tool_validation_completed(&self, tool_name: &str, duration: Duration) {
         if let Some(event_sender) = &self.event_sender {
             let _ = event_sender.try_send(ExecutorEvent::mcp_tool_validation_completed(
                 self.agent_name.clone(),
-                tool_name,
+                tool_name.to_string(),
                 duration,
             ));
         }
     }
 
-    fn send_mcp_call_started(&self, details: McpCallEventDetails) {
+    fn send_mcp_call_started(&self, details: &McpCallEventDetails) {
         if let Some(event_sender) = &self.event_sender {
-            let _ = event_sender.try_send(ExecutorEvent::mcp_call_started(details).with_agent_name(self.agent_name.clone()));
+            let _ = event_sender.try_send(ExecutorEvent::mcp_call_started(details.clone()).with_agent_name(self.agent_name.clone()));
         }
     }
 

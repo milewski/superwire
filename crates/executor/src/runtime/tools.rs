@@ -8,7 +8,7 @@ use superwire_core::dsl::{
 };
 use superwire_core::mcp::McpServerConfig;
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
-use superwire_core::semantic::support::types::{validate_value_against_type, workflow_type_to_json_schema};
+use superwire_core::semantic::support::types::validate_value_against_type;
 use superwire_core::semantic::{PlannedAgent, TypedToolIr};
 use tokio::sync::mpsc;
 
@@ -396,8 +396,8 @@ impl WorkflowExecutor {
         evaluation_context: &EvaluationContext,
     ) -> Result<ModelToolDefinition, ExecutorError> {
         let (tool_reference, override_binding_fields, override_max_calls) = match tool_expression {
-            Expression::Reference(reference) => (reference, Vec::new(), None),
-            Expression::ToolCall(tool_call) => (&tool_call.callee, tool_call.binding_fields.clone(), tool_call.max_calls),
+            Expression::Reference(reference) => (reference, &[] as &[ObjectField], None),
+            Expression::ToolCall(tool_call) => (&tool_call.callee, tool_call.binding_fields.as_slice(), tool_call.max_calls),
             _ => {
                 return Err(ExecutorError::Other {
                     message: format!("tools for agent `{}` must contain tool references", planned_agent.name),
@@ -410,7 +410,7 @@ impl WorkflowExecutor {
         let typed_tool = self.execution_plan.tools.get(tool_name).ok_or_else(|| ExecutorError::Other {
             message: format!("agent `{}` references unknown tool `{tool_name}`", planned_agent.name),
         })?;
-        let bindings = typed_tool.resolve_bindings(&override_binding_fields, evaluation_context)?;
+        let bindings = typed_tool.resolve_bindings(override_binding_fields, evaluation_context)?;
         log::debug!(
             "resolved tool `{}` for agent `{}`: binding_keys={}",
             typed_tool.name,
@@ -423,7 +423,7 @@ impl WorkflowExecutor {
             description: typed_tool.declaration.description.clone(),
             source: self.model_tool_source(&typed_tool.declaration, evaluation_context)?,
             input_schema: typed_tool.model_input_schema(&bindings),
-            output_schema: workflow_type_to_json_schema(&typed_tool.output_type),
+            output_schema: typed_tool.output_schema(),
             bindings,
             max_calls: override_max_calls.or(typed_tool.declaration.max_calls),
             max_calls_scope: if override_max_calls.is_some() {
@@ -445,8 +445,8 @@ impl WorkflowExecutor {
         reference_keyword: ReferenceKeyword,
     ) -> Result<ModelToolDefinition, ExecutorError> {
         let (reference, override_binding_fields, override_max_calls) = match import_expression {
-            Expression::Reference(reference) => (reference, Vec::new(), None),
-            Expression::ToolCall(tool_call) => (&tool_call.callee, tool_call.binding_fields.clone(), tool_call.max_calls),
+            Expression::Reference(reference) => (reference, &[] as &[ObjectField], None),
+            Expression::ToolCall(tool_call) => (&tool_call.callee, tool_call.binding_fields.as_slice(), tool_call.max_calls),
             _ => {
                 return Err(ExecutorError::Other {
                     message: format!(
@@ -503,7 +503,7 @@ impl WorkflowExecutor {
                 });
             }
         };
-        let bindings = self.resolve_mcp_import_bindings(import_parameters, &override_binding_fields, evaluation_context, import_name)?;
+        let bindings = self.resolve_mcp_import_bindings(import_parameters, override_binding_fields, evaluation_context, import_name)?;
         let server_config = self.resolve_mcp_import_server(&server_name, evaluation_context)?;
         let source = match reference_keyword {
             ReferenceKeyword::Prompt => ModelToolSource::McpPrompt {

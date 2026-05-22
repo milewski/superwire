@@ -29,6 +29,8 @@ pub struct TypedToolIr {
     pub input_type: WorkflowType,
     pub binding_type: WorkflowType,
     pub output_type: WorkflowType,
+    pub input_schema: Value,
+    pub output_schema: Value,
 }
 
 #[derive(Debug, Clone)]
@@ -40,13 +42,15 @@ pub struct TypedAgentIr {
     pub inference_fields: Vec<ObjectField>,
     pub iteration_output_type: WorkflowType,
     pub final_output_type: WorkflowType,
+    pub iteration_output_schema: Value,
+    pub final_output_schema: Value,
     pub dependencies: Vec<String>,
 }
 
 impl TypedToolIr {
     #[must_use]
     pub fn model_input_schema(&self, bindings: &Value) -> Value {
-        let mut input_schema = workflow_type_to_json_schema(&self.input_type);
+        let mut input_schema = self.input_schema.clone();
         let Some(binding_object) = bindings.as_object() else {
             return input_schema;
         };
@@ -76,6 +80,11 @@ impl TypedToolIr {
         }
 
         input_schema
+    }
+
+    #[must_use]
+    pub fn output_schema(&self) -> Value {
+        self.output_schema.clone()
     }
 }
 
@@ -174,6 +183,8 @@ fn collect_tool_types(
         } else {
             TypeExpression::Object(tool_declaration.output_fields.clone()).to_workflow_type(named_schema_types)?
         };
+        let input_schema = workflow_type_to_json_schema(&input_type);
+        let output_schema = workflow_type_to_json_schema(&output_type);
 
         input.insert(tool_declaration.name.clone(), input_type.clone());
         bindings.insert(tool_declaration.name.clone(), binding_type.clone());
@@ -184,6 +195,8 @@ fn collect_tool_types(
             input_type,
             binding_type,
             output_type,
+            input_schema,
+            output_schema,
         });
     }
 
@@ -239,6 +252,8 @@ fn collect_typed_agents(
         let final_output_type_expression = agent_declaration.inferred_final_output_type_expression();
         let iteration_output_type = iteration_output_type_expression.to_workflow_type(named_schema_types)?;
         let final_output_type = final_output_type_expression.to_workflow_type(named_schema_types)?;
+        let iteration_output_schema = workflow_type_to_json_schema(&iteration_output_type);
+        let final_output_schema = workflow_type_to_json_schema(&final_output_type);
 
         let model_usage = required_agent_model_usage(agent_declaration)?;
         let model_name = model_usage
@@ -278,6 +293,8 @@ fn collect_typed_agents(
             inference_fields,
             iteration_output_type,
             final_output_type: final_output_type.clone(),
+            iteration_output_schema,
+            final_output_schema,
             dependencies,
         });
 
