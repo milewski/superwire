@@ -1,8 +1,10 @@
 use super::{AgentExecutionContext, AgentRunContext, CompletedAgentExecution, ExecutorError, WorkflowExecutor};
+use crate::event::ExecutorEvent;
 use crate::model::ModelProvider;
 use crate::runtime::state::RuntimeState;
 use futures::stream::{FuturesUnordered, StreamExt};
-use serde_json::Value;
+use serde_json::{Map, Value};
+use std::time::Instant;
 use superwire_core::dsl::AgentForLoopPattern;
 use superwire_core::semantic::support::expression::evaluate_expression;
 use superwire_core::semantic::support::types::value_kind_name;
@@ -38,8 +40,27 @@ impl WorkflowExecutor {
                 value_kind_name(&iterable_value)
             ),
         })?;
+        let loop_started_at = Instant::now();
+        let iteration_bindings = loop_pattern.iteration_bindings(items)?;
+
+        if let Some(event_sender) = &agent_execution_context.event_sender {
+            let _ = event_sender
+                .send(ExecutorEvent::agent_loop_started(planned_agent.name.clone(), iteration_bindings))
+                .await;
+        }
 
         if items.is_empty() {
+            if let Some(event_sender) = &agent_execution_context.event_sender {
+                let _ = event_sender
+                    .send(ExecutorEvent::agent_loop_completed(
+                        planned_agent.name.clone(),
+                        Value::Array(Vec::new()),
+                        loop_started_at.elapsed(),
+                        0,
+                    ))
+                    .await;
+            }
+
             return Ok(CompletedAgentExecution {
                 agent_name: planned_agent.name.clone(),
                 output: Value::Array(Vec::new()),
@@ -49,6 +70,7 @@ impl WorkflowExecutor {
 
         let mut pending_iterations = FuturesUnordered::new();
         let agent_name = planned_agent.name.clone();
+        let iteration_count = items.len();
         let tool_call_tracker = runtime_state.tool_call_tracker();
 
         for (iteration_index, item) in items.iter().enumerate() {
@@ -73,18 +95,32 @@ impl WorkflowExecutor {
                         iteration_index: Some(iteration_index),
                     }))
                     .await
+                    .map(|completed_execution| (iteration_index, completed_execution))
             });
         }
 
-        let mut iteration_outputs = Vec::with_capacity(pending_iterations.len());
+        let mut iteration_outputs = vec![Value::Null; iteration_count];
 
         while let Some(iteration_result) = pending_iterations.next().await {
-            iteration_outputs.push(iteration_result?.output);
+            let (iteration_index, completed_execution) = iteration_result?;
+            iteration_outputs[iteration_index] = completed_execution.output;
+        }
+        let output = Value::Array(iteration_outputs);
+
+        if let Some(event_sender) = &agent_execution_context.event_sender {
+            let _ = event_sender
+                .send(ExecutorEvent::agent_loop_completed(
+                    agent_name.clone(),
+                    output.clone(),
+                    loop_started_at.elapsed(),
+                    iteration_count,
+                ))
+                .await;
         }
 
         Ok(CompletedAgentExecution {
             agent_name,
-            output: Value::Array(iteration_outputs),
+            output,
             context: Value::Null,
         })
     }
@@ -92,26 +128,52 @@ impl WorkflowExecutor {
 
 trait AgentForLoopPatternRuntimeExt {
     fn bind_loop_variables(&self, item: &Value, runtime_state: &mut RuntimeState) -> Result<(), ExecutorError>;
+    fn iteration_bindings(&self, items: &[Value]) -> Result<Vec<Value>, ExecutorError>;
+    fn bindings_for_item(&self, item: &Value) -> Result<Map<String, Value>, ExecutorError>;
 }
 
 impl AgentForLoopPatternRuntimeExt for AgentForLoopPattern {
     fn bind_loop_variables(&self, item: &Value, runtime_state: &mut RuntimeState) -> Result<(), ExecutorError> {
+        for (binding_name, binding_value) in self.bindings_for_item(item)? {
+            runtime_state.insert_local_binding(binding_name, binding_value);
+        }
+
+        Ok(())
+    }
+
+    fn iteration_bindings(&self, items: &[Value]) -> Result<Vec<Value>, ExecutorError> {
+        items
+            .iter()
+            .enumerate()
+            .map(|(iteration_index, item)| {
+                let bindings = self.bindings_for_item(item)?;
+
+                Ok(serde_json::json!({
+                    "iteration_index": iteration_index,
+                    "bindings": bindings,
+                }))
+            })
+            .collect()
+    }
+
+    fn bindings_for_item(&self, item: &Value) -> Result<Map<String, Value>, ExecutorError> {
+        let mut bindings = Map::new();
+
         match self {
             AgentForLoopPattern::Identifier(identifier) => {
-                runtime_state.insert_local_binding(identifier.clone(), item.clone());
+                bindings.insert(identifier.clone(), item.clone());
             }
             AgentForLoopPattern::ObjectDestructuring(field_names) => {
                 let item_object = item.as_object().ok_or_else(|| ExecutorError::Other {
                     message: format!("for-loop destructuring expects object, found {}", value_kind_name(item)),
                 })?;
-
                 for field_name in field_names {
                     let field_value = item_object.get(field_name).cloned().unwrap_or(Value::Null);
-                    runtime_state.insert_local_binding(field_name.clone(), field_value);
+                    bindings.insert(field_name.clone(), field_value);
                 }
             }
         }
 
-        Ok(())
+        Ok(bindings)
     }
 }

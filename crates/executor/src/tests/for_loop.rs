@@ -433,6 +433,70 @@ async fn for_loop_events_include_iteration_indexes() {
 }
 
 #[tokio::test]
+async fn for_loop_events_include_loop_lifecycle_and_bindings() {
+    let workflow_source = workflow_source! {
+        provider openai from openai {
+            endpoint: "http://localhost:1234/v1"
+            api_key: "test-api-key"
+        }
+
+        model openai_model from openai {
+            id: "model-a"
+        }
+
+        input {
+            participants: [{
+                id: number
+                name: string
+            }]
+        }
+
+        agent writer for { id, name } in input.participants {
+            model: model.openai_model
+            instruction: "Write {{ name }}"
+            output {
+                value: string
+            }
+        }
+
+        output {
+            values: agent.writer
+        }
+    };
+    let service = ExecutorService::new(TestModelProvider::new(vec![json!({ "value": "a" }), json!({ "value": "b" })]));
+    let mut receiver = service.execute_stream(request_with_input(
+        workflow_source,
+        json!({ "participants": [
+            { "id": 1, "name": "Ada" },
+            { "id": 2, "name": "Grace" },
+        ] }),
+    ));
+    let mut loop_started_data = None;
+    let mut loop_completed_data = None;
+
+    while let Some(event) = receiver.recv().await {
+        if event.kind == ExecutorEventKind::AgentLoopStarted {
+            loop_started_data = event.data;
+
+            continue;
+        }
+
+        if event.kind == ExecutorEventKind::AgentLoopCompleted {
+            loop_completed_data = event.data;
+        }
+    }
+
+    let loop_started_data = loop_started_data.expect("loop started event should include data");
+    let loop_completed_data = loop_completed_data.expect("loop completed event should include data");
+
+    assert_eq!(loop_started_data["iteration_count"], json!(2));
+    assert_eq!(loop_started_data["iterations"][0]["bindings"]["id"], json!(1));
+    assert_eq!(loop_started_data["iterations"][0]["bindings"]["name"], json!("Ada"));
+    assert_eq!(loop_completed_data["iteration_count"], json!(2));
+    assert_eq!(loop_completed_data["output"], json!([{ "value": "a" }, { "value": "b" }]));
+}
+
+#[tokio::test]
 async fn for_loop_can_reference_output_in_later_agent() {
     let workflow_source = workflow_source! {
         provider openai from openai {

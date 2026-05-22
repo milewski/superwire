@@ -62,9 +62,13 @@ impl McpCallEventDetails {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+// Keep downstream integration packages in sync when changing executor event
+// names or payload shapes. External packages live under integration/.
 pub enum ExecutorEventKind {
     WorkflowStarted,
     WorkflowPlanned,
+    AgentLoopStarted,
+    AgentLoopCompleted,
     AgentStarted,
     AgentCompleted,
     ToolCallStarted,
@@ -89,6 +93,8 @@ impl ExecutorEventKind {
         match self {
             Self::WorkflowStarted => "workflow_started",
             Self::WorkflowPlanned => "workflow_planned",
+            Self::AgentLoopStarted => "agent_loop_started",
+            Self::AgentLoopCompleted => "agent_loop_completed",
             Self::AgentStarted => "agent_started",
             Self::AgentCompleted => "agent_completed",
             Self::ToolCallStarted => "tool_call_started",
@@ -138,6 +144,27 @@ impl ExecutorEvent {
             "mcp_imports": mcp_imports,
             "steps": steps,
         }))
+    }
+
+    #[must_use]
+    pub fn agent_loop_started(agent_name: String, iterations: Vec<Value>) -> Self {
+        Self::new(ExecutorEventKind::AgentLoopStarted)
+            .with_agent_name(agent_name)
+            .with_data(serde_json::json!({
+                "iteration_count": iterations.len(),
+                "iterations": iterations,
+            }))
+    }
+
+    #[must_use]
+    pub fn agent_loop_completed(agent_name: String, output: Value, duration: Duration, iteration_count: usize) -> Self {
+        Self::new(ExecutorEventKind::AgentLoopCompleted)
+            .with_agent_name(agent_name)
+            .with_data(serde_json::json!({
+                "output": output,
+                "duration_ms": duration_ms(duration),
+                "iteration_count": iteration_count,
+            }))
     }
 
     #[must_use]

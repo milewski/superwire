@@ -486,6 +486,10 @@ function graphExecutionSlotCount(node: WorkflowExecutionGraphNode, completedCoun
   const loopCount = loopBinding ? arrayLiteralItemCount(loopBinding.expression) : null;
   const failedCount = hasFailure ? 1 : 0;
 
+  if (node.loop_info && plannedRunCount === 0) {
+    return 0;
+  }
+
   if (loopCount !== null) {
     return Math.max(loopCount, plannedRunCount, completedCount + activeRunCount + failedCount);
   }
@@ -2515,12 +2519,20 @@ function plannedRunCountsByNodeIdFromEvents(events: ExecutorEvent[]) {
   const plannedRunCountsByNodeId: Record<string, number> = {};
   const plannedEvent = events.find((event) => event.kind === 'workflow_planned' && isRecord(event.data) && Array.isArray(event.data.steps));
 
-  if (!plannedEvent || !isRecord(plannedEvent.data) || !Array.isArray(plannedEvent.data.steps)) {
-    return plannedRunCountsByNodeId;
+  if (plannedEvent && isRecord(plannedEvent.data) && Array.isArray(plannedEvent.data.steps)) {
+    for (const plannedStep of plannedEvent.data.steps) {
+      collectPlannedRunCounts(plannedStep, plannedRunCountsByNodeId);
+    }
   }
 
-  for (const plannedStep of plannedEvent.data.steps) {
-    collectPlannedRunCounts(plannedStep, plannedRunCountsByNodeId);
+  for (const event of events) {
+    if (event.kind !== 'agent_loop_started' || !event.agent_name || !isRecord(event.data)) {
+      continue;
+    }
+
+    if (typeof event.data.iteration_count === 'number') {
+      plannedRunCountsByNodeId[event.agent_name] = event.data.iteration_count;
+    }
   }
 
   return plannedRunCountsByNodeId;
@@ -2565,6 +2577,10 @@ function graphExecutionSlotsByNodeId(events: ExecutorEvent[], plannedRunCountsBy
 
     if (!executionSlotsByNodeId[agentName]) {
       executionSlotsByNodeId[agentName] = [];
+    }
+
+    if (event.kind === 'agent_loop_started' && isRecord(event.data) && typeof event.data.iteration_count === 'number') {
+      executionSlotsByNodeId[agentName] = Array.from({ length: event.data.iteration_count }).map(() => pendingStatus);
     }
 
     if (event.kind === 'agent_started') {

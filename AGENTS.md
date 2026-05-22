@@ -94,6 +94,12 @@ Use instead: Define an enum like `Status::Success`, `Status::Fail`, `Status::Pen
 This applies to all cases where a value can only be one of a fixed set of options, including status codes, operation
 types, configuration modes, and any other categorical data.
 
+## Integration Event Sync
+
+When changing Rust executor event enums, event names, or payload structures, always check and update integration
+packages under `integration/` that parse or expose those events. Keep external package enums, data objects, tests, and
+serialization in sync with Rust event changes.
+
 ## DSL Keyword Matching (Mandatory)
 
 **Never match DSL language keywords with raw string comparisons.** Always resolve keywords through DSL enums and match
