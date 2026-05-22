@@ -287,9 +287,9 @@
   Description: Keep `BTreeMap` for stable output and tests, prefer `HashMap` for unordered hot paths.
   Rationale: Determinism is valuable at boundaries, but runtime and semantic hot paths should avoid unnecessary costs.
 
-- [ ] Add prefix indexes for completions only if benchmarks show filtering is a bottleneck.
+- [x] Add prefix indexes for completions only if benchmarks show filtering is a bottleneck.
   Description: Start with clean maps and add trie/prefix indexes only after measurement.
-  Rationale: Avoid premature complexity until completion filtering is proven slow.
+  Rationale: Avoid premature complexity until completion filtering is proven slow. Added a cached-document LSP completion filtering benchmark for model, tool, and schema candidates; measured results do not justify trie/prefix-index complexity yet, so no indexes were added.
 
 - [ ] Reduce `serde_json::Value` as an internal transport where static domain types are available.
   Description: Keep JSON values at API/dynamic boundaries and use domain structs internally.
