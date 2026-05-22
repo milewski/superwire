@@ -1,7 +1,6 @@
 use crate::event::ExecutorEvent;
 use serde_json::Value;
-use std::collections::BTreeMap;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 use superwire_core::mcp::McpClientPool;
 use superwire_core::semantic::support::provider::ProviderConfig;
@@ -12,7 +11,7 @@ pub struct ModelRequest {
     pub agent_name: String,
     pub provider_config: ProviderConfig,
     pub model_name: String,
-    pub inference: BTreeMap<String, Value>,
+    pub inference: HashMap<String, Value>,
     pub prompt: String,
     pub output_schema: Value,
     pub tools: Vec<ModelToolDefinition>,

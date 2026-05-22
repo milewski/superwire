@@ -9,7 +9,7 @@ use rust_mcp_schema::{
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -26,7 +26,7 @@ macro_rules! mcp_request {
 pub struct McpClient {
     server_config: McpServerConfig,
     initialized: AtomicBool,
-    resource_uri_cache: Mutex<BTreeMap<String, String>>,
+    resource_uri_cache: Mutex<HashMap<String, String>>,
 }
 
 pub trait McpClientBackend: fmt::Debug + Send + Sync {
@@ -52,7 +52,7 @@ impl McpClient {
         Self {
             server_config,
             initialized: AtomicBool::new(false),
-            resource_uri_cache: Mutex::new(BTreeMap::new()),
+            resource_uri_cache: Mutex::new(HashMap::new()),
         }
     }
 
@@ -650,14 +650,14 @@ mod tests {
 
 #[derive(Debug, Clone)]
 pub struct McpClientPool {
-    clients: Arc<Mutex<BTreeMap<String, Arc<dyn McpClientBackend>>>>,
+    clients: Arc<Mutex<HashMap<String, Arc<dyn McpClientBackend>>>>,
 }
 
 impl McpClientPool {
     #[must_use]
     pub fn empty() -> Self {
         Self {
-            clients: Arc::new(Mutex::new(BTreeMap::new())),
+            clients: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -669,7 +669,7 @@ impl McpClientPool {
         configs: impl IntoIterator<Item = McpServerConfig>,
         client_factory: &dyn McpClientFactory,
     ) -> Result<Self, McpError> {
-        let mut clients = BTreeMap::new();
+        let mut clients = HashMap::new();
 
         for server_config in configs {
             log::debug!("initializing MCP client pool for server: {}", server_config.name);
@@ -698,7 +698,7 @@ impl McpClientPool {
         evaluation_context: &crate::semantic::support::expression::EvaluationContext,
         client_factory: &dyn McpClientFactory,
     ) -> Result<Self, McpError> {
-        let mut clients = BTreeMap::new();
+        let mut clients = HashMap::new();
 
         for declaration in workflow.declarations() {
             let crate::dsl::Declaration::McpServer(mcp_server_declaration) = declaration else {

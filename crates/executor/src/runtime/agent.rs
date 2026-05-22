@@ -5,7 +5,7 @@ use crate::runtime::mcp::normalize_prompt;
 use crate::runtime::schema::PlannedAgentSchemaExt;
 use crate::runtime::state::RuntimeState;
 use serde_json::Value;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::time::Instant;
 use superwire_core::dsl::{AgentExpressionPropertyName, AgentProperty};
 use superwire_core::mcp::McpClientPool;
@@ -25,7 +25,7 @@ struct PreparedAgentRequest {
     agent_name: String,
     provider_config: ProviderConfig,
     model_name: String,
-    inference: BTreeMap<String, Value>,
+    inference: HashMap<String, Value>,
     prompt: String,
     output_schema: Value,
     tool_definitions: Vec<ModelToolDefinition>,
@@ -222,8 +222,8 @@ impl WorkflowExecutor {
         &self,
         planned_agent: &PlannedAgent,
         evaluation_context: &EvaluationContext,
-    ) -> Result<BTreeMap<String, Value>, ExecutorError> {
-        let mut inference = BTreeMap::new();
+    ) -> Result<HashMap<String, Value>, ExecutorError> {
+        let mut inference = HashMap::new();
 
         for inference_field in &planned_agent.inference_fields {
             let context = format!("inference setting `{}` for agent `{}`", inference_field.name, planned_agent.name);

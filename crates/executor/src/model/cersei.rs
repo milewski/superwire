@@ -8,7 +8,7 @@ use cersei_provider::{Anthropic, CompletionRequest, Gemini, OpenAi, Provider};
 use cersei_types::{ContentBlock, Message, MessageContent, ToolDefinition, ToolResultContent};
 use jsonschema::ValidationError;
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
 use superwire_core::mcp::McpServerConfig;
 use superwire_core::semantic::support::provider::{ProviderApiFormat, ProviderConfig, ProviderDriver};
@@ -107,7 +107,7 @@ struct CerseiRequestContext {
     tool_definitions: Vec<ToolDefinition>,
     max_tokens: u32,
     temperature: Option<f32>,
-    options: BTreeMap<String, Value>,
+    options: HashMap<String, Value>,
 }
 
 impl CerseiRequestContext {
@@ -355,7 +355,7 @@ impl ModelRequest {
             .and_then(|value| serde_json::from_value::<f32>(value.clone()).ok())
     }
 
-    fn cersei_options(&self) -> BTreeMap<String, Value> {
+    fn cersei_options(&self) -> HashMap<String, Value> {
         self.inference
             .iter()
             .filter(|(setting_name, _)| {

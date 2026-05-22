@@ -283,7 +283,7 @@
   Description: Use maps for declaration, tool, schema, model, provider, graph node, and completion lookup where order is not the main requirement.
   Rationale: Large workflows make repeated scans expensive.
 
-- [ ] Use `BTreeMap` only when deterministic ordering is needed.
+- [x] Use `BTreeMap` only when deterministic ordering is needed.
   Description: Keep `BTreeMap` for stable output and tests, prefer `HashMap` for unordered hot paths.
   Rationale: Determinism is valuable at boundaries, but runtime and semantic hot paths should avoid unnecessary costs.
 
