@@ -295,9 +295,9 @@
   Description: Keep JSON values at API/dynamic boundaries and use domain structs internally.
   Rationale: Typed data improves compile-time safety and avoids repeated conversion. Executor model/tool schemas now use a `ModelSchema` domain wrapper so static workflow schemas stay as `WorkflowType` until provider, validation, and event boundaries, while dynamic JSON schemas remain representable.
 
-- [ ] Add allocation-conscious schema conversion APIs and cache repeated schema outputs.
+- [x] Add allocation-conscious schema conversion APIs and cache repeated schema outputs.
   Description: Reuse schema conversion outputs for repeated type expressions where possible.
-  Rationale: Schema generation appears across validation, runtime, CLI, and LSP and can become expensive.
+  Rationale: Schema generation appears across validation, runtime, CLI, and LSP and can become expensive. Core now exposes `WorkflowSchemaCache` plus cache-aware `WorkflowType`, `TypedToolIr`, and `PlannedAgent` schema conversion methods; executor model requests use `ModelSchemaCache` so repeated typed `ModelSchema` materialization is reused while JSON remains a boundary representation.
 
 ## Phase 10: Migration And Verification
 

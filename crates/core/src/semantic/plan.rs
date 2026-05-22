@@ -1,7 +1,7 @@
 use crate::dsl::{AgentDeclaration, Expression, ObjectField, OutputDeclaration, Workflow};
 use crate::semantic::ir::{TypedToolIr, TypedWorkflowIr};
 use crate::semantic::support::provider::{build_provider_index, ProviderConfigTemplate};
-use crate::semantic::support::types::{validate_value_against_type, workflow_type_to_json_schema, WorkflowType};
+use crate::semantic::support::types::{validate_value_against_type, WorkflowSchemaCache, WorkflowType};
 use crate::semantic::WorkflowSemanticError;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -48,12 +48,22 @@ pub struct ExecutionPlan {
 impl PlannedAgent {
     #[must_use]
     pub fn iteration_output_schema(&self) -> Value {
-        workflow_type_to_json_schema(&self.iteration_output_type)
+        self.iteration_output_type.json_schema_value()
+    }
+
+    #[must_use]
+    pub fn iteration_output_schema_with_cache(&self, schema_cache: &mut WorkflowSchemaCache) -> Value {
+        self.iteration_output_type.json_schema_value_with_cache(schema_cache)
     }
 
     #[must_use]
     pub fn final_output_schema(&self) -> Value {
-        workflow_type_to_json_schema(&self.final_output_type)
+        self.final_output_type.json_schema_value()
+    }
+
+    #[must_use]
+    pub fn final_output_schema_with_cache(&self, schema_cache: &mut WorkflowSchemaCache) -> Value {
+        self.final_output_type.json_schema_value_with_cache(schema_cache)
     }
 
     pub fn validate_iteration_output_value(&self, output: &Value) -> Result<(), String> {

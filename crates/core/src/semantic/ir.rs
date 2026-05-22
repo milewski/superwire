@@ -4,7 +4,7 @@ use crate::dsl::{
     ModelUsage, ObjectField, OutputDeclaration, ProviderDeclaration, SecretsDeclaration, ToolDeclaration, TypeExpression, Workflow,
 };
 use crate::semantic::support::type_inference::TypeInferenceContext;
-use crate::semantic::support::types::{ensure_type_matches, workflow_type_from_rust_schema, workflow_type_to_json_schema, WorkflowType};
+use crate::semantic::support::types::{ensure_type_matches, workflow_type_from_rust_schema, WorkflowSchemaCache, WorkflowType};
 use crate::semantic::WorkflowSemanticError;
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
@@ -46,12 +46,24 @@ pub struct TypedAgentIr {
 impl TypedToolIr {
     #[must_use]
     pub fn input_schema(&self) -> Value {
-        workflow_type_to_json_schema(&self.input_type)
+        self.input_type.json_schema_value()
+    }
+
+    #[must_use]
+    pub fn input_schema_with_cache(&self, schema_cache: &mut WorkflowSchemaCache) -> Value {
+        self.input_type.json_schema_value_with_cache(schema_cache)
     }
 
     #[must_use]
     pub fn model_input_schema(&self, bindings: &Value) -> Value {
-        let mut input_schema = self.input_schema();
+        let mut schema_cache = WorkflowSchemaCache::disabled();
+
+        self.model_input_schema_with_cache(bindings, &mut schema_cache)
+    }
+
+    #[must_use]
+    pub fn model_input_schema_with_cache(&self, bindings: &Value, schema_cache: &mut WorkflowSchemaCache) -> Value {
+        let mut input_schema = self.input_schema_with_cache(schema_cache);
         let Some(binding_object) = bindings.as_object() else {
             return input_schema;
         };
@@ -85,7 +97,12 @@ impl TypedToolIr {
 
     #[must_use]
     pub fn output_schema(&self) -> Value {
-        workflow_type_to_json_schema(&self.output_type)
+        self.output_type.json_schema_value()
+    }
+
+    #[must_use]
+    pub fn output_schema_with_cache(&self, schema_cache: &mut WorkflowSchemaCache) -> Value {
+        self.output_type.json_schema_value_with_cache(schema_cache)
     }
 }
 

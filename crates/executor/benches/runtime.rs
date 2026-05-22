@@ -5,7 +5,7 @@ use std::hint::black_box;
 use std::time::Instant;
 use superwire_core::dsl::{parse_workflow, validate_workflow, AgentExpressionPropertyName, Workflow};
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
-use superwire_core::semantic::support::types::workflow_type_to_json_schema;
+use superwire_core::semantic::support::types::WorkflowSchemaCache;
 use superwire_core::semantic::{build_dynamic_typed_workflow_ir, build_execution_plan, ExecutionPlan};
 use superwire_executor::model::{ModelProvider, ModelRequest, ModelResponse};
 use superwire_executor::{ExecutorError, WorkflowExecutor};
@@ -279,6 +279,7 @@ impl BenchmarkWorkflow {
 
     fn resolve_schemas(&self) -> Vec<Value> {
         let mut schemas = Vec::new();
+        let mut schema_cache = WorkflowSchemaCache::new();
 
         for agent_name in &self.execution_plan.agent_execution_order {
             let planned_agent = self
@@ -287,15 +288,19 @@ impl BenchmarkWorkflow {
                 .get(agent_name)
                 .expect("planned agent should exist for execution order entry");
 
-            schemas.push(planned_agent.iteration_output_schema());
-            schemas.push(workflow_type_to_json_schema(&planned_agent.final_output_type));
+            schemas.push(planned_agent.iteration_output_schema_with_cache(&mut schema_cache));
+            schemas.push(planned_agent.final_output_type.json_schema_value_with_cache(&mut schema_cache));
         }
 
-        schemas.push(workflow_type_to_json_schema(&self.execution_plan.workflow_output_type));
+        schemas.push(
+            self.execution_plan
+                .workflow_output_type
+                .json_schema_value_with_cache(&mut schema_cache),
+        );
 
         for typed_tool in self.execution_plan.tools.values() {
-            schemas.push(workflow_type_to_json_schema(&typed_tool.input_type));
-            schemas.push(workflow_type_to_json_schema(&typed_tool.output_type));
+            schemas.push(typed_tool.input_type.json_schema_value_with_cache(&mut schema_cache));
+            schemas.push(typed_tool.output_type.json_schema_value_with_cache(&mut schema_cache));
         }
 
         schemas

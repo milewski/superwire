@@ -1,7 +1,7 @@
 use crate::event::{ExecutorEvent, McpCallEventDetails};
 use crate::model::provider::ModelProvider;
 use crate::model::response::normalize_mcp_tool_result;
-use crate::model::types::{FinalizeCallKind, ModelRequest, ModelResponse, ModelToolDefinition, ModelToolSource};
+use crate::model::types::{FinalizeCallKind, ModelRequest, ModelResponse, ModelSchemaCache, ModelToolDefinition, ModelToolSource};
 use crate::runtime::ExecutorError;
 use async_trait::async_trait;
 use cersei_provider::{Anthropic, CompletionRequest, Gemini, OpenAi, Provider};
@@ -23,7 +23,8 @@ pub struct CerseiModelProvider;
 impl ModelProvider for CerseiModelProvider {
     async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ExecutorError> {
         let provider = request.provider_config.build_provider(&request)?;
-        let request_context = request.cersei_request_context()?;
+        let mut schema_cache = ModelSchemaCache::new();
+        let request_context = request.cersei_request_context(&mut schema_cache)?;
         let mut last_error = None;
         let mut messages = vec![Message::user(request.prompt.clone())];
 
@@ -73,7 +74,7 @@ impl ModelProvider for CerseiModelProvider {
                     request.provider_config.driver.as_str(),
                     tool_calls.len()
                 );
-                let tool_call_round = self.execute_tool_calls(&request, &tool_calls)?;
+                let tool_call_round = self.execute_tool_calls(&request, &tool_calls, &mut schema_cache)?;
 
                 if let Some(finalize_result) = tool_call_round.finalize_result {
                     return self.complete_generation(&request, finalize_result);
@@ -129,11 +130,16 @@ impl CerseiRequestContext {
 }
 
 impl CerseiModelProvider {
-    fn execute_tool_calls(&self, request: &ModelRequest, tool_calls: &[CerseiToolCall]) -> Result<ToolCallRound, ExecutorError> {
+    fn execute_tool_calls(
+        &self,
+        request: &ModelRequest,
+        tool_calls: &[CerseiToolCall],
+        schema_cache: &mut ModelSchemaCache,
+    ) -> Result<ToolCallRound, ExecutorError> {
         let mut messages = Vec::new();
 
         for tool_call in tool_calls {
-            let tool_outcome = self.execute_tool_call(request, tool_call)?;
+            let tool_outcome = self.execute_tool_call(request, tool_call, schema_cache)?;
 
             if let ToolCallOutcome::Finalized(finalize_result) = tool_outcome {
                 return Ok(ToolCallRound {
@@ -163,7 +169,12 @@ impl CerseiModelProvider {
         })
     }
 
-    fn execute_tool_call(&self, request: &ModelRequest, tool_call: &CerseiToolCall) -> Result<ToolCallOutcome, ExecutorError> {
+    fn execute_tool_call(
+        &self,
+        request: &ModelRequest,
+        tool_call: &CerseiToolCall,
+        schema_cache: &mut ModelSchemaCache,
+    ) -> Result<ToolCallOutcome, ExecutorError> {
         let tool_definition = request
             .tools
             .iter()
@@ -186,14 +197,14 @@ impl CerseiModelProvider {
         );
         let mut arguments = tool_call.input.clone();
         let validation_started_at = Instant::now();
-        let input_schema = tool_definition.input_schema.json_value();
+        let input_schema = tool_definition.input_schema.json_value_with_cache(schema_cache);
 
         if matches!(tool_definition.source, ModelToolSource::Mcp { .. }) {
             request.send_mcp_tool_validation_started(&tool_definition.name, &arguments, &input_schema);
         }
 
         if let Err(message) = validate_tool_arguments(&arguments, &input_schema) {
-            let tool_error = tool_definition.argument_error(message);
+            let tool_error = tool_definition.argument_error(message, schema_cache);
 
             if matches!(tool_definition.source, ModelToolSource::Mcp { .. }) {
                 request.send_mcp_tool_validation_failed(&tool_definition.name, &tool_error, validation_started_at.elapsed());
@@ -226,7 +237,7 @@ impl CerseiModelProvider {
             }
         }
 
-        tool_definition.execute_external_tool(request, arguments)
+        tool_definition.execute_external_tool(request, arguments, schema_cache)
     }
 
     fn complete_generation(&self, request: &ModelRequest, finalize_result: FinalizeResult) -> Result<ModelResponse, ExecutorError> {
@@ -320,11 +331,14 @@ struct McpImportTarget<'source> {
 }
 
 impl ModelRequest {
-    fn cersei_request_context(&self) -> Result<CerseiRequestContext, ExecutorError> {
-        let output_schema_text = self.output_schema.json_string().map_err(|error| ExecutorError::Model {
-            agent_name: self.agent_name.clone(),
-            message: format!("failed to serialize output schema: {error}"),
-        })?;
+    fn cersei_request_context(&self, schema_cache: &mut ModelSchemaCache) -> Result<CerseiRequestContext, ExecutorError> {
+        let output_schema_text = self
+            .output_schema
+            .json_string_with_cache(schema_cache)
+            .map_err(|error| ExecutorError::Model {
+                agent_name: self.agent_name.clone(),
+                message: format!("failed to serialize output schema: {error}"),
+            })?;
         let options = self.cersei_options();
 
         Ok(CerseiRequestContext {
@@ -334,7 +348,7 @@ impl ModelRequest {
             tool_definitions: self
                 .tools
                 .iter()
-                .map(ModelToolDefinition::to_cersei_tool_definition)
+                .map(|tool_definition| tool_definition.to_cersei_tool_definition(schema_cache))
                 .collect(),
             max_tokens: self.max_tokens(),
             temperature: self.temperature(),
@@ -387,11 +401,11 @@ impl ModelRequest {
 }
 
 impl ModelToolDefinition {
-    fn to_cersei_tool_definition(&self) -> ToolDefinition {
+    fn to_cersei_tool_definition(&self, schema_cache: &mut ModelSchemaCache) -> ToolDefinition {
         ToolDefinition {
             name: self.name.clone(),
             description: self.description.clone().unwrap_or_else(|| format!("Workflow tool `{}`", self.name)),
-            input_schema: self.input_schema.json_value(),
+            input_schema: self.input_schema.json_value_with_cache(schema_cache),
         }
     }
 
@@ -416,12 +430,12 @@ impl ModelToolDefinition {
         }
     }
 
-    fn argument_error(&self, message: String) -> Value {
+    fn argument_error(&self, message: String, schema_cache: &mut ModelSchemaCache) -> Value {
         json!({
             "error": "tool_argument_schema_mismatch",
             "tool_name": self.name,
             "message": message,
-            "expected_schema": self.input_schema.json_value(),
+            "expected_schema": self.input_schema.json_value_with_cache(schema_cache),
         })
     }
 
@@ -434,7 +448,12 @@ impl ModelToolDefinition {
         })
     }
 
-    fn execute_external_tool(&self, request: &ModelRequest, arguments: Value) -> Result<ToolCallOutcome, ExecutorError> {
+    fn execute_external_tool(
+        &self,
+        request: &ModelRequest,
+        arguments: Value,
+        schema_cache: &mut ModelSchemaCache,
+    ) -> Result<ToolCallOutcome, ExecutorError> {
         match &self.source {
             ModelToolSource::Mcp {
                 server_name,
@@ -450,6 +469,7 @@ impl ModelToolDefinition {
                     endpoint,
                     headers,
                 },
+                schema_cache,
             ),
             ModelToolSource::McpPrompt {
                 server_name,
@@ -465,6 +485,7 @@ impl ModelToolDefinition {
                     endpoint,
                     headers,
                 },
+                schema_cache,
             ),
             ModelToolSource::McpResource {
                 server_name,
@@ -480,6 +501,7 @@ impl ModelToolDefinition {
                     endpoint,
                     headers,
                 },
+                schema_cache,
             ),
             ModelToolSource::Finalize => unreachable!("finalize tool calls should return before MCP dispatch"),
             ModelToolSource::Local => Err(ExecutorError::Model {
@@ -494,6 +516,7 @@ impl ModelToolDefinition {
         request: &ModelRequest,
         arguments: Value,
         target: McpToolTarget<'_>,
+        schema_cache: &mut ModelSchemaCache,
     ) -> Result<ToolCallOutcome, ExecutorError> {
         let server_config = McpServerConfig {
             name: target.server_name.unwrap_or("default").to_string(),
@@ -506,7 +529,7 @@ impl ModelToolDefinition {
             server_config.name.clone(),
             target.tool_name.to_string(),
             arguments.clone(),
-            Some(self.input_schema.json_value()),
+            Some(self.input_schema.json_value_with_cache(schema_cache)),
         );
 
         request.send_mcp_call_started(&call_details);
@@ -542,6 +565,7 @@ impl ModelToolDefinition {
         request: &ModelRequest,
         arguments: Value,
         target: McpImportTarget<'_>,
+        schema_cache: &mut ModelSchemaCache,
     ) -> Result<ToolCallOutcome, ExecutorError> {
         let server_config = McpServerConfig {
             name: target.server_name.to_string(),
@@ -554,7 +578,7 @@ impl ModelToolDefinition {
             server_config.name.clone(),
             target.item_name.to_string(),
             arguments.clone(),
-            Some(self.input_schema.json_value()),
+            Some(self.input_schema.json_value_with_cache(schema_cache)),
         );
 
         request.send_mcp_call_started(&call_details);
@@ -582,6 +606,7 @@ impl ModelToolDefinition {
         request: &ModelRequest,
         arguments: Value,
         target: McpImportTarget<'_>,
+        schema_cache: &mut ModelSchemaCache,
     ) -> Result<ToolCallOutcome, ExecutorError> {
         let server_config = McpServerConfig {
             name: target.server_name.to_string(),
@@ -594,7 +619,7 @@ impl ModelToolDefinition {
             server_config.name.clone(),
             target.item_name.to_string(),
             arguments.clone(),
-            Some(self.input_schema.json_value()),
+            Some(self.input_schema.json_value_with_cache(schema_cache)),
         );
 
         request.send_mcp_call_started(&call_details);

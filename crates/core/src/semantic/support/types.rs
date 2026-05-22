@@ -3,7 +3,7 @@ use crate::semantic::WorkflowSemanticError;
 use jsonschema::ValidationError;
 use schemars::{JsonSchema, Schema};
 use serde_json::{json, Number, Value};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fmt::{Display, Formatter};
 use std::hash::BuildHasher;
 
@@ -30,7 +30,16 @@ pub enum WorkflowType {
     Union(Vec<WorkflowType>),
 }
 
+#[derive(Debug, Clone)]
+pub struct WorkflowSchemaCache {
+    capacity: usize,
+    schemas: HashMap<String, Value>,
+    insertion_order: VecDeque<String>,
+}
+
 impl WorkflowType {
+    const DEFAULT_SCHEMA_CACHE_CAPACITY: usize = 256;
+
     #[must_use]
     pub fn can_be_null(&self) -> bool {
         match self {
@@ -260,7 +269,8 @@ impl WorkflowType {
         }
     }
 
-    fn canonical_key(&self) -> String {
+    #[must_use]
+    pub fn schema_cache_key(&self) -> String {
         match self {
             Self::Any => "any".to_string(),
             Self::String => "string".to_string(),
@@ -272,20 +282,20 @@ impl WorkflowType {
             Self::StringEnum(enum_values) => format!("enum({})", enum_values.join("|")),
             Self::Array { item_type, fixed_length } => {
                 let Some(fixed_length) = fixed_length else {
-                    return format!("array({})", item_type.canonical_key());
+                    return format!("array({})", item_type.schema_cache_key());
                 };
 
-                format!("array({};{fixed_length})", item_type.canonical_key())
+                format!("array({};{fixed_length})", item_type.schema_cache_key())
             }
             Self::Tuple(item_types) => {
-                let joined_item_keys = item_types.iter().map(Self::canonical_key).collect::<Vec<_>>().join(",");
+                let joined_item_keys = item_types.iter().map(Self::schema_cache_key).collect::<Vec<_>>().join(",");
 
                 format!("tuple({joined_item_keys})")
             }
             Self::Object(fields) => {
                 let field_pairs = fields
                     .iter()
-                    .map(|(field_name, field_type)| format!("{field_name}:{}", field_type.canonical_key()))
+                    .map(|(field_name, field_type)| format!("{field_name}:{}", field_type.schema_cache_key()))
                     .collect::<Vec<_>>()
                     .join(",");
 
@@ -297,7 +307,7 @@ impl WorkflowType {
                     .map(|(case_name, fields)| {
                         let field_pairs = fields
                             .iter()
-                            .map(|(field_name, field_type)| format!("{field_name}:{}", field_type.canonical_key()))
+                            .map(|(field_name, field_type)| format!("{field_name}:{}", field_type.schema_cache_key()))
                             .collect::<Vec<_>>()
                             .join(",");
 
@@ -309,9 +319,7 @@ impl WorkflowType {
                 format!("variant({discriminator};{case_pairs})")
             }
             Self::Union(members) => {
-                let mut member_keys = members.iter().map(Self::canonical_key).collect::<Vec<_>>();
-
-                member_keys.sort();
+                let member_keys = members.iter().map(Self::schema_cache_key).collect::<Vec<_>>();
 
                 format!("union({})", member_keys.join("|"))
             }
@@ -340,6 +348,175 @@ impl WorkflowType {
                 discriminator: _,
                 cases: _,
             } => false,
+        }
+    }
+
+    #[must_use]
+    pub fn json_schema_value(&self) -> Value {
+        self.json_schema_value_uncached()
+    }
+
+    #[must_use]
+    pub fn json_schema_value_with_cache(&self, schema_cache: &mut WorkflowSchemaCache) -> Value {
+        let schema_cache_key = self.schema_cache_key();
+
+        if let Some(schema) = schema_cache.schema(&schema_cache_key) {
+            return schema.clone();
+        }
+
+        let schema = self.json_schema_value_with_recursive_cache(schema_cache);
+        schema_cache.insert(schema_cache_key, schema.clone());
+
+        schema
+    }
+
+    fn json_schema_value_uncached(&self) -> Value {
+        let mut schema_cache = WorkflowSchemaCache::disabled();
+
+        self.json_schema_value_with_recursive_cache(&mut schema_cache)
+    }
+
+    fn json_schema_value_with_recursive_cache(&self, schema_cache: &mut WorkflowSchemaCache) -> Value {
+        match self {
+            Self::Any => json!({}),
+            Self::String => json!({ "type": "string" }),
+            Self::Integer => json!({ "type": "integer" }),
+            Self::Float => json!({ "type": "number" }),
+            Self::Boolean => json!({ "type": "boolean" }),
+            Self::Null => json!({ "type": "null" }),
+            Self::AnyObject => json!({ "type": "object" }),
+            Self::StringEnum(enum_values) => json!({
+                "type": "string",
+                "enum": enum_values,
+            }),
+            Self::Array { item_type, fixed_length } => {
+                let mut array_schema = json!({
+                    "type": "array",
+                    "items": item_type.json_schema_value_with_cache(schema_cache),
+                });
+
+                if let Some(fixed_length) = fixed_length {
+                    array_schema["minItems"] = json!(fixed_length);
+                    array_schema["maxItems"] = json!(fixed_length);
+                }
+
+                array_schema
+            }
+            Self::Tuple(tuple_items) => json!({
+                "type": "array",
+                "prefixItems": tuple_items
+                    .iter()
+                    .map(|tuple_item| tuple_item.json_schema_value_with_cache(schema_cache))
+                    .collect::<Vec<_>>(),
+                "minItems": tuple_items.len(),
+                "maxItems": tuple_items.len(),
+            }),
+            Self::Object(object_fields) => {
+                let properties = object_fields
+                    .iter()
+                    .map(|(field_name, field_type)| (field_name.clone(), field_type.json_schema_value_with_cache(schema_cache)))
+                    .collect::<serde_json::Map<_, _>>();
+
+                let required = object_fields.keys().cloned().collect::<Vec<_>>();
+
+                json!({
+                    "type": "object",
+                    "properties": properties,
+                    "required": required,
+                    "additionalProperties": false,
+                })
+            }
+            Self::Variant { discriminator, cases } => json!({
+                "oneOf": cases
+                    .iter()
+                    .map(|(case_name, fields)| {
+                        let mut properties = fields
+                            .iter()
+                            .map(|(field_name, field_type)| {
+                                (field_name.clone(), field_type.json_schema_value_with_cache(schema_cache))
+                            })
+                            .collect::<serde_json::Map<_, _>>();
+                        properties.insert(discriminator.clone(), json!({ "const": case_name }));
+
+                        let required = properties.keys().cloned().collect::<Vec<_>>();
+
+                        json!({
+                            "type": "object",
+                            "properties": properties,
+                            "required": required,
+                            "additionalProperties": false,
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+                "discriminator": {
+                    "propertyName": discriminator,
+                },
+            }),
+            Self::Union(union_members) => json!({
+                "oneOf": union_members
+                    .iter()
+                    .map(|union_member| union_member.json_schema_value_with_cache(schema_cache))
+                    .collect::<Vec<_>>(),
+            }),
+        }
+    }
+}
+
+impl Default for WorkflowSchemaCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl WorkflowSchemaCache {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::with_capacity(WorkflowType::DEFAULT_SCHEMA_CACHE_CAPACITY)
+    }
+
+    #[must_use]
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            capacity,
+            schemas: HashMap::new(),
+            insertion_order: VecDeque::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn disabled() -> Self {
+        Self::with_capacity(0)
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.schemas.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.schemas.is_empty()
+    }
+
+    fn schema(&self, schema_cache_key: &str) -> Option<&Value> {
+        self.schemas.get(schema_cache_key)
+    }
+
+    fn insert(&mut self, schema_cache_key: String, schema: Value) {
+        if self.capacity == 0 {
+            return;
+        }
+
+        if self.schemas.insert(schema_cache_key.clone(), schema).is_none() {
+            self.insertion_order.push_back(schema_cache_key);
+        }
+
+        while self.schemas.len() > self.capacity {
+            let Some(expired_schema_cache_key) = self.insertion_order.pop_front() else {
+                break;
+            };
+
+            self.schemas.remove(&expired_schema_cache_key);
         }
     }
 }
@@ -783,7 +960,7 @@ fn normalize_union_members(union_members: Vec<WorkflowType>) -> WorkflowType {
             continue;
         }
 
-        let member_key = union_member.canonical_key();
+        let member_key = union_member.schema_cache_key();
 
         if seen_member_keys.insert(member_key) {
             deduplicated_members.push(union_member);
@@ -796,7 +973,7 @@ fn normalize_union_members(union_members: Vec<WorkflowType>) -> WorkflowType {
         deduplicated_members.push(WorkflowType::StringEnum(collected_string_enums));
     }
 
-    deduplicated_members.sort_by_key(WorkflowType::canonical_key);
+    deduplicated_members.sort_by_key(WorkflowType::schema_cache_key);
 
     if deduplicated_members.len() == 1 {
         return deduplicated_members.into_iter().next().expect("single union member should exist");
@@ -822,84 +999,9 @@ pub fn validate_value_against_type(value: &Value, expected_type: &WorkflowType) 
     Err(validation_issues.join("; "))
 }
 
+#[must_use]
 pub fn workflow_type_to_json_schema(workflow_type: &WorkflowType) -> Value {
-    match workflow_type {
-        WorkflowType::Any => json!({}),
-        WorkflowType::String => json!({ "type": "string" }),
-        WorkflowType::Integer => json!({ "type": "integer" }),
-        WorkflowType::Float => json!({ "type": "number" }),
-        WorkflowType::Boolean => json!({ "type": "boolean" }),
-        WorkflowType::Null => json!({ "type": "null" }),
-        WorkflowType::AnyObject => json!({ "type": "object" }),
-        WorkflowType::StringEnum(enum_values) => json!({
-            "type": "string",
-            "enum": enum_values,
-        }),
-        WorkflowType::Array { item_type, fixed_length } => {
-            let mut array_schema = json!({
-                "type": "array",
-                "items": workflow_type_to_json_schema(item_type),
-            });
-
-            if let Some(fixed_length) = fixed_length {
-                array_schema["minItems"] = json!(fixed_length);
-                array_schema["maxItems"] = json!(fixed_length);
-            }
-
-            array_schema
-        }
-        WorkflowType::Tuple(tuple_items) => json!({
-            "type": "array",
-            "prefixItems": tuple_items.iter().map(workflow_type_to_json_schema).collect::<Vec<_>>(),
-            "minItems": tuple_items.len(),
-            "maxItems": tuple_items.len(),
-        }),
-        WorkflowType::Object(object_fields) => {
-            let properties = object_fields
-                .iter()
-                .map(|(field_name, field_type)| (field_name.clone(), workflow_type_to_json_schema(field_type)))
-                .collect::<serde_json::Map<_, _>>();
-
-            let required = object_fields.keys().cloned().collect::<Vec<_>>();
-
-            json!({
-                "type": "object",
-                "properties": properties,
-                "required": required,
-                "additionalProperties": false,
-            })
-        }
-        WorkflowType::Variant { discriminator, cases } => json!({
-            "oneOf": cases
-                .iter()
-                .map(|(case_name, fields)| {
-                    let mut properties = fields
-                        .iter()
-                        .map(|(field_name, field_type)| (field_name.clone(), workflow_type_to_json_schema(field_type)))
-                        .collect::<serde_json::Map<_, _>>();
-                    properties.insert(discriminator.clone(), json!({ "const": case_name }));
-
-                    let required = properties.keys().cloned().collect::<Vec<_>>();
-
-                    json!({
-                        "type": "object",
-                        "properties": properties,
-                        "required": required,
-                        "additionalProperties": false,
-                    })
-                })
-                .collect::<Vec<_>>(),
-            "discriminator": {
-                "propertyName": discriminator,
-            },
-        }),
-        WorkflowType::Union(union_members) => json!({
-            "oneOf": union_members
-                .iter()
-                .map(workflow_type_to_json_schema)
-                .collect::<Vec<_>>(),
-        }),
-    }
+    workflow_type.json_schema_value()
 }
 
 pub fn workflow_type_to_schemars_schema(
@@ -1070,7 +1172,7 @@ pub fn value_kind_name(value: &Value) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{ensure_type_matches, workflow_type_from_dsl, workflow_type_to_json_schema, WorkflowType};
+    use super::{ensure_type_matches, workflow_type_from_dsl, workflow_type_to_json_schema, WorkflowSchemaCache, WorkflowType};
     use crate::dsl::{SourcePosition, SourceSpan, TypeExpression, TypedField, VariantCase};
     use serde_json::json;
     use std::collections::{BTreeMap, HashMap};
@@ -1185,6 +1287,37 @@ mod tests {
         assert_eq!(json_schema["discriminator"]["propertyName"], json!("type"));
         assert_eq!(json_schema["oneOf"][0]["properties"]["type"]["const"], json!("user_created"));
         assert_eq!(json_schema["oneOf"][0]["required"], json!(["type", "user_id"]));
+    }
+
+    #[test]
+    fn cached_schema_conversion_matches_uncached_conversion() {
+        let workflow_type = WorkflowType::Object(BTreeMap::from([
+            (
+                "items".to_string(),
+                WorkflowType::Array {
+                    item_type: Box::new(WorkflowType::String),
+                    fixed_length: Some(2),
+                },
+            ),
+            ("status".to_string(), WorkflowType::StringEnum(vec!["ready".to_string()])),
+        ]));
+        let mut schema_cache = WorkflowSchemaCache::new();
+
+        assert_eq!(
+            workflow_type.json_schema_value_with_cache(&mut schema_cache),
+            workflow_type_to_json_schema(&workflow_type)
+        );
+        assert!(!schema_cache.is_empty());
+    }
+
+    #[test]
+    fn schema_cache_evicts_when_capacity_is_reached() {
+        let mut schema_cache = WorkflowSchemaCache::with_capacity(1);
+
+        let _string_schema = WorkflowType::String.json_schema_value_with_cache(&mut schema_cache);
+        let _integer_schema = WorkflowType::Integer.json_schema_value_with_cache(&mut schema_cache);
+
+        assert_eq!(schema_cache.len(), 1);
     }
 
     fn generated_span() -> SourceSpan {

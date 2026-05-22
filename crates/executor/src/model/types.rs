@@ -1,10 +1,10 @@
 use crate::event::ExecutorEvent;
 use serde_json::Value;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use superwire_core::mcp::McpClientPool;
 use superwire_core::semantic::support::provider::ProviderConfig;
-use superwire_core::semantic::support::types::{workflow_type_to_json_schema, WorkflowType};
+use superwire_core::semantic::support::types::{WorkflowSchemaCache, WorkflowType};
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
@@ -42,7 +42,17 @@ pub enum ModelSchema {
     Json(Value),
 }
 
+#[derive(Debug, Clone)]
+pub struct ModelSchemaCache {
+    capacity: usize,
+    schemas: HashMap<String, Value>,
+    insertion_order: VecDeque<String>,
+    workflow_schema_cache: WorkflowSchemaCache,
+}
+
 impl ModelSchema {
+    const DEFAULT_SCHEMA_CACHE_CAPACITY: usize = 256;
+
     #[must_use]
     pub fn workflow(workflow_type: WorkflowType) -> Self {
         Self::Workflow(workflow_type)
@@ -60,10 +70,44 @@ impl ModelSchema {
 
     #[must_use]
     pub fn json_value(&self) -> Value {
+        let mut schema_cache = ModelSchemaCache::disabled();
+
+        self.json_value_with_cache(&mut schema_cache)
+    }
+
+    #[must_use]
+    pub fn json_value_with_cache(&self, schema_cache: &mut ModelSchemaCache) -> Value {
+        let Some(schema_cache_key) = self.schema_cache_key() else {
+            return self.uncached_json_value_with_cache(schema_cache);
+        };
+
+        if let Some(schema) = schema_cache.schema(&schema_cache_key) {
+            return schema.clone();
+        }
+
+        let schema = self.uncached_json_value_with_cache(schema_cache);
+        schema_cache.insert(schema_cache_key, schema.clone());
+
+        schema
+    }
+
+    pub fn json_string_with_cache(&self, schema_cache: &mut ModelSchemaCache) -> Result<String, serde_json::Error> {
+        serde_json::to_string(&self.json_value_with_cache(schema_cache))
+    }
+
+    #[must_use]
+    pub fn schema_type_name_with_cache(&self, schema_cache: &mut ModelSchemaCache) -> Option<String> {
+        self.json_value_with_cache(schema_cache)
+            .get("type")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }
+
+    fn uncached_json_value_with_cache(&self, schema_cache: &mut ModelSchemaCache) -> Value {
         match self {
-            Self::Workflow(workflow_type) => workflow_type_to_json_schema(workflow_type),
-            Self::ModelToolInput { input_type, bindings } => Self::model_tool_input_json_value(input_type, bindings),
-            Self::FinalizeInput { output_schema } => Self::finalize_input_json_value(output_schema.json_value()),
+            Self::Workflow(workflow_type) => workflow_type.json_schema_value_with_cache(&mut schema_cache.workflow_schema_cache),
+            Self::ModelToolInput { input_type, bindings } => Self::model_tool_input_json_value(input_type, bindings, schema_cache),
+            Self::FinalizeInput { output_schema } => Self::finalize_input_json_value(output_schema.json_value_with_cache(schema_cache)),
             Self::OpenObject => Self::open_object_json_value(),
             Self::Json(schema) => schema.clone(),
         }
@@ -78,8 +122,32 @@ impl ModelSchema {
         self.json_value().get("type").and_then(Value::as_str).map(str::to_string)
     }
 
-    fn model_tool_input_json_value(input_type: &WorkflowType, bindings: &Value) -> Value {
-        let mut input_schema = workflow_type_to_json_schema(input_type);
+    fn schema_cache_key(&self) -> Option<String> {
+        match self {
+            Self::Workflow(workflow_type) => Some(format!("workflow:{}", workflow_type.schema_cache_key())),
+            Self::ModelToolInput { input_type, bindings } => {
+                let mut binding_names = bindings
+                    .as_object()
+                    .map(|binding_object| binding_object.keys().cloned().collect::<Vec<_>>())
+                    .unwrap_or_default();
+                binding_names.sort();
+
+                Some(format!(
+                    "model_tool_input:{}:{}",
+                    input_type.schema_cache_key(),
+                    binding_names.join(",")
+                ))
+            }
+            Self::FinalizeInput { output_schema } => output_schema
+                .schema_cache_key()
+                .map(|output_schema_cache_key| format!("finalize:{output_schema_cache_key}")),
+            Self::OpenObject => Some("open_object".to_string()),
+            Self::Json(_) => None,
+        }
+    }
+
+    fn model_tool_input_json_value(input_type: &WorkflowType, bindings: &Value, schema_cache: &mut ModelSchemaCache) -> Value {
+        let mut input_schema = input_type.json_schema_value_with_cache(&mut schema_cache.workflow_schema_cache);
         let Some(binding_object) = bindings.as_object() else {
             return input_schema;
         };
@@ -151,6 +219,56 @@ impl ModelSchema {
             "type": "object",
             "additionalProperties": true,
         })
+    }
+}
+
+impl Default for ModelSchemaCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ModelSchemaCache {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::with_capacity(ModelSchema::DEFAULT_SCHEMA_CACHE_CAPACITY)
+    }
+
+    #[must_use]
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            capacity,
+            schemas: HashMap::new(),
+            insertion_order: VecDeque::new(),
+            workflow_schema_cache: WorkflowSchemaCache::with_capacity(capacity),
+        }
+    }
+
+    #[must_use]
+    pub fn disabled() -> Self {
+        Self::with_capacity(0)
+    }
+
+    fn schema(&self, schema_cache_key: &str) -> Option<&Value> {
+        self.schemas.get(schema_cache_key)
+    }
+
+    fn insert(&mut self, schema_cache_key: String, schema: Value) {
+        if self.capacity == 0 {
+            return;
+        }
+
+        if self.schemas.insert(schema_cache_key.clone(), schema).is_none() {
+            self.insertion_order.push_back(schema_cache_key);
+        }
+
+        while self.schemas.len() > self.capacity {
+            let Some(expired_schema_cache_key) = self.insertion_order.pop_front() else {
+                break;
+            };
+
+            self.schemas.remove(&expired_schema_cache_key);
+        }
     }
 }
 

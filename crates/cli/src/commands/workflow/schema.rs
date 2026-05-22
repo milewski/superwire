@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use schemars::Schema;
 use superwire_core::dsl::{Declaration, ObjectField, TypeExpression, Workflow};
 use superwire_core::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
-use superwire_core::semantic::support::types::{workflow_type_from_dsl, workflow_type_to_json_schema, WorkflowType};
+use superwire_core::semantic::support::types::{workflow_type_from_dsl, WorkflowSchemaCache, WorkflowType};
 
 use crate::diagnostics::CommandError;
 
@@ -18,8 +18,9 @@ impl CliRuntimeSchemaContext {
             .input_type
             .unwrap_or_else(|| WorkflowType::Object(BTreeMap::new()));
         let inferred_output_type = workflow_type_inference.workflow_output_type;
-        let input_schema_value = workflow_type_to_json_schema(&inferred_input_type);
-        let output_schema_value = workflow_type_to_json_schema(&inferred_output_type);
+        let mut schema_cache = WorkflowSchemaCache::new();
+        let input_schema_value = inferred_input_type.json_schema_value_with_cache(&mut schema_cache);
+        let output_schema_value = inferred_output_type.json_schema_value_with_cache(&mut schema_cache);
         let _input_schema = serde_json::from_value::<Schema>(input_schema_value)
             .map_err(|error| CommandError::internal(format!("failed to convert inferred workflow input type into schema: {error}")))?;
 

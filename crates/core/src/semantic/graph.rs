@@ -4,7 +4,7 @@ use crate::dsl::{
     ProviderDeclaration, Reference, ReferenceKeyword, StringTemplatePart, ToolSource, Workflow,
 };
 use crate::semantic::plan::{ExecutionPlan, PlannedAgent};
-use crate::semantic::support::types::workflow_type_to_json_schema;
+use crate::semantic::support::types::WorkflowSchemaCache;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -141,16 +141,17 @@ impl ExecutionPlan {
     #[must_use]
     pub fn execution_graph(&self, workflow: &Workflow) -> WorkflowExecutionGraph {
         let graph_lookups = WorkflowExecutionGraphLookups::from_workflow(workflow);
+        let mut schema_cache = WorkflowSchemaCache::new();
         let mut nodes = self.provider_and_model_graph_nodes(&graph_lookups);
-        nodes.push(self.workflow_input_graph_node());
+        nodes.push(self.workflow_input_graph_node(&mut schema_cache));
 
         for (agent_index, agent_name) in self.agent_execution_order.iter().enumerate() {
             if let Some(planned_agent) = self.planned_agents.get(agent_name) {
-                nodes.push(planned_agent.execution_graph_node(self, &graph_lookups, agent_index));
+                nodes.push(planned_agent.execution_graph_node(self, &graph_lookups, agent_index, &mut schema_cache));
             }
         }
 
-        nodes.push(self.workflow_output_graph_node());
+        nodes.push(self.workflow_output_graph_node(&mut schema_cache));
 
         WorkflowExecutionGraph {
             nodes,
@@ -189,20 +190,20 @@ impl ExecutionPlan {
         nodes
     }
 
-    fn workflow_input_graph_node(&self) -> WorkflowExecutionGraphNode {
+    fn workflow_input_graph_node(&self, schema_cache: &mut WorkflowSchemaCache) -> WorkflowExecutionGraphNode {
         let mut outputs = Vec::new();
 
         if let Some(input_type) = &self.input_type {
             outputs.push(WorkflowExecutionGraphPort {
                 name: ReferenceKeyword::Input.as_str().to_string(),
-                schema: workflow_type_to_json_schema(input_type),
+                schema: input_type.json_schema_value_with_cache(schema_cache),
             });
         }
 
         if let Some(secrets_type) = &self.secrets_type {
             outputs.push(WorkflowExecutionGraphPort {
                 name: ReferenceKeyword::Secrets.as_str().to_string(),
-                schema: workflow_type_to_json_schema(secrets_type),
+                schema: secrets_type.json_schema_value_with_cache(schema_cache),
             });
         }
 
@@ -231,7 +232,7 @@ impl ExecutionPlan {
         }
     }
 
-    fn workflow_output_graph_node(&self) -> WorkflowExecutionGraphNode {
+    fn workflow_output_graph_node(&self, schema_cache: &mut WorkflowSchemaCache) -> WorkflowExecutionGraphNode {
         let inputs = self
             .workflow_output_agent_dependencies()
             .into_iter()
@@ -240,7 +241,7 @@ impl ExecutionPlan {
 
                 Some(WorkflowExecutionGraphPort {
                     name: format!("agent.{agent_name}"),
-                    schema: planned_agent.final_output_schema(),
+                    schema: planned_agent.final_output_schema_with_cache(schema_cache),
                 })
             })
             .collect::<Vec<_>>();
@@ -252,7 +253,7 @@ impl ExecutionPlan {
             inputs,
             outputs: vec![WorkflowExecutionGraphPort {
                 name: "output".to_string(),
-                schema: workflow_type_to_json_schema(&self.workflow_output_type),
+                schema: self.workflow_output_type.json_schema_value_with_cache(schema_cache),
             }],
             dependencies: self.workflow_output_agent_dependencies(),
             provider_name: None,
@@ -448,15 +449,16 @@ impl PlannedAgent {
         execution_plan: &ExecutionPlan,
         graph_lookups: &WorkflowExecutionGraphLookups<'_>,
         agent_index: usize,
+        schema_cache: &mut WorkflowSchemaCache,
     ) -> WorkflowExecutionGraphNode {
         WorkflowExecutionGraphNode {
             id: self.name.clone(),
             label: self.name.clone(),
             kind: WorkflowExecutionGraphNodeKind::Agent,
-            inputs: self.execution_graph_inputs(execution_plan),
+            inputs: self.execution_graph_inputs(execution_plan, schema_cache),
             outputs: vec![WorkflowExecutionGraphPort {
                 name: format!("agent.{}", self.name),
-                schema: self.final_output_schema(),
+                schema: self.final_output_schema_with_cache(schema_cache),
             }],
             dependencies: self.dependencies.clone(),
             provider_name: Some(self.provider_name.clone()),
@@ -464,9 +466,9 @@ impl PlannedAgent {
             instruction: self.instruction_label(),
             details: self.execution_graph_details(),
             bindings: self.execution_graph_bindings(),
-            tools: self.execution_graph_tools(execution_plan, graph_lookups),
+            tools: self.execution_graph_tools(execution_plan, graph_lookups, schema_cache),
             execution_index: Some(agent_index),
-            loop_info: self.execution_graph_loop_info(),
+            loop_info: self.execution_graph_loop_info(schema_cache),
         }
     }
 
@@ -539,17 +541,21 @@ impl PlannedAgent {
         bindings
     }
 
-    fn execution_graph_loop_info(&self) -> Option<WorkflowExecutionGraphLoopInfo> {
+    fn execution_graph_loop_info(&self, schema_cache: &mut WorkflowSchemaCache) -> Option<WorkflowExecutionGraphLoopInfo> {
         let for_loop = self.declaration.for_loop.as_ref()?;
 
         Some(WorkflowExecutionGraphLoopInfo {
             pattern: for_loop.pattern_label(),
             iterable_schema: json!({ "type": "array" }),
-            iteration_output_schema: self.iteration_output_schema(),
+            iteration_output_schema: self.iteration_output_schema_with_cache(schema_cache),
         })
     }
 
-    fn execution_graph_inputs(&self, execution_plan: &ExecutionPlan) -> Vec<WorkflowExecutionGraphPort> {
+    fn execution_graph_inputs(
+        &self,
+        execution_plan: &ExecutionPlan,
+        schema_cache: &mut WorkflowSchemaCache,
+    ) -> Vec<WorkflowExecutionGraphPort> {
         self.dependencies
             .iter()
             .filter_map(|dependency_name| {
@@ -557,7 +563,7 @@ impl PlannedAgent {
 
                 Some(WorkflowExecutionGraphPort {
                     name: format!("agent.{dependency_name}"),
-                    schema: planned_agent.final_output_schema(),
+                    schema: planned_agent.final_output_schema_with_cache(schema_cache),
                 })
             })
             .collect()
@@ -571,6 +577,7 @@ impl PlannedAgent {
         &self,
         execution_plan: &ExecutionPlan,
         graph_lookups: &WorkflowExecutionGraphLookups<'_>,
+        schema_cache: &mut WorkflowSchemaCache,
     ) -> Vec<WorkflowExecutionGraphTool> {
         let Some(Expression::ArrayLiteral(use_expressions)) = self.declaration.expression_property(AgentExpressionPropertyName::Uses)
         else {
@@ -579,7 +586,7 @@ impl PlannedAgent {
         let mut tools = Vec::new();
 
         for use_expression in use_expressions {
-            if let Some(tool) = self.execution_graph_tool(use_expression, execution_plan, graph_lookups) {
+            if let Some(tool) = self.execution_graph_tool(use_expression, execution_plan, graph_lookups, schema_cache) {
                 tools.push(tool);
             }
         }
@@ -592,11 +599,12 @@ impl PlannedAgent {
         use_expression: &Expression,
         execution_plan: &ExecutionPlan,
         graph_lookups: &WorkflowExecutionGraphLookups<'_>,
+        schema_cache: &mut WorkflowSchemaCache,
     ) -> Option<WorkflowExecutionGraphTool> {
         let reference = use_expression.direct_reference()?;
 
         match reference.root_keyword()? {
-            ReferenceKeyword::Tool => self.execution_graph_declared_tool(use_expression, reference, execution_plan),
+            ReferenceKeyword::Tool => self.execution_graph_declared_tool(use_expression, reference, execution_plan, schema_cache),
             ReferenceKeyword::Prompt => self.execution_graph_prompt(reference, graph_lookups),
             ReferenceKeyword::Resource => self.execution_graph_resource(reference, graph_lookups),
             ReferenceKeyword::Agent
@@ -612,6 +620,7 @@ impl PlannedAgent {
         use_expression: &Expression,
         reference: &Reference,
         execution_plan: &ExecutionPlan,
+        schema_cache: &mut WorkflowSchemaCache,
     ) -> Option<WorkflowExecutionGraphTool> {
         let tool_name = reference.tool_name()?;
         let typed_tool = execution_plan.tools.get(tool_name)?;
@@ -631,8 +640,8 @@ impl PlannedAgent {
             item_name,
             description: typed_tool.declaration.description.clone(),
             max_calls: use_expression.max_calls_override().or(typed_tool.declaration.max_calls),
-            input_schema: typed_tool.input_schema(),
-            output_schema: typed_tool.output_schema(),
+            input_schema: typed_tool.input_schema_with_cache(schema_cache),
+            output_schema: typed_tool.output_schema_with_cache(schema_cache),
         })
     }
 

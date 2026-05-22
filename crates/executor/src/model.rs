@@ -7,5 +7,6 @@ pub use cersei::CerseiModelProvider;
 pub use provider::ModelProvider;
 pub use response::normalize_mcp_tool_result;
 pub use types::{
-    FinalizeCallKind, ModelRequest, ModelResponse, ModelSchema, ModelToolDefinition, ModelToolSource, ToolCallLimitScope, ToolCallTracker,
+    FinalizeCallKind, ModelRequest, ModelResponse, ModelSchema, ModelSchemaCache, ModelToolDefinition, ModelToolSource, ToolCallLimitScope,
+    ToolCallTracker,
 };
