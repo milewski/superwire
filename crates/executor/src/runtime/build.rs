@@ -7,7 +7,7 @@ use std::time::Instant;
 use superwire_core::dsl::{parse_workflow, validate_workflow, Declaration, Workflow};
 use superwire_core::mcp::{HttpMcpClientFactory, McpClientFactory, McpClientPool, McpLock, McpServerConfig};
 use superwire_core::semantic::support::expression::EvaluationContext;
-use superwire_core::semantic::{build_dynamic_typed_workflow_ir, build_execution_plan, WorkflowSemanticError};
+use superwire_core::semantic::{build_dynamic_typed_workflow_ir, build_execution_plan, ExecutionPlan, WorkflowSemanticError};
 use tokio::sync::mpsc;
 
 struct RuntimeBuildContext<'a> {
@@ -41,6 +41,40 @@ struct WorkflowCompilationContext<'a> {
     workflow_source: &'a str,
     workflow: Workflow,
     mcp_pool: McpClientPool,
+}
+
+struct RuntimeWorkflowPlan {
+    workflow: Workflow,
+    execution_plan: ExecutionPlan,
+}
+
+impl RuntimeWorkflowPlan {
+    fn compile(workflow_source: &str, workflow: Workflow) -> Result<Self, ExecutorError> {
+        log::debug!("validating workflow after schema discovery");
+        let validation_report = validate_workflow(&workflow);
+
+        if validation_report.has_issues() {
+            let issues = validation_report.render_for_output_target(Some(workflow_source), "<workflow>");
+
+            return Err(WorkflowSemanticError::InvalidWorkflow { issues }.into());
+        }
+
+        let typed_workflow_ir =
+            build_dynamic_typed_workflow_ir(&workflow).map_err(|error| error.into_compilation_diagnostic(&workflow, "<workflow>"))?;
+
+        let execution_plan = build_execution_plan(&workflow, &typed_workflow_ir)
+            .map_err(|error| error.into_compilation_diagnostic(&workflow, "<workflow>"))?;
+
+        Ok(Self { workflow, execution_plan })
+    }
+
+    fn into_executor(self, mcp_pool: McpClientPool) -> WorkflowExecutor {
+        WorkflowExecutor {
+            workflow: self.workflow,
+            execution_plan: self.execution_plan,
+            mcp_pool,
+        }
+    }
 }
 
 impl WorkflowExecutor {
@@ -218,31 +252,15 @@ impl WorkflowExecutor {
     }
 
     fn from_workflow(compilation_context: WorkflowCompilationContext<'_>) -> Result<Self, ExecutorError> {
-        log::debug!("validating workflow after schema discovery");
-        let validation_report = validate_workflow(&compilation_context.workflow);
-
-        if validation_report.has_issues() {
-            let issues = validation_report.render_for_output_target(Some(compilation_context.workflow_source), "<workflow>");
-
-            return Err(WorkflowSemanticError::InvalidWorkflow { issues }.into());
-        }
-
-        let typed_workflow_ir = build_dynamic_typed_workflow_ir(&compilation_context.workflow)
-            .map_err(|error| error.into_compilation_diagnostic(&compilation_context.workflow, "<workflow>"))?;
-        let execution_plan = build_execution_plan(&compilation_context.workflow, &typed_workflow_ir)
-            .map_err(|error| error.into_compilation_diagnostic(&compilation_context.workflow, "<workflow>"))?;
+        let runtime_plan = RuntimeWorkflowPlan::compile(compilation_context.workflow_source, compilation_context.workflow)?;
 
         log::info!(
             "workflow planned: agents={}, tools={}, agent_order={}",
-            execution_plan.planned_agents.len(),
-            execution_plan.tools.len(),
-            execution_plan.agent_execution_order.len()
+            runtime_plan.execution_plan.planned_agents.len(),
+            runtime_plan.execution_plan.tools.len(),
+            runtime_plan.execution_plan.agent_execution_order.len()
         );
 
-        Ok(Self {
-            workflow: compilation_context.workflow,
-            execution_plan,
-            mcp_pool: compilation_context.mcp_pool,
-        })
+        Ok(runtime_plan.into_executor(compilation_context.mcp_pool))
     }
 }

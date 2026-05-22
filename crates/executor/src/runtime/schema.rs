@@ -4,23 +4,17 @@ use crate::model::{ModelToolDefinition, ToolCallTracker};
 use crate::runtime::state::RuntimeState;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
-use superwire_core::semantic::support::types::{validate_value_against_type, workflow_type_to_json_schema};
+use superwire_core::semantic::support::types::validate_value_against_type;
 use superwire_core::semantic::PlannedAgent;
 use tokio::sync::mpsc;
 
 pub(super) trait PlannedAgentSchemaExt {
-    fn iteration_output_schema(&self) -> Value;
-
     fn push_finalize_tool_definition(&self, tool_definitions: &mut Vec<ModelToolDefinition>) -> Value;
 
     fn validate_output_value(&self, output: &Value) -> Result<(), ExecutorError>;
 }
 
 impl PlannedAgentSchemaExt for PlannedAgent {
-    fn iteration_output_schema(&self) -> Value {
-        workflow_type_to_json_schema(&self.iteration_output_type)
-    }
-
     fn push_finalize_tool_definition(&self, tool_definitions: &mut Vec<ModelToolDefinition>) -> Value {
         let output_schema = self.iteration_output_schema();
         tool_definitions.push(ModelToolDefinition::finalize(output_schema.clone()));
@@ -29,10 +23,11 @@ impl PlannedAgentSchemaExt for PlannedAgent {
     }
 
     fn validate_output_value(&self, output: &Value) -> Result<(), ExecutorError> {
-        validate_value_against_type(output, &self.iteration_output_type).map_err(|message| ExecutorError::AgentOutputTypeMismatch {
-            agent_name: self.name.clone(),
-            message,
-        })
+        self.validate_iteration_output_value(output)
+            .map_err(|message| ExecutorError::AgentOutputTypeMismatch {
+                agent_name: self.name.clone(),
+                message,
+            })
     }
 }
 

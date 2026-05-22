@@ -4,7 +4,7 @@ use crate::model::{ModelProvider, ToolCallTracker};
 use crate::runtime::state::RuntimeState;
 use futures::future::try_join_all;
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use superwire_core::dsl::Declaration;
 use tokio::sync::mpsc;
 
@@ -38,7 +38,7 @@ impl WorkflowExecutor {
             if import_context.is_empty() { "empty" } else { "populated" }
         );
 
-        for execution_batch in self.resolve_agent_execution_batches()? {
+        for execution_batch in self.execution_plan.agent_execution_batches()? {
             let runtime_state_snapshot = runtime_state.clone();
             let mut for_loop_agents = Vec::new();
             let mut regular_agents = Vec::new();
@@ -109,54 +109,6 @@ impl WorkflowExecutor {
         log::info!("workflow runtime completed");
 
         Ok(output)
-    }
-
-    pub(in crate::runtime) fn resolve_agent_execution_batches(&self) -> Result<Vec<Vec<String>>, ExecutorError> {
-        let execution_order = &self.execution_plan.agent_execution_order;
-        let mut unresolved_agents = execution_order.iter().cloned().collect::<HashSet<_>>();
-        let mut resolved_agents = HashSet::<String>::new();
-        let mut execution_batches = Vec::<Vec<String>>::new();
-
-        while !unresolved_agents.is_empty() {
-            let mut ready_agents = Vec::<String>::new();
-
-            for agent_name in execution_order {
-                if !unresolved_agents.contains(agent_name) {
-                    continue;
-                }
-
-                let planned_agent = self
-                    .execution_plan
-                    .planned_agents
-                    .get(agent_name)
-                    .expect("planned agent should exist");
-
-                if planned_agent
-                    .dependencies
-                    .iter()
-                    .any(|dependency_name| !resolved_agents.contains(dependency_name))
-                {
-                    continue;
-                }
-
-                ready_agents.push(agent_name.clone());
-            }
-
-            if ready_agents.is_empty() {
-                return Err(ExecutorError::Other {
-                    message: "failed to resolve execution batches".to_string(),
-                });
-            }
-
-            for ready_agent_name in &ready_agents {
-                unresolved_agents.remove(ready_agent_name);
-                resolved_agents.insert(ready_agent_name.clone());
-            }
-
-            execution_batches.push(ready_agents);
-        }
-
-        Ok(execution_batches)
     }
 
     fn execute_workflow_dynamic_blocks(

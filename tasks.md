@@ -217,7 +217,7 @@
   Description: Replace long parameter lists with typed context structs.
   Rationale: Context structs make execution state changes explicit and reduce signature churn.
 
-- [ ] Separate pure planning from async execution.
+- [x] Separate pure planning from async execution.
   Description: Keep dependency planning, type/schema computation, and execution plan construction pure where possible.
   Rationale: Pure planning is easier to benchmark, cache, and test than async execution.
 

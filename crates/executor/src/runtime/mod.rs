@@ -106,7 +106,7 @@ impl WorkflowExecutor {
             }));
         }
 
-        for execution_batch in self.resolve_agent_execution_batches()? {
+        for execution_batch in self.execution_plan.agent_execution_batches()? {
             let planned_agents = execution_batch
                 .iter()
                 .map(|agent_name| self.planned_agent_step(agent_name, &evaluation_context))

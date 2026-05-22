@@ -2,7 +2,6 @@ use super::{ExecutorError, ToolCallExecutionContext, WorkflowExecutor};
 use crate::event::{ExecutorEvent, McpCallEventDetails};
 use crate::model::{normalize_mcp_tool_result, ModelToolDefinition, ModelToolSource, ToolCallLimitScope};
 use serde_json::{Map, Value};
-use std::collections::HashSet;
 use std::time::Instant;
 use superwire_core::dsl::{
     AgentExpressionPropertyName, Declaration, Expression, ObjectField, ReferenceKeyword, ToolCall, ToolSource, Workflow,
@@ -752,45 +751,6 @@ impl ExpressionMcpExecutionPlanCollectorExt for Expression {
         }
 
         Ok(())
-    }
-}
-
-trait TypedToolModelSchemaExt {
-    fn model_input_schema(&self, bindings: &Value) -> Value;
-}
-
-impl TypedToolModelSchemaExt for TypedToolIr {
-    fn model_input_schema(&self, bindings: &Value) -> Value {
-        let mut input_schema = workflow_type_to_json_schema(&self.input_type);
-        let Some(binding_object) = bindings.as_object() else {
-            return input_schema;
-        };
-        let binding_names = binding_object.keys().cloned().collect::<HashSet<_>>();
-
-        if let Some(properties) = input_schema.get_mut("properties").and_then(Value::as_object_mut) {
-            for binding_name in &binding_names {
-                properties.remove(binding_name);
-            }
-        }
-
-        let mut remove_required = false;
-
-        if let Some(required_fields) = input_schema.get_mut("required").and_then(Value::as_array_mut) {
-            required_fields.retain(|required_field| {
-                required_field
-                    .as_str()
-                    .is_none_or(|required_field_name| !binding_names.contains(required_field_name))
-            });
-            remove_required = required_fields.is_empty();
-        }
-
-        if remove_required {
-            if let Some(schema_object) = input_schema.as_object_mut() {
-                schema_object.remove("required");
-            }
-        }
-
-        input_schema
     }
 }
 

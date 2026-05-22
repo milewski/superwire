@@ -1,8 +1,9 @@
 use crate::dsl::{AgentDeclaration, Expression, ObjectField, OutputDeclaration, Workflow};
 use crate::semantic::ir::{TypedToolIr, TypedWorkflowIr};
 use crate::semantic::support::provider::{build_provider_index, ProviderConfigTemplate};
-use crate::semantic::support::types::WorkflowType;
+use crate::semantic::support::types::{validate_value_against_type, workflow_type_to_json_schema, WorkflowType};
 use crate::semantic::WorkflowSemanticError;
+use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
@@ -42,6 +43,71 @@ pub struct ExecutionPlan {
     pub agent_execution_order: Vec<String>,
     pub planned_agents: HashMap<String, PlannedAgent>,
     pub mcp_imports: Vec<PlannedMcpImport>,
+}
+
+impl PlannedAgent {
+    #[must_use]
+    pub fn iteration_output_schema(&self) -> Value {
+        workflow_type_to_json_schema(&self.iteration_output_type)
+    }
+
+    pub fn validate_iteration_output_value(&self, output: &Value) -> Result<(), String> {
+        validate_value_against_type(output, &self.iteration_output_type)
+    }
+}
+
+impl ExecutionPlan {
+    pub fn agent_execution_batches(&self) -> Result<Vec<Vec<String>>, WorkflowSemanticError> {
+        let execution_order = &self.agent_execution_order;
+        let mut unresolved_agents = execution_order.iter().cloned().collect::<HashSet<_>>();
+        let mut resolved_agents = HashSet::<String>::new();
+        let mut execution_batches = Vec::<Vec<String>>::new();
+
+        while !unresolved_agents.is_empty() {
+            let mut ready_agents = Vec::<String>::new();
+
+            for agent_name in execution_order {
+                if !unresolved_agents.contains(agent_name) {
+                    continue;
+                }
+
+                let planned_agent = self
+                    .planned_agents
+                    .get(agent_name)
+                    .ok_or_else(|| WorkflowSemanticError::ExecutionPlanInvariant {
+                        message: format!("planned agent `{agent_name}` is missing"),
+                    })?;
+
+                if planned_agent
+                    .dependencies
+                    .iter()
+                    .any(|dependency_name| !resolved_agents.contains(dependency_name))
+                {
+                    continue;
+                }
+
+                ready_agents.push(agent_name.clone());
+            }
+
+            if ready_agents.is_empty() {
+                let mut blocked_agents = unresolved_agents.iter().cloned().collect::<Vec<_>>();
+                blocked_agents.sort();
+
+                return Err(WorkflowSemanticError::ExecutionPlanInvariant {
+                    message: format!("failed to resolve execution batches; blocked agents: {}", blocked_agents.join(", ")),
+                });
+            }
+
+            for ready_agent_name in &ready_agents {
+                unresolved_agents.remove(ready_agent_name);
+                resolved_agents.insert(ready_agent_name.clone());
+            }
+
+            execution_batches.push(ready_agents);
+        }
+
+        Ok(execution_batches)
+    }
 }
 
 pub fn build_execution_plan(workflow: &Workflow, typed_workflow_ir: &TypedWorkflowIr) -> Result<ExecutionPlan, WorkflowSemanticError> {
@@ -267,6 +333,61 @@ mod tests {
         assert_eq!(
             execution_plan.agent_execution_order,
             vec!["first".to_string(), "second".to_string()]
+        );
+    }
+
+    #[test]
+    fn resolves_agent_execution_batches_without_execution_state() {
+        let workflow = parse_inline_workflow! {
+            provider openai from openai {
+                endpoint: "https://api.openai.com/v1"
+                api_key: "test-api-key"
+            }
+
+            model openai_model from openai {
+                id: "model-a"
+            }
+
+            input {
+                topic: string
+            }
+
+            agent first {
+                model: model.openai_model
+                instruction: input.topic
+                output {
+                    value: string
+                }
+            }
+
+            agent second {
+                model: model.openai_model
+                instruction: input.topic
+                output {
+                    value: string
+                }
+            }
+
+            agent final {
+                model: model.openai_model
+                instruction: agent.first.value
+                output {
+                    value: string
+                }
+            }
+
+            output {
+                value: agent.final.value
+            }
+        };
+
+        let typed_workflow_ir = build_typed_workflow_ir::<Input, Output>(&workflow).expect("typecheck should succeed");
+        let execution_plan = build_execution_plan(&workflow, &typed_workflow_ir).expect("planning should succeed");
+        let execution_batches = execution_plan.agent_execution_batches().expect("batch planning should succeed");
+
+        assert_eq!(
+            execution_batches,
+            vec![vec!["first".to_string(), "second".to_string()], vec!["final".to_string()]]
         );
     }
 

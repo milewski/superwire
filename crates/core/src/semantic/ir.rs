@@ -4,11 +4,12 @@ use crate::dsl::{
     ModelUsage, ObjectField, OutputDeclaration, ProviderDeclaration, SecretsDeclaration, ToolDeclaration, TypeExpression, Workflow,
 };
 use crate::semantic::support::type_inference::TypeInferenceContext;
-use crate::semantic::support::types::{ensure_type_matches, workflow_type_from_rust_schema, WorkflowType};
+use crate::semantic::support::types::{ensure_type_matches, workflow_type_from_rust_schema, workflow_type_to_json_schema, WorkflowType};
 use crate::semantic::WorkflowSemanticError;
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[derive(Debug, Clone)]
@@ -40,6 +41,42 @@ pub struct TypedAgentIr {
     pub iteration_output_type: WorkflowType,
     pub final_output_type: WorkflowType,
     pub dependencies: Vec<String>,
+}
+
+impl TypedToolIr {
+    #[must_use]
+    pub fn model_input_schema(&self, bindings: &Value) -> Value {
+        let mut input_schema = workflow_type_to_json_schema(&self.input_type);
+        let Some(binding_object) = bindings.as_object() else {
+            return input_schema;
+        };
+        let binding_names = binding_object.keys().cloned().collect::<HashSet<_>>();
+
+        if let Some(properties) = input_schema.get_mut("properties").and_then(Value::as_object_mut) {
+            for binding_name in &binding_names {
+                properties.remove(binding_name);
+            }
+        }
+
+        let mut remove_required = false;
+
+        if let Some(required_fields) = input_schema.get_mut("required").and_then(Value::as_array_mut) {
+            required_fields.retain(|required_field| {
+                required_field
+                    .as_str()
+                    .is_none_or(|required_field_name| !binding_names.contains(required_field_name))
+            });
+            remove_required = required_fields.is_empty();
+        }
+
+        if remove_required {
+            if let Some(schema_object) = input_schema.as_object_mut() {
+                schema_object.remove("required");
+            }
+        }
+
+        input_schema
+    }
 }
 
 pub fn build_typed_workflow_ir<Input, Output>(workflow: &Workflow) -> Result<TypedWorkflowIr, WorkflowSemanticError>
@@ -486,6 +523,7 @@ mod tests {
     use crate::semantic::WorkflowSemanticError;
     use schemars::JsonSchema;
     use serde::{Deserialize, Serialize};
+    use serde_json::json;
     use std::collections::BTreeMap;
 
     #[derive(Debug, Serialize, JsonSchema)]
@@ -606,6 +644,48 @@ mod tests {
             typed_workflow_ir.workflow_output_type,
             WorkflowType::Object(BTreeMap::from([("greeting".to_string(), WorkflowType::Any)]))
         );
+    }
+
+    #[test]
+    fn model_input_schema_removes_bound_tool_fields() {
+        #[derive(Debug, Deserialize, JsonSchema)]
+        #[allow(dead_code)]
+        struct Output {
+            value: String,
+        }
+
+        let workflow = parse_inline_workflow! {
+            tool lookup {
+                input {
+                    workspace_id: string
+                    query: string
+                }
+
+                bindings {
+                    workspace_id: "workspace-1"
+                }
+
+                output {
+                    value: string
+                }
+            }
+
+            output {
+                value: "ok"
+            }
+        };
+
+        let typed_workflow_ir = build_typed_workflow_ir::<(), Output>(&workflow).expect("typecheck should succeed");
+        let typed_tool = typed_workflow_ir
+            .tools
+            .iter()
+            .find(|tool| tool.name == "lookup")
+            .expect("lookup tool should be present");
+        let schema = typed_tool.model_input_schema(&json!({ "workspace_id": "workspace-1" }));
+
+        assert!(schema["properties"].get("workspace_id").is_none());
+        assert_eq!(schema["properties"]["query"]["type"], "string");
+        assert_eq!(schema["required"], json!(["query"]));
     }
 
     #[test]
