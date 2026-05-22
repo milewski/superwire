@@ -236,25 +236,21 @@ impl AstVisitor {
                 Rule::tool_binding_type_expression => {
                     let field_type = self.visit_tool_binding_type_expression(field_value_pair.clone())?;
 
-                    match field_type {
-                        TypeExpression::StringEnum(string_value) => fixed_fields.push(ObjectField {
+                    if let Some(value) = field_type.fixed_binding_literal_expression() {
+                        fixed_fields.push(ObjectField {
                             name: field_name,
-                            value: Expression::StringLiteral(string_value),
+                            value,
                             span: binding_field_span,
-                        }),
-                        TypeExpression::StringEnumReference(reference) => fixed_fields.push(ObjectField {
-                            name: field_name,
-                            value: Expression::Reference(reference),
-                            span: binding_field_span,
-                        }),
-                        _ => {
-                            return Err(DslParseError::unexpected_with_span(
-                                field_value_pair.as_rule(),
-                                "tool bindings field value",
-                                source_span_from_pair(&field_value_pair),
-                            ));
-                        }
+                        });
+
+                        continue;
                     }
+
+                    return Err(DslParseError::unexpected_with_span(
+                        field_value_pair.as_rule(),
+                        "tool bindings field value",
+                        source_span_from_pair(&field_value_pair),
+                    ));
                 }
                 Rule::expression
                 | Rule::fallback_expression
@@ -392,5 +388,63 @@ impl AstVisitor {
             max_calls,
             span: tool_call_span,
         })
+    }
+}
+
+impl TypeExpression {
+    fn fixed_binding_literal_expression(self) -> Option<Expression> {
+        match self {
+            Self::StringEnum(string_value) => Some(Expression::StringLiteral(string_value)),
+            Self::StringEnumReference(reference) => Some(Expression::Reference(reference)),
+            Self::Array {
+                item_type,
+                fixed_length: None,
+            } => item_type
+                .fixed_binding_array_item_expression()
+                .map(|array_item| Expression::ArrayLiteral(vec![array_item])),
+            Self::String
+            | Self::Number
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::AnyObject
+            | Self::SchemaReference(_)
+            | Self::Array {
+                item_type: _,
+                fixed_length: Some(_),
+            }
+            | Self::Tuple(_)
+            | Self::Object(_)
+            | Self::Variant {
+                discriminator: _,
+                cases: _,
+            }
+            | Self::Union(_) => None,
+        }
+    }
+
+    fn fixed_binding_array_item_expression(self) -> Option<Expression> {
+        match self {
+            Self::StringEnum(string_value) => Some(Expression::StringLiteral(string_value)),
+            Self::String
+            | Self::Number
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::AnyObject
+            | Self::SchemaReference(_)
+            | Self::StringEnumReference(_)
+            | Self::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | Self::Tuple(_)
+            | Self::Object(_)
+            | Self::Variant {
+                discriminator: _,
+                cases: _,
+            }
+            | Self::Union(_) => None,
+        }
     }
 }

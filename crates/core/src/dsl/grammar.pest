@@ -107,7 +107,10 @@ tool_binding_field = { doc_comment* ~ identifier ~ ":" ~ (tool_binding_type_expr
 tool_binding_type_expression = { tool_binding_type_term ~ ("|" ~ tool_binding_type_term)* }
 tool_binding_type_object = { "{" ~ typed_field* ~ "}" }
 tool_binding_type_term = _{
-    scalar_type
+    nullable_type
+    | enum_type
+    | variant_type
+    | scalar_type
     | schema_reference
     | reference
     | plain_string_literal

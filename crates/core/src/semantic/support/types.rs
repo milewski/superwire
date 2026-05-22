@@ -2,7 +2,7 @@ use crate::dsl::{Reference, TypeExpression, TypedField};
 use crate::semantic::WorkflowSemanticError;
 use jsonschema::ValidationError;
 use schemars::{JsonSchema, Schema};
-use serde_json::{json, Number, Value};
+use serde_json::{json, Map, Number, Value};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fmt::{Display, Formatter};
 use std::hash::BuildHasher;
@@ -349,6 +349,115 @@ impl WorkflowType {
                 cases: _,
             } => false,
         }
+    }
+
+    #[must_use]
+    pub fn project_json_value(&self, value: &Value) -> Value {
+        match self {
+            Self::Object(object_fields) => self.project_object_json_value(object_fields, value),
+            Self::Array {
+                item_type,
+                fixed_length: _,
+            } => {
+                let Some(array_values) = value.as_array() else {
+                    return value.clone();
+                };
+
+                Value::Array(
+                    array_values
+                        .iter()
+                        .map(|array_value| item_type.project_json_value(array_value))
+                        .collect(),
+                )
+            }
+            Self::Tuple(item_types) => {
+                let Some(array_values) = value.as_array() else {
+                    return value.clone();
+                };
+
+                Value::Array(
+                    array_values
+                        .iter()
+                        .zip(item_types)
+                        .map(|(array_value, item_type)| item_type.project_json_value(array_value))
+                        .collect(),
+                )
+            }
+            Self::Variant { discriminator, cases } => {
+                let Some(object_value) = value.as_object() else {
+                    return value.clone();
+                };
+                let Some(case_name) = object_value.get(discriminator).and_then(Value::as_str) else {
+                    return value.clone();
+                };
+                let Some(case_fields) = cases.get(case_name) else {
+                    return value.clone();
+                };
+
+                let mut projected_value = Self::Object(case_fields.clone()).project_json_value(value);
+
+                if let Value::Object(projected_object) = &mut projected_value {
+                    if let Some(discriminator_value) = object_value.get(discriminator) {
+                        projected_object.insert(discriminator.clone(), discriminator_value.clone());
+                    }
+                }
+
+                projected_value
+            }
+            Self::Union(union_members) => {
+                if value.is_null() && union_members.iter().any(|union_member| matches!(union_member, Self::Null)) {
+                    return Value::Null;
+                }
+
+                union_members
+                    .iter()
+                    .find(|union_member| !matches!(union_member, Self::Null))
+                    .map_or_else(|| value.clone(), |union_member| union_member.project_json_value(value))
+            }
+            Self::Any | Self::String | Self::Integer | Self::Float | Self::Boolean | Self::Null | Self::AnyObject | Self::StringEnum(_) => {
+                value.clone()
+            }
+        }
+    }
+
+    fn project_object_json_value(&self, object_fields: &BTreeMap<String, Self>, value: &Value) -> Value {
+        let Some(object_value) = value.as_object() else {
+            return value.clone();
+        };
+
+        let mut projected_object = Map::new();
+
+        for (field_name, field_type) in object_fields {
+            let Some(field_value) = object_value.get(field_name) else {
+                continue;
+            };
+
+            projected_object.insert(
+                field_name.clone(),
+                field_type.project_json_value_with_parent_discriminator(field_value, object_value),
+            );
+        }
+
+        Value::Object(projected_object)
+    }
+
+    fn project_json_value_with_parent_discriminator(&self, value: &Value, parent_object: &Map<String, Value>) -> Value {
+        let Self::Variant { discriminator, cases: _ } = self else {
+            return self.project_json_value(value);
+        };
+        let Some(discriminator_value) = parent_object.get(discriminator) else {
+            return self.project_json_value(value);
+        };
+        let Some(value_object) = value.as_object() else {
+            return self.project_json_value(value);
+        };
+
+        let mut value_with_discriminator = value_object.clone();
+        value_with_discriminator
+            .entry(discriminator.clone())
+            .or_insert_with(|| discriminator_value.clone());
+
+        self.project_json_value(&Value::Object(value_with_discriminator))
     }
 
     #[must_use]
@@ -1372,6 +1481,101 @@ mod tests {
                 type_compatibility_case.matches
             );
         }
+    }
+
+    #[test]
+    fn projects_json_values_to_declared_object_fields() {
+        let workflow_type = WorkflowType::Object(BTreeMap::from([
+            ("name".to_string(), WorkflowType::String),
+            (
+                "answers".to_string(),
+                WorkflowType::Array {
+                    item_type: Box::new(WorkflowType::Object(BTreeMap::from([("text".to_string(), WorkflowType::String)]))),
+                    fixed_length: None,
+                },
+            ),
+        ]));
+        let value = json!({
+            "name": "survey",
+            "extra": "ignored",
+            "answers": [
+                {
+                    "text": "hello",
+                    "score": 10
+                }
+            ]
+        });
+
+        assert_eq!(
+            workflow_type.project_json_value(&value),
+            json!({
+                "name": "survey",
+                "answers": [
+                    {
+                        "text": "hello"
+                    }
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn projects_nested_variant_values_using_parent_discriminator() {
+        let workflow_type = WorkflowType::Object(BTreeMap::from([(
+            "answers".to_string(),
+            WorkflowType::Array {
+                item_type: Box::new(WorkflowType::Object(BTreeMap::from([
+                    (
+                        "answer".to_string(),
+                        WorkflowType::Variant {
+                            discriminator: "task_type".to_string(),
+                            cases: BTreeMap::from([(
+                                "open_written".to_string(),
+                                BTreeMap::from([("text".to_string(), WorkflowType::String)]),
+                            )]),
+                        },
+                    ),
+                    ("task_type".to_string(), WorkflowType::String),
+                ]))),
+                fixed_length: None,
+            },
+        )]));
+        let value = json!({
+            "answers": [
+                {
+                    "task_type": "open_written",
+                    "answer": {
+                        "text": "hello world",
+                        "ignored": true
+                    }
+                }
+            ]
+        });
+
+        assert_eq!(
+            workflow_type.project_json_value(&value),
+            json!({
+                "answers": [
+                    {
+                        "task_type": "open_written",
+                        "answer": {
+                            "task_type": "open_written",
+                            "text": "hello world"
+                        }
+                    }
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn leaves_untyped_json_values_unfiltered() {
+        let value = json!({
+            "name": "survey",
+            "extra": "retained"
+        });
+
+        assert_eq!(WorkflowType::Any.project_json_value(&value), value);
     }
 
     #[test]

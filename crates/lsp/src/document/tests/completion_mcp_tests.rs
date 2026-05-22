@@ -48,7 +48,33 @@ fn accepts_local_output_schema_on_imported_mcp_tool() {
     };
     let document_state = DocumentState::new(source.to_string(), Some(test_mcp_lock()));
 
-    assert!(document_state.diagnostics().is_empty());
+    let diagnostics = document_state.diagnostics();
+
+    assert!(diagnostics.is_empty(), "unexpected diagnostics: {diagnostics:#?}");
+}
+
+#[test]
+fn accepts_manual_output_schema_that_filters_mcp_output_schema() {
+    let source = inline_document_template! {
+        mcp local {
+            endpoint: "http://docker.localhost/mcp/project"
+        }
+
+        tool fetch_participant_answer from mcp.local.tool.fetch_participant_answer {
+            output {
+                answer: variant task_type {
+                    open_written {
+                        text: string
+                    }
+                }
+            }
+        }
+    };
+    let document_state = DocumentState::new(source.to_string(), Some(test_mcp_lock()));
+
+    let diagnostics = document_state.diagnostics();
+
+    assert!(diagnostics.is_empty(), "unexpected diagnostics: {diagnostics:#?}");
 }
 
 #[allow(clippy::too_many_lines)]

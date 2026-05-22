@@ -109,12 +109,6 @@ impl DocumentState {
                                 mcp_tool_lock,
                                 &tool_declaration.fixed_binding_fields,
                             ));
-                            diagnostics.extend(self.tool_schema_override_diagnostics(
-                                &tool_declaration.name,
-                                mcp_tool_lock,
-                                &tool_declaration.output_fields,
-                                ToolPropertyName::Output,
-                            ));
                         }
                     }
                 }
@@ -137,11 +131,6 @@ impl DocumentState {
                         &mcp_tool_batch.input_fields,
                         ToolPropertyName::Input,
                     ));
-                    diagnostics.extend(self.batch_common_schema_diagnostics(
-                        &tool_locks,
-                        &mcp_tool_batch.output_fields,
-                        ToolPropertyName::Output,
-                    ));
                     diagnostics.extend(self.batch_binding_override_diagnostics(&tool_locks, &mcp_tool_batch.fixed_binding_fields));
 
                     for item in &mcp_tool_batch.items {
@@ -156,12 +145,6 @@ impl DocumentState {
                             ToolPropertyName::Input,
                         ));
                         diagnostics.extend(self.binding_override_diagnostics(&item.local_name, mcp_tool_lock, &item.fixed_binding_fields));
-                        diagnostics.extend(self.tool_schema_override_diagnostics(
-                            &item.local_name,
-                            mcp_tool_lock,
-                            &item.output_fields,
-                            ToolPropertyName::Output,
-                        ));
                     }
                 }
                 Declaration::McpBatch(mcp_batch) => {
@@ -179,11 +162,6 @@ impl DocumentState {
                         .collect::<Vec<_>>();
 
                     diagnostics.extend(self.batch_common_schema_diagnostics(&tool_locks, &mcp_batch.input_fields, ToolPropertyName::Input));
-                    diagnostics.extend(self.batch_common_schema_diagnostics(
-                        &tool_locks,
-                        &mcp_batch.output_fields,
-                        ToolPropertyName::Output,
-                    ));
                     diagnostics.extend(self.batch_binding_override_diagnostics(&tool_locks, &mcp_batch.fixed_binding_fields));
 
                     for item in &mcp_batch.tool_items {
@@ -198,12 +176,6 @@ impl DocumentState {
                             ToolPropertyName::Input,
                         ));
                         diagnostics.extend(self.binding_override_diagnostics(&item.local_name, mcp_tool_lock, &item.fixed_binding_fields));
-                        diagnostics.extend(self.tool_schema_override_diagnostics(
-                            &item.local_name,
-                            mcp_tool_lock,
-                            &item.output_fields,
-                            ToolPropertyName::Output,
-                        ));
                     }
                 }
                 _ => {}

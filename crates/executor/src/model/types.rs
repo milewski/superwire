@@ -122,6 +122,20 @@ impl ModelSchema {
         self.json_value().get("type").and_then(Value::as_str).map(str::to_string)
     }
 
+    #[must_use]
+    pub fn project_json_value(&self, value: &Value) -> Value {
+        match self {
+            Self::Workflow(workflow_type) => workflow_type.project_json_value(value),
+            Self::ModelToolInput {
+                input_type: _,
+                bindings: _,
+            }
+            | Self::FinalizeInput { output_schema: _ }
+            | Self::OpenObject
+            | Self::Json(_) => value.clone(),
+        }
+    }
+
     fn schema_cache_key(&self) -> Option<String> {
         match self {
             Self::Workflow(workflow_type) => Some(format!("workflow:{}", workflow_type.schema_cache_key())),

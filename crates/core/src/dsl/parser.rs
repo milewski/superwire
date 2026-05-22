@@ -1072,6 +1072,26 @@ mod tests {
     }
 
     #[test]
+    fn parses_single_item_array_fixed_tool_binding() {
+        let workflow = parse_inline_workflow! {
+            tool fetch_answers {
+                bindings {
+                    task_types: ["open_written"]
+                }
+            }
+        };
+
+        let tool_declaration = workflow.find_tool("fetch_answers").expect("missing tool declaration");
+        let task_types_binding = tool_declaration
+            .fixed_binding_fields
+            .iter()
+            .find(|fixed_binding_field| fixed_binding_field.name == "task_types")
+            .expect("task types binding should exist");
+
+        assert!(matches!(&task_types_binding.value, Expression::ArrayLiteral(array_items) if array_items.len() == 1));
+    }
+
+    #[test]
     fn parses_dynamic_blocks_and_deterministic_tool_calls() {
         let workflow = parse_inline_workflow! {
             tool fetch_issue {

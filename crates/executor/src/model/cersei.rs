@@ -553,11 +553,12 @@ impl ModelToolDefinition {
             }
         };
         let normalized_result = normalize_mcp_tool_result(result.clone());
+        let projected_result = self.output_schema.project_json_value(&normalized_result);
 
-        request.send_mcp_call_completed(call_details, normalized_result.clone(), result, started_at.elapsed());
+        request.send_mcp_call_completed(call_details, projected_result.clone(), result, started_at.elapsed());
         log::debug!("completed MCP tool call: agent={}, tool={}", request.agent_name, self.name);
 
-        Ok(ToolCallOutcome::Continue(normalized_result))
+        Ok(ToolCallOutcome::Continue(projected_result))
     }
 
     fn execute_mcp_prompt(

@@ -313,19 +313,20 @@ impl WorkflowExecutor {
                     }
                 };
                 let normalized_result = normalize_mcp_tool_result(result.clone());
+                let projected_result = typed_tool.output_type.project_json_value(&normalized_result);
 
                 log::debug!("completed deterministic MCP tool `{tool_name}`");
 
                 if let Some(sender) = tool_call_execution_context.event_sender {
                     let _ = sender.try_send(ExecutorEvent::mcp_call_completed(
                         call_details,
-                        normalized_result.clone(),
+                        projected_result.clone(),
                         result,
                         started_at.elapsed(),
                     ));
                 }
 
-                Ok(normalized_result)
+                Ok(projected_result)
             }
             ModelToolSource::Local => Err(ExecutorError::Other {
                 message: format!("deterministic tool call `{tool_name}` is not backed by MCP"),

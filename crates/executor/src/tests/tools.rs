@@ -188,17 +188,54 @@ impl JsonSchemaType {
 }
 
 impl TestMcpCatalog {
-    fn response_for(&self, method: TestMcpMethod) -> Option<Value> {
+    fn response_for(&self, method: TestMcpMethod, request: &Value) -> Option<Value> {
         match method {
             TestMcpMethod::Initialized => None,
             TestMcpMethod::ToolsList => Some(jsonrpc_result(2, json!({ "tools": self.tools() }))),
-            TestMcpMethod::ToolsCall => Some(jsonrpc_result(3, json!({ "content": [{ "type": "text", "text": "{}" }] }))),
+            TestMcpMethod::ToolsCall => Some(jsonrpc_result(3, self.tool_call_result(request))),
             TestMcpMethod::PromptsList => Some(jsonrpc_result(2, json!({ "prompts": self.prompts() }))),
             TestMcpMethod::ResourcesList => Some(jsonrpc_result(2, json!({ "resources": self.resources() }))),
             TestMcpMethod::ResourcesRead => Some(jsonrpc_result(3, self.project_readme_content())),
             TestMcpMethod::PromptsGet => Some(jsonrpc_result(2, self.system_prompt_result())),
             TestMcpMethod::Unknown => Some(jsonrpc_result(1, json!({}))),
         }
+    }
+
+    fn tool_call_result(&self, request: &Value) -> Value {
+        match request.pointer("/params/name").and_then(Value::as_str) {
+            Some("fetch_qualitative_question_answers") => self.fetch_qualitative_question_answers_result(),
+            _ => json!({ "content": [{ "type": "text", "text": "{}" }] }),
+        }
+    }
+
+    fn fetch_qualitative_question_answers_result(&self) -> Value {
+        let structured_content = json!({
+            "task_group_title": "Ignored group title",
+            "answers": [
+                {
+                    "participant_name": "jon",
+                    "participant_id": 1,
+                    "task_title": "Example",
+                    "task_id": 1,
+                    "task_type": "open_written",
+                    "answer": {
+                        "text": "hello world",
+                        "attachments": null
+                    }
+                }
+            ]
+        });
+
+        json!({
+            "content": [
+                {
+                    "type": "text",
+                    "text": structured_content.to_string()
+                }
+            ],
+            "isError": false,
+            "structuredContent": structured_content
+        })
     }
 
     fn tools(&self) -> Vec<Value> {
@@ -484,7 +521,7 @@ fn handle_mcp_request(
         .expect("MCP method records lock should not be poisoned")
         .push(method);
 
-    let response = if let Some(response_body) = catalog.response_for(method) {
+    let response = if let Some(response_body) = catalog.response_for(method, &request) {
         let response_body = response_body.to_string();
 
         format!(
@@ -1214,6 +1251,92 @@ fn validation_accepts_dynamic_tool_call_missing_nullable_input() {
 
     assert_eq!(server.method_count(TestMcpMethod::ToolsList), 1);
     assert_eq!(server.method_count(TestMcpMethod::ToolsCall), 0);
+}
+
+#[tokio::test]
+async fn mcp_tool_call_projects_result_to_declared_output_schema() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        provider openai from openai {
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+        }
+
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
+
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        input {
+            project_id: number
+        }
+
+        tool fetch_answers from mcp.local.tool.fetch_qualitative_question_answers {
+            bindings {
+                task_types: ["open_written"]
+            }
+
+            output {
+                answers: [{
+                    answer: variant task_type {
+                        open_written {
+                            text: string
+                        }
+                    }
+                    participant_id: number
+                    participant_name: string
+                    task_id: number
+                    task_title: string
+                    task_type: string
+                }]
+            }
+        }
+
+        dynamic {
+            data: call tool.fetch_answers {
+                input {
+                    project_id: input.project_id
+                }
+            }
+        }
+
+        output {
+            greeting: dynamic.data
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+
+    let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
+    let output = service
+        .execute(request_with_input(&workflow_source, json!({ "project_id": 31 })))
+        .await
+        .expect("execution should validate projected MCP output against declared output schema")
+        .output;
+
+    assert_eq!(
+        output,
+        json!({
+            "greeting": {
+                "answers": [
+                    {
+                        "answer": {
+                            "task_type": "open_written",
+                            "text": "hello world"
+                        },
+                        "participant_id": 1,
+                        "participant_name": "jon",
+                        "task_id": 1,
+                        "task_title": "Example",
+                        "task_type": "open_written"
+                    }
+                ]
+            }
+        })
+    );
+    assert_eq!(server.method_count(TestMcpMethod::ToolsCall), 1);
 }
 
 #[tokio::test]

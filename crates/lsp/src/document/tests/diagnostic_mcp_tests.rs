@@ -31,7 +31,7 @@ fn reports_mcp_prompt_import_names_must_be_snake_case() {
 }
 
 #[test]
-fn reports_invalid_mcp_batch_common_schema_field() {
+fn accepts_manual_mcp_batch_common_output_schema_filter() {
     let source = inline_document_template! {
         from mcp.local.tool {
             output {
@@ -45,12 +45,11 @@ fn reports_invalid_mcp_batch_common_schema_field() {
     let document_state = DocumentState::new(source.to_string(), Some(test_mcp_lock()));
     let diagnostics = document_state.diagnostics();
 
-    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::InvalidToolBinding);
-    assert!(diagnostics.iter().any(|diagnostic| diagnostic.message.contains("update_user_name")));
+    assert!(!diagnostic_has_code(&diagnostics, DiagnosticCode::InvalidToolBinding));
 }
 
 #[test]
-fn reports_invalid_mcp_tool_override_schema_field_type() {
+fn accepts_manual_mcp_tool_output_schema_filter() {
     let source = inline_document_template! {
         from mcp.local.tool {
             tool list_all_participants_who_has_answered_given_task {
@@ -63,8 +62,7 @@ fn reports_invalid_mcp_tool_override_schema_field_type() {
     let document_state = DocumentState::new(source.to_string(), Some(test_mcp_lock()));
     let diagnostics = document_state.diagnostics();
 
-    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::InvalidToolBinding);
-    assert!(diagnostics.iter().any(|diagnostic| diagnostic.message.contains("must be `string`")));
+    assert!(!diagnostic_has_code(&diagnostics, DiagnosticCode::InvalidToolBinding));
 }
 
 #[test]
