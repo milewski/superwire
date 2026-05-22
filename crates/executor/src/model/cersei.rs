@@ -1,7 +1,7 @@
 use crate::event::{ExecutorEvent, McpCallEventDetails};
 use crate::model::provider::ModelProvider;
 use crate::model::response::normalize_mcp_tool_result;
-use crate::model::types::{ModelRequest, ModelResponse, ModelToolDefinition, ModelToolSource};
+use crate::model::types::{FinalizeCallKind, ModelRequest, ModelResponse, ModelToolDefinition, ModelToolSource};
 use crate::runtime::ExecutorError;
 use async_trait::async_trait;
 use cersei_provider::{Anthropic, CompletionRequest, Gemini, OpenAi, Provider};
@@ -186,12 +186,13 @@ impl CerseiModelProvider {
         );
         let mut arguments = tool_call.input.clone();
         let validation_started_at = Instant::now();
+        let input_schema = tool_definition.input_schema.json_value();
 
         if matches!(tool_definition.source, ModelToolSource::Mcp { .. }) {
-            request.send_mcp_tool_validation_started(&tool_definition.name, &arguments, &tool_definition.input_schema);
+            request.send_mcp_tool_validation_started(&tool_definition.name, &arguments, &input_schema);
         }
 
-        if let Err(message) = validate_tool_arguments(&arguments, &tool_definition.input_schema) {
+        if let Err(message) = validate_tool_arguments(&arguments, &input_schema) {
             let tool_error = tool_definition.argument_error(message);
 
             if matches!(tool_definition.source, ModelToolSource::Mcp { .. }) {
@@ -320,7 +321,7 @@ struct McpImportTarget<'source> {
 
 impl ModelRequest {
     fn cersei_request_context(&self) -> Result<CerseiRequestContext, ExecutorError> {
-        let output_schema_text = serde_json::to_string(&self.output_schema).map_err(|error| ExecutorError::Model {
+        let output_schema_text = self.output_schema.json_string().map_err(|error| ExecutorError::Model {
             agent_name: self.agent_name.clone(),
             message: format!("failed to serialize output schema: {error}"),
         })?;
@@ -390,14 +391,18 @@ impl ModelToolDefinition {
         ToolDefinition {
             name: self.name.clone(),
             description: self.description.clone().unwrap_or_else(|| format!("Workflow tool `{}`", self.name)),
-            input_schema: self.input_schema.clone(),
+            input_schema: self.input_schema.json_value(),
         }
     }
 
     fn parse_finalize_arguments(&self, arguments: Value) -> Result<FinalizeResult, ExecutorError> {
-        match arguments.get("type").and_then(Value::as_str) {
-            Some("success") => Ok(FinalizeResult::Success(arguments.get("output").cloned().unwrap_or(Value::Null))),
-            Some("fail") => Ok(FinalizeResult::Fail(
+        match arguments
+            .get("type")
+            .and_then(Value::as_str)
+            .and_then(FinalizeCallKind::from_identifier)
+        {
+            Some(FinalizeCallKind::Success) => Ok(FinalizeResult::Success(arguments.get("output").cloned().unwrap_or(Value::Null))),
+            Some(FinalizeCallKind::Fail) => Ok(FinalizeResult::Fail(
                 arguments
                     .get("reason")
                     .and_then(Value::as_str)
@@ -416,7 +421,7 @@ impl ModelToolDefinition {
             "error": "tool_argument_schema_mismatch",
             "tool_name": self.name,
             "message": message,
-            "expected_schema": self.input_schema,
+            "expected_schema": self.input_schema.json_value(),
         })
     }
 
@@ -501,7 +506,7 @@ impl ModelToolDefinition {
             server_config.name.clone(),
             target.tool_name.to_string(),
             arguments.clone(),
-            Some(self.input_schema.clone()),
+            Some(self.input_schema.json_value()),
         );
 
         request.send_mcp_call_started(&call_details);
@@ -549,7 +554,7 @@ impl ModelToolDefinition {
             server_config.name.clone(),
             target.item_name.to_string(),
             arguments.clone(),
-            Some(self.input_schema.clone()),
+            Some(self.input_schema.json_value()),
         );
 
         request.send_mcp_call_started(&call_details);
@@ -589,7 +594,7 @@ impl ModelToolDefinition {
             server_config.name.clone(),
             target.item_name.to_string(),
             arguments.clone(),
-            Some(self.input_schema.clone()),
+            Some(self.input_schema.json_value()),
         );
 
         request.send_mcp_call_started(&call_details);

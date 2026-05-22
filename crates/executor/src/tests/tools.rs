@@ -85,9 +85,12 @@ async fn agent_tool_definitions_are_passed_to_model_provider() {
     );
 
     assert_eq!(tool_definition.bindings, json!({ "user_id": 123 }));
-    assert_eq!(tool_definition.input_schema["required"], json!(["user_name"]));
-    assert_eq!(tool_definition.input_schema.pointer("/properties/user_id"), None);
-    assert_eq!(tool_definition.output_schema["required"], json!(["success"]));
+    let input_schema = tool_definition.input_schema.json_value();
+    let output_schema = tool_definition.output_schema.json_value();
+
+    assert_eq!(input_schema["required"], json!(["user_name"]));
+    assert_eq!(input_schema.pointer("/properties/user_id"), None);
+    assert_eq!(output_schema["required"], json!(["success"]));
 }
 
 pub(crate) struct TestMcpHttpServer {
@@ -1195,17 +1198,14 @@ async fn mcp_endpoint_from_secrets_applies_omitted_tool_schema_before_model_requ
     let tool_definition = request.tools.first().expect("tool definition should be present");
 
     assert_eq!(tool_definition.bindings, json!({ "user_id": 123 }));
-    assert_eq!(tool_definition.input_schema["required"], json!(["user_name"]));
-    assert_eq!(tool_definition.input_schema.pointer("/properties/user_id"), None);
-    assert_eq!(
-        tool_definition.input_schema.pointer("/properties/user_name/type"),
-        Some(&json!("string"))
-    );
-    assert_eq!(
-        tool_definition.input_schema.pointer("/properties/user_name/enum"),
-        Some(&json!(["Ada", "Grace"]))
-    );
-    assert_eq!(tool_definition.output_schema["required"], json!(["success"]));
+    let input_schema = tool_definition.input_schema.json_value();
+    let output_schema = tool_definition.output_schema.json_value();
+
+    assert_eq!(input_schema["required"], json!(["user_name"]));
+    assert_eq!(input_schema.pointer("/properties/user_id"), None);
+    assert_eq!(input_schema.pointer("/properties/user_name/type"), Some(&json!("string")));
+    assert_eq!(input_schema.pointer("/properties/user_name/enum"), Some(&json!(["Ada", "Grace"])));
+    assert_eq!(output_schema["required"], json!(["success"]));
 }
 
 #[tokio::test]
@@ -1264,23 +1264,12 @@ async fn mcp_nullable_array_input_schema_is_preserved_for_model_validation() {
         .expect("tracking lock should not be poisoned");
     let request = recorded_requests.first().expect("model request should be recorded");
     let tool_definition = request.tools.first().expect("tool definition should be present");
+    let input_schema = tool_definition.input_schema.json_value();
 
-    assert_eq!(
-        tool_definition.input_schema.pointer("/properties/name/oneOf/0/type"),
-        Some(&json!("array"))
-    );
-    assert_eq!(
-        tool_definition.input_schema.pointer("/properties/name/oneOf/1/type"),
-        Some(&json!("null"))
-    );
-    assert_eq!(
-        tool_definition.input_schema.pointer("/properties/languages/oneOf/0/type"),
-        Some(&json!("array"))
-    );
-    assert_eq!(
-        tool_definition.input_schema.pointer("/properties/languages/oneOf/1/type"),
-        Some(&json!("null"))
-    );
+    assert_eq!(input_schema.pointer("/properties/name/oneOf/0/type"), Some(&json!("array")));
+    assert_eq!(input_schema.pointer("/properties/name/oneOf/1/type"), Some(&json!("null")));
+    assert_eq!(input_schema.pointer("/properties/languages/oneOf/0/type"), Some(&json!("array")));
+    assert_eq!(input_schema.pointer("/properties/languages/oneOf/1/type"), Some(&json!("null")));
 }
 
 #[tokio::test]
@@ -1329,11 +1318,15 @@ async fn mcp_tool_batch_imports_apply_shared_bindings_to_all_tools() {
     assert_eq!(update_task_status.bindings, json!({ "project_id": 31, "task_id": 42 }));
     assert_eq!(assign_task.bindings, json!({ "project_id": 31, "task_id": 42 }));
 
-    assert_eq!(create_sorting_task.input_schema["required"], json!(["title"]));
-    assert_eq!(update_task_status.input_schema["required"], json!(["status"]));
-    assert_eq!(assign_task.input_schema["required"], json!(["user_id"]));
-    assert_eq!(create_sorting_task.input_schema.pointer("/properties/project_id"), None);
-    assert_eq!(update_task_status.input_schema.pointer("/properties/task_id"), None);
+    let create_sorting_task_input_schema = create_sorting_task.input_schema.json_value();
+    let update_task_status_input_schema = update_task_status.input_schema.json_value();
+    let assign_task_input_schema = assign_task.input_schema.json_value();
+
+    assert_eq!(create_sorting_task_input_schema["required"], json!(["title"]));
+    assert_eq!(update_task_status_input_schema["required"], json!(["status"]));
+    assert_eq!(assign_task_input_schema["required"], json!(["user_id"]));
+    assert_eq!(create_sorting_task_input_schema.pointer("/properties/project_id"), None);
+    assert_eq!(update_task_status_input_schema.pointer("/properties/task_id"), None);
 
     assert_eq!(
         create_sorting_task.source,

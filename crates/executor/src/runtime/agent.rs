@@ -1,6 +1,6 @@
 use super::{AgentExecutionContext, CompletedAgentExecution, ExecutorError, ToolCallExecutionContext, WorkflowExecutor};
 use crate::event::ExecutorEvent;
-use crate::model::{ModelProvider, ModelRequest, ModelToolDefinition, ToolCallTracker};
+use crate::model::{ModelProvider, ModelRequest, ModelSchema, ModelToolDefinition, ToolCallTracker};
 use crate::runtime::mcp::normalize_prompt;
 use crate::runtime::schema::PlannedAgentSchemaExt;
 use crate::runtime::state::RuntimeState;
@@ -27,7 +27,7 @@ struct PreparedAgentRequest {
     model_name: String,
     inference: HashMap<String, Value>,
     prompt: String,
-    output_schema: Value,
+    output_schema: ModelSchema,
     tool_definitions: Vec<ModelToolDefinition>,
     tool_names: Vec<String>,
 }
@@ -87,9 +87,8 @@ impl WorkflowExecutor {
             prepared_request.tool_definitions.len(),
             prepared_request
                 .output_schema
-                .get("type")
-                .and_then(Value::as_str)
-                .unwrap_or("unknown")
+                .schema_type_name()
+                .unwrap_or_else(|| "unknown".to_string())
         );
 
         if let Some(event_sender) = &agent_execution_context.event_sender {

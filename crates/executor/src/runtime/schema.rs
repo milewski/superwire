@@ -1,6 +1,6 @@
 use super::{ExecutorError, ToolCallExecutionContext, WorkflowExecutor};
 use crate::event::ExecutorEvent;
-use crate::model::{ModelToolDefinition, ToolCallTracker};
+use crate::model::{ModelSchema, ModelToolDefinition, ToolCallTracker};
 use crate::runtime::state::RuntimeState;
 use serde_json::{Map, Value};
 use superwire_core::semantic::support::types::validate_value_against_type;
@@ -8,14 +8,14 @@ use superwire_core::semantic::PlannedAgent;
 use tokio::sync::mpsc;
 
 pub(super) trait PlannedAgentSchemaExt {
-    fn push_finalize_tool_definition(&self, tool_definitions: &mut Vec<ModelToolDefinition>) -> Value;
+    fn push_finalize_tool_definition(&self, tool_definitions: &mut Vec<ModelToolDefinition>) -> ModelSchema;
 
     fn validate_output_value(&self, output: &Value) -> Result<(), ExecutorError>;
 }
 
 impl PlannedAgentSchemaExt for PlannedAgent {
-    fn push_finalize_tool_definition(&self, tool_definitions: &mut Vec<ModelToolDefinition>) -> Value {
-        let output_schema = self.iteration_output_schema();
+    fn push_finalize_tool_definition(&self, tool_definitions: &mut Vec<ModelToolDefinition>) -> ModelSchema {
+        let output_schema = ModelSchema::workflow(self.iteration_output_type.clone());
         tool_definitions.push(ModelToolDefinition::finalize(output_schema.clone()));
 
         output_schema

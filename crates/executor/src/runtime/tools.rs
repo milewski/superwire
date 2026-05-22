@@ -1,6 +1,6 @@
 use super::{ExecutorError, ToolCallExecutionContext, WorkflowExecutor};
 use crate::event::{ExecutorEvent, McpCallEventDetails};
-use crate::model::{normalize_mcp_tool_result, ModelToolDefinition, ModelToolSource, ToolCallLimitScope};
+use crate::model::{normalize_mcp_tool_result, ModelSchema, ModelToolDefinition, ModelToolSource, ToolCallLimitScope};
 use serde_json::{Map, Value};
 use std::time::Instant;
 use superwire_core::dsl::{
@@ -8,7 +8,7 @@ use superwire_core::dsl::{
 };
 use superwire_core::mcp::McpServerConfig;
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
-use superwire_core::semantic::support::types::validate_value_against_type;
+use superwire_core::semantic::support::types::{validate_value_against_type, WorkflowType};
 use superwire_core::semantic::{PlannedAgent, TypedToolIr};
 use tokio::sync::mpsc;
 
@@ -151,14 +151,14 @@ impl WorkflowExecutor {
             return Ok(());
         };
         let validation_started_at = Instant::now();
-        let input_schema = typed_tool.model_input_schema(&bindings);
+        let input_schema = ModelSchema::model_tool_input(typed_tool.input_type.clone(), bindings.clone());
 
         if let Some(sender) = startup_validation_context.event_sender {
             let _ = sender.try_send(ExecutorEvent::mcp_tool_validation_started(
                 String::new(),
                 tool_name.to_string(),
                 Value::Object(arguments.clone()),
-                input_schema,
+                input_schema.json_value(),
             ));
         }
 
@@ -264,7 +264,7 @@ impl WorkflowExecutor {
                 endpoint,
                 headers,
             } => {
-                let input_schema = typed_tool.model_input_schema(&bindings);
+                let input_schema = ModelSchema::model_tool_input(typed_tool.input_type.clone(), bindings.clone());
 
                 let server_config = McpServerConfig {
                     name: server_name.unwrap_or_else(|| "default".to_string()),
@@ -277,7 +277,7 @@ impl WorkflowExecutor {
                     server_config.name.clone(),
                     mcp_tool_name.clone(),
                     Value::Object(arguments.clone()),
-                    Some(input_schema),
+                    Some(input_schema.json_value()),
                 );
 
                 if let Some(sender) = tool_call_execution_context.event_sender {
@@ -422,8 +422,8 @@ impl WorkflowExecutor {
             name: typed_tool.name.clone(),
             description: typed_tool.declaration.description.clone(),
             source: self.model_tool_source(&typed_tool.declaration, evaluation_context)?,
-            input_schema: typed_tool.model_input_schema(&bindings),
-            output_schema: typed_tool.output_schema(),
+            input_schema: ModelSchema::model_tool_input(typed_tool.input_type.clone(), bindings.clone()),
+            output_schema: ModelSchema::workflow(typed_tool.output_type.clone()),
             bindings,
             max_calls: override_max_calls.or(typed_tool.declaration.max_calls),
             max_calls_scope: if override_max_calls.is_some() {
@@ -545,20 +545,13 @@ impl WorkflowExecutor {
                 reference_keyword.as_str()
             )),
             source,
-            input_schema: Self::open_object_schema(),
-            output_schema: serde_json::json!({ "type": "string" }),
+            input_schema: ModelSchema::OpenObject,
+            output_schema: ModelSchema::workflow(WorkflowType::String),
             bindings,
             max_calls: override_max_calls,
             max_calls_scope: ToolCallLimitScope::Agent {
                 agent_name: planned_agent.name.clone(),
             },
-        })
-    }
-
-    fn open_object_schema() -> Value {
-        serde_json::json!({
-            "type": "object",
-            "additionalProperties": true,
         })
     }
 
