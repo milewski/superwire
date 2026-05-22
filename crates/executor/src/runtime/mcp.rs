@@ -56,12 +56,9 @@ impl WorkflowExecutor {
         mcp_call: &McpCall,
         mcp_render_context: McpRenderContext<'_>,
     ) -> Result<Value, ExecutorError> {
-        let resource_import = self
-            .workflow
-            .find_resource_import(resource_name)
-            .ok_or_else(|| ExecutorError::Other {
-                message: format!("resource `{resource_name}` is not imported"),
-            })?;
+        let resource_import = self.lookups.resource_import(resource_name).ok_or_else(|| ExecutorError::Other {
+            message: format!("resource `{resource_name}` is not imported"),
+        })?;
         let server_config = self.resolve_mcp_import_server(&resource_import.source.server_name, mcp_render_context.evaluation_context)?;
         let arguments = self.resolve_mcp_call_parameters(
             &resource_import.parameters,
@@ -123,7 +120,7 @@ impl WorkflowExecutor {
         mcp_call: &McpCall,
         mcp_render_context: McpRenderContext<'_>,
     ) -> Result<Value, ExecutorError> {
-        let prompt_import = self.workflow.find_prompt_import(prompt_name).ok_or_else(|| ExecutorError::Other {
+        let prompt_import = self.lookups.prompt_import(prompt_name).ok_or_else(|| ExecutorError::Other {
             message: format!("prompt `{prompt_name}` is not imported"),
         })?;
         let server_config = self.resolve_mcp_import_server(&prompt_import.source.server_name, mcp_render_context.evaluation_context)?;
@@ -239,7 +236,7 @@ impl WorkflowExecutor {
         server_name: &str,
         evaluation_context: &EvaluationContext,
     ) -> Result<McpServerConfig, ExecutorError> {
-        let mcp_server_declaration = self.workflow.find_mcp_server(server_name).ok_or_else(|| ExecutorError::Other {
+        let mcp_server_declaration = self.lookups.mcp_server(server_name).ok_or_else(|| ExecutorError::Other {
             message: format!("MCP import references unknown MCP server `{server_name}`"),
         })?;
 

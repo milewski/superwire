@@ -88,7 +88,7 @@ impl WorkflowExecutor {
 
         match mcp_call.operation {
             superwire_core::dsl::McpCallOperation::Read => {
-                let resource_import = self.workflow.find_resource_import(target_name)?;
+                let resource_import = self.lookups.resource_import(target_name)?;
 
                 Some(serde_json::json!({
                     "operation": "read",
@@ -98,7 +98,7 @@ impl WorkflowExecutor {
                 }))
             }
             superwire_core::dsl::McpCallOperation::Render => {
-                let prompt_import = self.workflow.find_prompt_import(target_name)?;
+                let prompt_import = self.lookups.prompt_import(target_name)?;
 
                 Some(serde_json::json!({
                     "operation": "render",
@@ -468,7 +468,7 @@ impl WorkflowExecutor {
         })?;
         let (server_name, source_item_name, import_parameters) = match reference_keyword {
             ReferenceKeyword::Prompt => {
-                let prompt_import = self.workflow.find_prompt_import(import_name).ok_or_else(|| ExecutorError::Other {
+                let prompt_import = self.lookups.prompt_import(import_name).ok_or_else(|| ExecutorError::Other {
                     message: format!("agent `{}` references unknown prompt `{import_name}`", planned_agent.name),
                 })?;
 
@@ -479,12 +479,9 @@ impl WorkflowExecutor {
                 )
             }
             ReferenceKeyword::Resource => {
-                let resource_import = self
-                    .workflow
-                    .find_resource_import(import_name)
-                    .ok_or_else(|| ExecutorError::Other {
-                        message: format!("agent `{}` references unknown resource `{import_name}`", planned_agent.name),
-                    })?;
+                let resource_import = self.lookups.resource_import(import_name).ok_or_else(|| ExecutorError::Other {
+                    message: format!("agent `{}` references unknown resource `{import_name}`", planned_agent.name),
+                })?;
 
                 (
                     resource_import.source.server_name.clone(),
@@ -573,28 +570,20 @@ impl WorkflowExecutor {
         let Some(ToolSource::Mcp(mcp_tool_source)) = &tool_declaration.source else {
             return Ok(ModelToolSource::Local);
         };
-        let is_server_only_source =
-            mcp_tool_source.server_name.is_none() && self.workflow.find_mcp_server(&mcp_tool_source.tool_name).is_some();
+        let is_server_only_source = mcp_tool_source.server_name.is_none() && self.lookups.mcp_server(&mcp_tool_source.tool_name).is_some();
         let resolved_server_name = if is_server_only_source {
             Some(mcp_tool_source.tool_name.as_str())
         } else {
             mcp_tool_source.server_name.as_deref()
         };
         let mcp_server_declaration = if let Some(server_name) = resolved_server_name {
-            self.workflow.find_mcp_server(server_name).ok_or_else(|| ExecutorError::Other {
+            self.lookups.mcp_server(server_name).ok_or_else(|| ExecutorError::Other {
                 message: format!("tool `{}` references unknown MCP server `{server_name}`", tool_declaration.name),
             })?
         } else {
-            self.workflow
-                .declarations()
-                .iter()
-                .find_map(|declaration| match declaration {
-                    Declaration::McpServer(mcp_server_declaration) => Some(mcp_server_declaration),
-                    _ => None,
-                })
-                .ok_or_else(|| ExecutorError::Other {
-                    message: format!("tool `{}` uses MCP but no `mcp` server is declared", tool_declaration.name),
-                })?
+            self.lookups.default_mcp_server().ok_or_else(|| ExecutorError::Other {
+                message: format!("tool `{}` uses MCP but no `mcp` server is declared", tool_declaration.name),
+            })?
         };
         let mcp_server_config = McpServerConfig::resolve_from_declaration(mcp_server_declaration, evaluation_context).map_err(|error| {
             ExecutorError::Other {

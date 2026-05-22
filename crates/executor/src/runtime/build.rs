@@ -1,4 +1,4 @@
-use super::{value_object, ExecutorError, WorkflowExecutor};
+use super::{value_object, ExecutorError, WorkflowExecutor, WorkflowExecutorLookups};
 use crate::event::ExecutorEvent;
 use crate::runtime::tools::StartupMcpToolValidationContext;
 use serde_json::Value;
@@ -69,10 +69,13 @@ impl RuntimeWorkflowPlan {
     }
 
     fn into_executor(self, mcp_pool: McpClientPool) -> WorkflowExecutor {
+        let lookups = WorkflowExecutorLookups::from_workflow(&self.workflow);
+
         WorkflowExecutor {
             workflow: self.workflow,
             execution_plan: self.execution_plan,
             mcp_pool,
+            lookups,
         }
     }
 }

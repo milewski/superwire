@@ -11,6 +11,7 @@ use super::super::position::source_span_contains_position;
 use super::super::text_utils::trailing_identifier;
 use super::super::{all_provider_property_names, CompletionSuggestion, RenderTypeExpression};
 use super::types::SemanticIndex;
+use std::collections::HashSet;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ProviderCompletionPropertyName {
@@ -435,12 +436,13 @@ impl SemanticIndex {
         let Some(tool_summary) = self.tools.get(tool_name) else {
             return Vec::new();
         };
+        let existing_argument_name_set = existing_argument_names.iter().map(String::as_str).collect::<HashSet<_>>();
 
         tool_summary
             .bounded_fields
             .iter()
             .filter(|(field_name, _)| field_name.starts_with(argument_prefix))
-            .filter(|(field_name, _)| !existing_argument_names.contains(field_name))
+            .filter(|(field_name, _)| !existing_argument_name_set.contains(field_name.as_str()))
             .map(|(field_name, field_type)| CompletionSuggestion {
                 label: field_name.clone(),
                 kind: CompletionItemKind::PROPERTY,

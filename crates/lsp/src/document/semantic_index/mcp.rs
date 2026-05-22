@@ -1,6 +1,7 @@
 use super::super::{CompletionSuggestion, RenderTypeExpression};
 use super::SemanticIndex;
 use lsp_types::CompletionItemKind;
+use std::collections::{BTreeMap, HashSet};
 use superwire_core::dsl::{ToolPropertyName, TypedField};
 use superwire_core::mcp::{McpServerLock, McpToolLock};
 
@@ -14,13 +15,14 @@ impl SemanticIndex {
         let Some(server_lock) = self.mcp_lock.as_ref().and_then(|mcp_lock| mcp_lock.servers.get(server_name)) else {
             return Vec::new();
         };
+        let existing_tool_name_set = existing_tool_names.iter().map(String::as_str).collect::<HashSet<_>>();
 
         let mut normalized_tool_names = server_lock
             .tools
             .keys()
             .map(|tool_name| McpServerLock::normalize_item_name(tool_name))
             .filter(|normalized_tool_name| normalized_tool_name.starts_with(tool_prefix))
-            .filter(|normalized_tool_name| !existing_tool_names.contains(normalized_tool_name))
+            .filter(|normalized_tool_name| !existing_tool_name_set.contains(normalized_tool_name.as_str()))
             .collect::<Vec<_>>();
 
         normalized_tool_names.sort();
@@ -47,13 +49,14 @@ impl SemanticIndex {
         let Some(server_lock) = self.mcp_lock.as_ref().and_then(|mcp_lock| mcp_lock.servers.get(server_name)) else {
             return Vec::new();
         };
+        let existing_resource_name_set = existing_resource_names.iter().map(String::as_str).collect::<HashSet<_>>();
 
         let mut normalized_resource_names = server_lock
             .resources
             .iter()
             .map(|resource_name| McpServerLock::normalize_item_name(resource_name))
             .filter(|normalized_resource_name| normalized_resource_name.starts_with(resource_prefix))
-            .filter(|normalized_resource_name| !existing_resource_names.contains(normalized_resource_name))
+            .filter(|normalized_resource_name| !existing_resource_name_set.contains(normalized_resource_name.as_str()))
             .collect::<Vec<_>>();
 
         normalized_resource_names.sort();
@@ -80,13 +83,14 @@ impl SemanticIndex {
         let Some(server_lock) = self.mcp_lock.as_ref().and_then(|mcp_lock| mcp_lock.servers.get(server_name)) else {
             return Vec::new();
         };
+        let existing_prompt_name_set = existing_prompt_names.iter().map(String::as_str).collect::<HashSet<_>>();
 
         let mut normalized_prompt_names = server_lock
             .prompts
             .iter()
             .map(|prompt_name| McpServerLock::normalize_item_name(prompt_name))
             .filter(|normalized_prompt_name| normalized_prompt_name.starts_with(prompt_prefix))
-            .filter(|normalized_prompt_name| !existing_prompt_names.contains(normalized_prompt_name))
+            .filter(|normalized_prompt_name| !existing_prompt_name_set.contains(normalized_prompt_name.as_str()))
             .collect::<Vec<_>>();
 
         normalized_prompt_names.sort();
@@ -117,11 +121,12 @@ impl SemanticIndex {
         let Some(prompt_arguments) = server_lock.prompt_arguments_for_name(prompt_name) else {
             return Vec::new();
         };
+        let existing_binding_name_set = existing_binding_names.iter().map(String::as_str).collect::<HashSet<_>>();
 
         prompt_arguments
             .iter()
             .filter(|prompt_argument| prompt_argument.name.starts_with(binding_prefix))
-            .filter(|prompt_argument| !existing_binding_names.contains(&prompt_argument.name))
+            .filter(|prompt_argument| !existing_binding_name_set.contains(prompt_argument.name.as_str()))
             .map(|prompt_argument| {
                 let requirement_detail = if prompt_argument.required {
                     "Required prompt argument"
@@ -155,10 +160,12 @@ impl SemanticIndex {
         field_prefix: &str,
         existing_field_names: &[String],
     ) -> Vec<CompletionSuggestion> {
+        let existing_field_name_set = existing_field_names.iter().map(String::as_str).collect::<HashSet<_>>();
+
         self.mcp_tool_schema_fields(tool_name, property_name)
             .iter()
             .filter(|typed_field| typed_field.name.starts_with(field_prefix))
-            .filter(|typed_field| !existing_field_names.contains(&typed_field.name))
+            .filter(|typed_field| !existing_field_name_set.contains(typed_field.name.as_str()))
             .map(|typed_field| {
                 let rendered_type = typed_field.field_type.render_type();
                 let insert_text = if property_name == ToolPropertyName::Bindings {
@@ -231,11 +238,21 @@ impl SemanticIndex {
 
         for mcp_tool_lock in tool_locks {
             let tool_fields = Self::schema_fields_from_mcp_tool_lock(mcp_tool_lock, property_name);
+            let mut tool_fields_by_name = BTreeMap::new();
+
+            for tool_field in tool_fields {
+                tool_fields_by_name
+                    .entry(tool_field.name)
+                    .or_insert_with(Vec::new)
+                    .push(tool_field.field_type);
+            }
 
             common_fields.retain(|common_field| {
-                tool_fields
-                    .iter()
-                    .any(|tool_field| tool_field.name == common_field.name && tool_field.field_type == common_field.field_type)
+                tool_fields_by_name.get(&common_field.name).is_some_and(|tool_field_types| {
+                    tool_field_types
+                        .iter()
+                        .any(|tool_field_type| tool_field_type == &common_field.field_type)
+                })
             });
         }
 

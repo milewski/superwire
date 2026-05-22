@@ -240,6 +240,8 @@ fn collect_typed_agents(
     workflow: &Workflow,
     named_schema_types: &HashMap<String, TypeExpression>,
 ) -> Result<(Vec<TypedAgentIr>, HashMap<String, WorkflowType>), WorkflowSemanticError> {
+    let provider_declarations = workflow.provider_declarations_by_name();
+    let model_declarations = workflow.model_declarations_by_name();
     let mut agents = Vec::new();
     let mut agent_output_types = HashMap::new();
 
@@ -263,8 +265,9 @@ fn collect_typed_agents(
                 property: structure::Agent::new().model.definition().name.to_string(),
                 message: "model must reference a model profile like model.fast".to_string(),
             })?;
-        let model_declaration = workflow
-            .find_model(model_name)
+        let model_declaration = model_declarations
+            .get(model_name)
+            .copied()
             .ok_or_else(|| WorkflowSemanticError::InvalidAgentProperty {
                 agent_name: agent_declaration.name.clone(),
                 property: structure::Agent::new().model.definition().name.to_string(),
@@ -281,7 +284,7 @@ fn collect_typed_agents(
         let provider_name = model_declaration.provider_name.clone();
         required_agent_property_expression(agent_declaration, AgentExpressionPropertyName::Instruction)?;
 
-        let provider_declaration = workflow.find_provider(&provider_name);
+        let provider_declaration = provider_declarations.get(provider_name.as_str()).copied();
         let inference_fields = agent_declaration.effective_inference_fields(provider_declaration, model_declaration);
         let dependencies = collect_dependencies_for_agent(agent_declaration, provider_declaration, model_declaration);
 
@@ -374,13 +377,8 @@ fn infer_workflow_output_type(
     };
 
     let dynamic_fields = workflow
-        .declarations()
-        .iter()
-        .filter_map(|declaration| match declaration {
-            Declaration::Dynamic(dynamic_block) => Some(dynamic_block.fields.as_slice()),
-            _ => None,
-        })
-        .flatten()
+        .dynamic_blocks()
+        .flat_map(|dynamic_block| dynamic_block.fields.as_slice())
         .collect::<Vec<_>>();
 
     infer_dynamic_field_types(dynamic_fields, &mut inference_context)?;

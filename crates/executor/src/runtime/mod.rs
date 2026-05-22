@@ -20,7 +20,10 @@ use crate::runtime::mcp::normalize_prompt;
 use crate::runtime::state::RuntimeState;
 use crate::runtime::tools::ExpressionMcpExecutionPlanExt;
 use serde_json::{Map, Value};
-use superwire_core::dsl::{AgentProperty, Declaration, Expression, Workflow};
+use std::collections::HashMap;
+use superwire_core::dsl::{
+    AgentProperty, Declaration, Expression, McpPromptImportDeclaration, McpResourceImportDeclaration, McpServerDeclaration, Workflow,
+};
 use superwire_core::mcp::McpClientPool;
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
 use superwire_core::semantic::{ExecutionPlan, WorkflowExecutionGraph};
@@ -44,6 +47,72 @@ pub struct WorkflowExecutor {
     workflow: Workflow,
     execution_plan: ExecutionPlan,
     mcp_pool: McpClientPool,
+    lookups: WorkflowExecutorLookups,
+}
+
+#[derive(Debug, Clone)]
+struct WorkflowExecutorLookups {
+    mcp_servers: HashMap<String, McpServerDeclaration>,
+    default_mcp_server: Option<McpServerDeclaration>,
+    resource_imports: HashMap<String, McpResourceImportDeclaration>,
+    prompt_imports: HashMap<String, McpPromptImportDeclaration>,
+}
+
+impl WorkflowExecutorLookups {
+    fn from_workflow(workflow: &Workflow) -> Self {
+        let mut mcp_servers = HashMap::new();
+        let mut default_mcp_server = None;
+
+        for declaration in workflow.declarations() {
+            if let Declaration::McpServer(mcp_server_declaration) = declaration {
+                if default_mcp_server.is_none() {
+                    default_mcp_server = Some(mcp_server_declaration.clone());
+                }
+
+                mcp_servers
+                    .entry(mcp_server_declaration.name.clone())
+                    .or_insert_with(|| mcp_server_declaration.clone());
+            }
+        }
+
+        let mut resource_imports = HashMap::new();
+        let mut prompt_imports = HashMap::new();
+
+        for resource_import_declaration in workflow.resource_imports() {
+            resource_imports
+                .entry(resource_import_declaration.name.clone())
+                .or_insert_with(|| resource_import_declaration.clone());
+        }
+
+        for prompt_import_declaration in workflow.prompt_imports() {
+            prompt_imports
+                .entry(prompt_import_declaration.name.clone())
+                .or_insert_with(|| prompt_import_declaration.clone());
+        }
+
+        Self {
+            mcp_servers,
+            default_mcp_server,
+            resource_imports,
+            prompt_imports,
+        }
+    }
+
+    fn mcp_server(&self, server_name: &str) -> Option<&McpServerDeclaration> {
+        self.mcp_servers.get(server_name)
+    }
+
+    fn default_mcp_server(&self) -> Option<&McpServerDeclaration> {
+        self.default_mcp_server.as_ref()
+    }
+
+    fn resource_import(&self, resource_name: &str) -> Option<&McpResourceImportDeclaration> {
+        self.resource_imports.get(resource_name)
+    }
+
+    fn prompt_import(&self, prompt_name: &str) -> Option<&McpPromptImportDeclaration> {
+        self.prompt_imports.get(prompt_name)
+    }
 }
 
 #[derive(Debug, Clone)]
