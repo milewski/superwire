@@ -1,7 +1,7 @@
 use crate::dsl::{AgentDeclaration, Expression, ObjectField, OutputDeclaration, Workflow};
 use crate::semantic::ir::{TypedToolIr, TypedWorkflowIr};
 use crate::semantic::support::provider::{build_provider_index, ProviderConfigTemplate};
-use crate::semantic::support::types::{validate_value_against_type, WorkflowType};
+use crate::semantic::support::types::{validate_value_against_type, workflow_type_to_json_schema, WorkflowType};
 use crate::semantic::WorkflowSemanticError;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -15,8 +15,6 @@ pub struct PlannedAgent {
     pub inference_fields: Vec<ObjectField>,
     pub iteration_output_type: WorkflowType,
     pub final_output_type: WorkflowType,
-    pub iteration_output_schema: Value,
-    pub final_output_schema: Value,
     pub dependencies: Vec<String>,
 }
 
@@ -50,7 +48,12 @@ pub struct ExecutionPlan {
 impl PlannedAgent {
     #[must_use]
     pub fn iteration_output_schema(&self) -> Value {
-        self.iteration_output_schema.clone()
+        workflow_type_to_json_schema(&self.iteration_output_type)
+    }
+
+    #[must_use]
+    pub fn final_output_schema(&self) -> Value {
+        workflow_type_to_json_schema(&self.final_output_type)
     }
 
     pub fn validate_iteration_output_value(&self, output: &Value) -> Result<(), String> {
@@ -131,8 +134,6 @@ pub fn build_execution_plan(workflow: &Workflow, typed_workflow_ir: &TypedWorkfl
                 inference_fields: typed_agent.inference_fields.clone(),
                 iteration_output_type: typed_agent.iteration_output_type.clone(),
                 final_output_type: typed_agent.final_output_type.clone(),
-                iteration_output_schema: typed_agent.iteration_output_schema.clone(),
-                final_output_schema: typed_agent.final_output_schema.clone(),
                 dependencies: typed_agent.dependencies.clone(),
             },
         );

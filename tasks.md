@@ -291,7 +291,7 @@
   Description: Start with clean maps and add trie/prefix indexes only after measurement.
   Rationale: Avoid premature complexity until completion filtering is proven slow. Added a cached-document LSP completion filtering benchmark for model, tool, and schema candidates; measured results do not justify trie/prefix-index complexity yet, so no indexes were added.
 
-- [ ] Reduce `serde_json::Value` as an internal transport where static domain types are available.
+- [~] Reduce `serde_json::Value` as an internal transport where static domain types are available.
   Description: Keep JSON values at API/dynamic boundaries and use domain structs internally.
   Rationale: Typed data improves compile-time safety and avoids repeated conversion.
 
@@ -328,3 +328,4 @@
 ## Incomplete Handoff Notes
 
 - Executor support now uses `superwire_core::testing::WorkflowSource` and schema helpers, and core/LSP inline source helpers share the core workflow template API. CLI tests have not been migrated to shared command/test helpers yet.
+- Partial JSON transport reduction is implemented for typed semantic planning schemas: `TypedToolIr`, `TypedAgentIr`, and `PlannedAgent` now carry `WorkflowType` only, with JSON schema materialized by `TypedToolIr::input_schema`, `TypedToolIr::model_input_schema`, `TypedToolIr::output_schema`, `PlannedAgent::iteration_output_schema`, and `PlannedAgent::final_output_schema`. Remaining candidates are boundary-adjacent schema fields in `crates/executor/src/model/types.rs` (`ModelRequest::output_schema`, `ModelToolDefinition::{input_schema, output_schema}`), `crates/executor/src/runtime/agent.rs` (`PreparedAgentRequest::output_schema`), and MCP dynamic schema wiring in `crates/executor/src/runtime/tools.rs` (`resolve_agent_tool_definition`, `execute_deterministic_tool_call`, `validate_startup_mcp_tool_call`). These likely need a typed schema wrapper that can represent both core `WorkflowType` schemas and MCP-provided JSON schemas without forcing dynamic schemas into `WorkflowType`.

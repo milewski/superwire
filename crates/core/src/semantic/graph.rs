@@ -240,7 +240,7 @@ impl ExecutionPlan {
 
                 Some(WorkflowExecutionGraphPort {
                     name: format!("agent.{agent_name}"),
-                    schema: planned_agent.final_output_schema.clone(),
+                    schema: planned_agent.final_output_schema(),
                 })
             })
             .collect::<Vec<_>>();
@@ -456,7 +456,7 @@ impl PlannedAgent {
             inputs: self.execution_graph_inputs(execution_plan),
             outputs: vec![WorkflowExecutionGraphPort {
                 name: format!("agent.{}", self.name),
-                schema: self.final_output_schema.clone(),
+                schema: self.final_output_schema(),
             }],
             dependencies: self.dependencies.clone(),
             provider_name: Some(self.provider_name.clone()),
@@ -545,7 +545,7 @@ impl PlannedAgent {
         Some(WorkflowExecutionGraphLoopInfo {
             pattern: for_loop.pattern_label(),
             iterable_schema: json!({ "type": "array" }),
-            iteration_output_schema: self.iteration_output_schema.clone(),
+            iteration_output_schema: self.iteration_output_schema(),
         })
     }
 
@@ -557,7 +557,7 @@ impl PlannedAgent {
 
                 Some(WorkflowExecutionGraphPort {
                     name: format!("agent.{dependency_name}"),
-                    schema: planned_agent.final_output_schema.clone(),
+                    schema: planned_agent.final_output_schema(),
                 })
             })
             .collect()
@@ -631,7 +631,7 @@ impl PlannedAgent {
             item_name,
             description: typed_tool.declaration.description.clone(),
             max_calls: use_expression.max_calls_override().or(typed_tool.declaration.max_calls),
-            input_schema: typed_tool.input_schema.clone(),
+            input_schema: typed_tool.input_schema(),
             output_schema: typed_tool.output_schema(),
         })
     }
