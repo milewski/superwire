@@ -1,4 +1,5 @@
 use crate::api::ExecutionOptions;
+use crate::event::ExecutorEventKind;
 use crate::service::ExecutorService;
 use crate::tests::support::{request_with_input, ConcurrentTrackingModelProvider, ScriptedModelProvider, TestModelProvider};
 use serde_json::{json, Value};
@@ -311,6 +312,66 @@ async fn for_loop_iterations_run_in_parallel_with_configured_limit() {
         .expect("for-loop with max_concurrency=2 should execute");
 
     assert_eq!(model_provider.max_active_requests(), 2);
+}
+
+#[tokio::test]
+async fn streamed_plan_includes_for_loop_iteration_count() {
+    let workflow_source = workflow_source! {
+        provider openai from openai {
+            endpoint: "http://localhost:1234/v1"
+            api_key: "test-api-key"
+        }
+
+        model openai_model from openai {
+            id: "model-a"
+        }
+
+        input {
+            items: [string]
+        }
+
+        agent writer for item in input.items {
+            model: model.openai_model
+            instruction: "Write {{ item }}"
+            output {
+                value: string
+            }
+        }
+
+        output {
+            values: agent.writer
+        }
+    };
+    let service = ExecutorService::new(TestModelProvider::new(vec![
+        json!({ "value": "a" }),
+        json!({ "value": "b" }),
+        json!({ "value": "c" }),
+    ]));
+    let mut receiver = service.execute_stream(request_with_input(workflow_source, json!({ "items": ["a", "b", "c"] })));
+    let mut planned_iteration_count = None;
+
+    while let Some(event) = receiver.recv().await {
+        if event.kind != ExecutorEventKind::WorkflowPlanned {
+            continue;
+        }
+
+        planned_iteration_count = event
+            .data
+            .as_ref()
+            .and_then(|event_data| event_data.get("steps"))
+            .and_then(Value::as_array)
+            .and_then(|steps| {
+                steps
+                    .iter()
+                    .find(|step| step.get("agent_name").and_then(Value::as_str) == Some("writer"))
+            })
+            .and_then(|step| step.get("iteration_count"))
+            .and_then(Value::as_u64);
+
+        break;
+    }
+
+    assert_eq!(planned_iteration_count, Some(3));
 }
 
 #[tokio::test]

@@ -274,6 +274,7 @@ impl WorkflowExecutor {
             "type": "agent",
             "agent_name": agent_name,
             "dependencies": planned_agent.dependencies,
+            "iteration_count": planned_agent.iteration_count(evaluation_context)?,
             "dynamic_calls": dynamic_calls,
             "available_mcp_calls": self.planned_agent_available_mcp_calls(planned_agent, evaluation_context)?,
         }))
@@ -345,5 +346,26 @@ impl WorkflowExecutor {
                 Ok(Value::Object(evaluated_fields))
             }
         }
+    }
+}
+
+trait PlannedAgentRuntimePlanningExt {
+    fn iteration_count(&self, evaluation_context: &EvaluationContext) -> Result<usize, ExecutorError>;
+}
+
+impl PlannedAgentRuntimePlanningExt for superwire_core::semantic::PlannedAgent {
+    fn iteration_count(&self, evaluation_context: &EvaluationContext) -> Result<usize, ExecutorError> {
+        let Some(agent_for_loop) = &self.declaration.for_loop else {
+            return Ok(1);
+        };
+        let Ok(iterable_value) = evaluate_expression(
+            &agent_for_loop.iterable,
+            evaluation_context,
+            &format!("for-loop iterable for agent `{}`", self.name),
+        ) else {
+            return Ok(1);
+        };
+
+        Ok(iterable_value.as_array().map_or(1, Vec::len))
     }
 }

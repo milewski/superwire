@@ -1,6 +1,6 @@
 import '@xyflow/react/dist/style.css';
 import { Background, Controls, Handle, MiniMap, Position, ReactFlow, ReactFlowProvider, useEdgesState, useNodesState, useReactFlow, useUpdateNodeInternals, type Edge, type Node, type NodeProps, type Viewport } from '@xyflow/react';
-import { Box, CheckCircle2, ChevronDown, CircleDashed, Cloud, Cpu, DatabaseZap, Eye, GitBranch, Layers3, Loader2, PlugZap, RefreshCcw, Settings2, Sparkles } from 'lucide-react';
+import { Box, CheckCircle2, ChevronDown, CircleDashed, Cloud, Cpu, DatabaseZap, Eye, GitBranch, Layers3, Loader2, PlugZap, RefreshCcw, Search, Settings2, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import JsonCodeEditor from '@/components/json-code-editor';
@@ -23,6 +23,7 @@ interface WorkflowGraphNodeData extends Record<string, unknown> {
   config: GraphConfig;
   runState: RunState;
   activeRunCount: number;
+  plannedRunCount: number;
   outputEntries: GraphOutputEntry[];
   failureEntry: GraphFailureEntry | null;
 }
@@ -42,6 +43,7 @@ type GraphDensity = 'compact' | 'comfortable';
 type GraphEdgeType = 'smoothstep' | 'straight' | 'default' | 'simplebezier';
 type GraphNodeStatus = 'idle' | 'running' | 'completed' | 'failed';
 type GraphExecutionSlotStatus = 'completed' | 'running' | 'failed' | 'waiting' | 'idle';
+type GraphExecutionSummary = Record<GraphExecutionSlotStatus, number>;
 
 interface GraphNodePosition {
   x: number;
@@ -77,9 +79,10 @@ export default function WorkflowGraphView({ graph, source, graphState, runState,
   const activeRunCounts = useMemo(() => (runState === 'running' ? activeAgentRunCounts(events) : new Map<string, number>()), [runState, events]);
   const outputEntriesByNodeId = useMemo(() => graphOutputEntriesByNodeId(events, outputJson), [events, outputJson]);
   const failureEntriesByNodeId = useMemo(() => graphFailureEntriesByNodeId(events), [events]);
+  const plannedRunCountsByNodeId = useMemo(() => plannedRunCountsByNodeIdFromEvents(events), [events]);
   const activeAgentSignature = Array.from(activeRunCounts.entries()).sort().map(([agentName, activeRunCount]) => `${agentName}:${activeRunCount}`).join(':');
   const displayGraph = useMemo(() => (graph ? graphWithProviderModelDeclarations(graph, workflowDeclarations) : null), [graph, workflowDeclarations]);
-  const nodes = useMemo(() => (displayGraph ? reactFlowNodes(displayGraph, config, runState, activeRunCounts, outputEntriesByNodeId, failureEntriesByNodeId) : []), [displayGraph, config, runState, activeAgentSignature, outputEntriesByNodeId, failureEntriesByNodeId]);
+  const nodes = useMemo(() => (displayGraph ? reactFlowNodes(displayGraph, config, runState, activeRunCounts, plannedRunCountsByNodeId, outputEntriesByNodeId, failureEntriesByNodeId) : []), [displayGraph, config, runState, activeAgentSignature, plannedRunCountsByNodeId, outputEntriesByNodeId, failureEntriesByNodeId]);
   const edges = useMemo(() => (displayGraph ? reactFlowEdges(displayGraph, config, activeRunCounts, outputEntriesByNodeId, failureEntriesByNodeId) : []), [displayGraph, config, activeAgentSignature, outputEntriesByNodeId, failureEntriesByNodeId]);
   const graphSignature = displayGraph ? displayGraph.nodes.map((node) => node.id).join(':') : 'empty';
 
@@ -103,7 +106,7 @@ export default function WorkflowGraphView({ graph, source, graphState, runState,
         {graph ? (
           <div className="graph-view__flow">
             <ReactFlowProvider>
-              <GraphCanvas nodes={nodes} edges={edges} graphSignature={graphSignature} layoutRequestCount={layoutRequestCount} runState={runState} />
+              <GraphCanvas nodes={nodes} edges={edges} graphSignature={graphSignature} layoutRequestCount={layoutRequestCount} />
             </ReactFlowProvider>
           </div>
         ) : (
@@ -132,7 +135,7 @@ function GraphStateBadge({ graphState }: { graphState: GraphState }) {
   );
 }
 
-function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignature, layoutRequestCount, runState }: { nodes: WorkflowGraphReactNode[]; edges: Edge[]; graphSignature: string; layoutRequestCount: number; runState: RunState }) {
+function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignature, layoutRequestCount }: { nodes: WorkflowGraphReactNode[]; edges: Edge[]; graphSignature: string; layoutRequestCount: number }) {
   const restoredViewportRef = useRef<Viewport | null>(restoreGraphViewport());
   const initialFitViewCompleteRef = useRef(false);
   const initialNodesRef = useRef<WorkflowGraphReactNode[] | null>(null);
@@ -144,7 +147,6 @@ function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignatur
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodesRef.current);
   const [edges, setEdges, onEdgesChange] = useEdgesState(incomingEdges);
-  const [viewport, setViewport] = useState<Viewport>(currentViewportRef.current);
   const reactFlowInstance = useReactFlow();
 
   useEffect(() => {
@@ -177,24 +179,6 @@ function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignatur
   }, [incomingEdges, setEdges]);
 
   useEffect(() => {
-    if (runState !== 'running') {
-      return;
-    }
-
-    window.requestAnimationFrame(() => {
-      const preservedViewport = currentViewportRef.current;
-      const actualViewport = reactFlowInstance.getViewport();
-
-      if (sameGraphViewport(actualViewport, preservedViewport)) {
-        return;
-      }
-
-      setViewport(preservedViewport);
-      void reactFlowInstance.setViewport(preservedViewport, { duration: 0 });
-    });
-  }, [incomingNodes, incomingEdges, reactFlowInstance, runState]);
-
-  useEffect(() => {
     storeGraphNodePositions(nodes);
   }, [nodes]);
 
@@ -210,17 +194,10 @@ function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignatur
         const nextViewport = reactFlowInstance.getViewport();
 
         currentViewportRef.current = nextViewport;
-        setViewport(nextViewport);
         storeGraphViewport(nextViewport);
       });
     });
-  }, [layoutRequestCount, edges, reactFlowInstance, setNodes, setViewport]);
-
-  function handleViewportChange(nextViewport: Viewport) {
-    currentViewportRef.current = nextViewport;
-    setViewport(nextViewport);
-    storeGraphViewport(nextViewport);
-  }
+  }, [layoutRequestCount, edges, reactFlowInstance, setNodes]);
 
   return (
     <ReactFlow
@@ -229,14 +206,12 @@ function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignatur
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       nodeTypes={graphNodeTypes}
-      viewport={viewport}
-      onViewportChange={handleViewportChange}
+      defaultViewport={currentViewportRef.current}
       onInit={(initializedReactFlowInstance) => {
         if (restoredViewportRef.current) {
           const restoredViewport = restoredViewportRef.current;
 
           currentViewportRef.current = restoredViewport;
-          setViewport(restoredViewport);
           void initializedReactFlowInstance.setViewport(restoredViewport, { duration: 0 });
 
           return;
@@ -253,7 +228,6 @@ function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignatur
             const nextViewport = initializedReactFlowInstance.getViewport();
 
             currentViewportRef.current = nextViewport;
-            setViewport(nextViewport);
             storeGraphViewport(nextViewport);
           });
         });
@@ -337,6 +311,7 @@ function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
   const config = data.config;
   const runState = data.runState;
   const activeRunCount = data.activeRunCount;
+  const plannedRunCount = data.plannedRunCount;
   const outputEntries = data.outputEntries;
   const failureEntry = data.failureEntry;
   const [collapsed, setCollapsed] = useState(false);
@@ -379,7 +354,7 @@ function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
         <ChevronDown className="graph-node__header-chevron" />
       </button>
 
-      <GraphExecutionStrip node={node} runState={runState} activeRunCount={activeRunCount} outputEntries={outputEntries} failureEntry={failureEntry} onOpenOutput={openOutput} />
+      <GraphExecutionStrip node={node} runState={runState} activeRunCount={activeRunCount} plannedRunCount={plannedRunCount} outputEntries={outputEntries} failureEntry={failureEntry} onOpenOutput={openOutput} />
       <GraphFailureNotice failureEntry={failureEntry} />
       {node.instruction ? <GraphInstructionPreview instruction={node.instruction} onOpen={() => setInstructionOpen(true)} /> : null}
       {node.loop_info ? <GraphLoopSummary node={node} config={config} /> : null}
@@ -440,29 +415,25 @@ function NodeStatusBadge({ status, activeRunCount, outputEntries }: { status: Gr
   );
 }
 
-function GraphExecutionStrip({ node, runState, activeRunCount, outputEntries, failureEntry, onOpenOutput }: { node: WorkflowExecutionGraphNode; runState: RunState; activeRunCount: number; outputEntries: GraphOutputEntry[]; failureEntry: GraphFailureEntry | null; onOpenOutput: (outputIndex: number) => void }) {
-  const executionStripElementRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const executionStripElement = executionStripElementRef.current;
-
-    if (!executionStripElement) {
-      return;
-    }
-
-    executionStripElement.scrollTo({ left: executionStripElement.scrollWidth, behavior: 'smooth' });
-  }, [activeRunCount, outputEntries.length, failureEntry]);
-
+function GraphExecutionStrip({ node, runState, activeRunCount, plannedRunCount, outputEntries, failureEntry, onOpenOutput }: { node: WorkflowExecutionGraphNode; runState: RunState; activeRunCount: number; plannedRunCount: number; outputEntries: GraphOutputEntry[]; failureEntry: GraphFailureEntry | null; onOpenOutput: (outputIndex: number) => void }) {
   if (node.kind !== 'agent') {
     return null;
   }
 
   const completedCount = outputEntries.length;
-  const visibleSlotCount = graphExecutionSlotCount(node, completedCount, activeRunCount, failureEntry !== null);
+  const slotCount = graphExecutionSlotCount(node, completedCount, activeRunCount, plannedRunCount, failureEntry !== null);
+  const executionSummary = graphExecutionSummary(slotCount, completedCount, activeRunCount, failureEntry !== null, runState);
 
   return (
-    <div ref={executionStripElementRef} className="graph-node__execution-strip" aria-label="Execution progress">
-      {Array.from({ length: visibleSlotCount }).map((_, slotIndex) => {
+    <section className="graph-node__execution" aria-label="Execution progress">
+      <div className="graph-node__execution-summary">
+        <span><strong>{executionSummary.completed}</strong> done</span>
+        <span><strong>{executionSummary.running}</strong> running</span>
+        <span><strong>{executionSummary.waiting}</strong> waiting</span>
+      </div>
+
+      <div className="graph-node__execution-strip">
+      {Array.from({ length: slotCount }).map((_, slotIndex) => {
         const slotStatus = executionSlotStatus(slotIndex, completedCount, activeRunCount, failureEntry !== null, runState);
 
         return (
@@ -477,7 +448,8 @@ function GraphExecutionStrip({ node, runState, activeRunCount, outputEntries, fa
           />
         );
       })}
-    </div>
+      </div>
+    </section>
   );
 }
 
@@ -494,16 +466,26 @@ function GraphFailureNotice({ failureEntry }: { failureEntry: GraphFailureEntry 
   );
 }
 
-function graphExecutionSlotCount(node: WorkflowExecutionGraphNode, completedCount: number, activeRunCount: number, hasFailure: boolean) {
+function graphExecutionSlotCount(node: WorkflowExecutionGraphNode, completedCount: number, activeRunCount: number, plannedRunCount: number, hasFailure: boolean) {
   const loopBinding = node.bindings.find((binding) => binding.name === 'loop');
   const loopCount = loopBinding ? arrayLiteralItemCount(loopBinding.expression) : null;
   const failedCount = hasFailure ? 1 : 0;
 
   if (loopCount !== null) {
-    return Math.max(loopCount, completedCount + activeRunCount + failedCount);
+    return Math.max(loopCount, plannedRunCount, completedCount + activeRunCount + failedCount);
   }
 
-  return Math.max(completedCount + activeRunCount + failedCount, 1);
+  return Math.max(plannedRunCount, completedCount + activeRunCount + failedCount, 1);
+}
+
+function graphExecutionSummary(slotCount: number, completedCount: number, activeRunCount: number, hasFailure: boolean, runState: RunState): GraphExecutionSummary {
+  return Array.from({ length: slotCount }).reduce<GraphExecutionSummary>((summary, _slot, slotIndex) => {
+    const slotStatus = executionSlotStatus(slotIndex, completedCount, activeRunCount, hasFailure, runState);
+
+    summary[slotStatus] += 1;
+
+    return summary;
+  }, { completed: 0, running: 0, failed: 0, waiting: 0, idle: 0 });
 }
 
 function arrayLiteralItemCount(expression: string) {
@@ -633,9 +615,13 @@ function GraphOutputAction({ node, outputEntries, onOpen }: { node: WorkflowExec
 
 function GraphOutputDialog({ node, outputEntries, open, openOutputIndex, onOpenChange }: { node: WorkflowExecutionGraphNode; outputEntries: GraphOutputEntry[]; open: boolean; openOutputIndex: number; onOpenChange: (open: boolean) => void }) {
   const [selectedOutputIndex, setSelectedOutputIndex] = useState(openOutputIndex);
-  const entriesElementRef = useRef<HTMLDivElement | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const previousOutputEntryCountRef = useRef(outputEntries.length);
   const selectedOutputEntry = outputEntries[selectedOutputIndex] ?? outputEntries[0];
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const filteredOutputEntries = normalizedSearchQuery
+    ? outputEntries.map((outputEntry, outputIndex) => ({ outputEntry, outputIndex })).filter(({ outputEntry }) => outputEntry.title.toLowerCase().includes(normalizedSearchQuery) || outputEntry.outputJson.toLowerCase().includes(normalizedSearchQuery))
+    : outputEntries.map((outputEntry, outputIndex) => ({ outputEntry, outputIndex }));
 
   useEffect(() => {
     setSelectedOutputIndex(Math.min(openOutputIndex, Math.max(outputEntries.length - 1, 0)));
@@ -655,18 +641,6 @@ function GraphOutputDialog({ node, outputEntries, open, openOutputIndex, onOpenC
     previousOutputEntryCountRef.current = outputEntries.length;
   }, [open, outputEntries.length]);
 
-  useEffect(() => {
-    const entriesElement = entriesElementRef.current;
-
-    if (!entriesElement) {
-      return;
-    }
-
-    // Loop agents can add many outputs while the dialog is open. Keep the
-    // selector bounded and auto-scroll to the latest selected result.
-    entriesElement.querySelector<HTMLElement>('[data-selected="true"]')?.scrollIntoView({ behavior: 'smooth', inline: 'end', block: 'nearest' });
-  }, [selectedOutputIndex, outputEntries.length]);
-
   if (!selectedOutputEntry) {
     return null;
   }
@@ -679,23 +653,38 @@ function GraphOutputDialog({ node, outputEntries, open, openOutputIndex, onOpenC
           <DialogDescription>{outputDescription(node, outputEntries)}</DialogDescription>
         </DialogHeader>
         <div className="graph-output-dialog__body">
-          <div ref={entriesElementRef} className="graph-output-dialog__entries" role="tablist" aria-label={`${node.label} outputs`}>
-            {outputEntries.map((outputEntry, outputIndex) => (
-              <button
-                key={`${outputEntry.title}-${outputIndex}`}
-                type="button"
-                className="graph-output-dialog__entry"
-                role="tab"
-                data-selected={outputIndex === selectedOutputIndex ? 'true' : 'false'}
-                aria-selected={outputIndex === selectedOutputIndex}
-                onClick={() => setSelectedOutputIndex(outputIndex)}
-              >
-                <strong>{outputEntry.title}</strong>
-                <small>{outputByteSize(jsonByteSize(outputEntry.outputJson))}</small>
-              </button>
-            ))}
-          </div>
-          <JsonCodeEditor value={selectedOutputEntry.outputJson} readOnly className="graph-output-dialog__json" />
+          <aside className="graph-output-dialog__sidebar">
+            <label className="graph-output-dialog__search">
+              <Search />
+              <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search outputs" />
+            </label>
+
+            <div className="graph-output-dialog__entries" role="tablist" aria-label={`${node.label} outputs`}>
+              {filteredOutputEntries.length > 0 ? filteredOutputEntries.map(({ outputEntry, outputIndex }) => (
+                <button
+                  key={`${outputEntry.title}-${outputIndex}`}
+                  type="button"
+                  className="graph-output-dialog__entry"
+                  role="tab"
+                  data-selected={outputIndex === selectedOutputIndex ? 'true' : 'false'}
+                  aria-selected={outputIndex === selectedOutputIndex}
+                  onClick={() => setSelectedOutputIndex(outputIndex)}
+                >
+                  <strong>{outputEntry.title}</strong>
+                  <span>{outputPreview(outputEntry.outputJson)}</span>
+                  <small>{outputByteSize(jsonByteSize(outputEntry.outputJson))}</small>
+                </button>
+              )) : <p className="graph-output-dialog__empty">No matching outputs.</p>}
+            </div>
+          </aside>
+
+          <section className="graph-output-dialog__detail">
+            <header className="graph-output-dialog__detail-header">
+              <strong>{selectedOutputEntry.title}</strong>
+              <small>{outputByteSize(jsonByteSize(selectedOutputEntry.outputJson))}</small>
+            </header>
+            <JsonCodeEditor value={selectedOutputEntry.outputJson} readOnly className="graph-output-dialog__json" />
+          </section>
         </div>
       </DialogContent>
     </Dialog>
@@ -1723,7 +1712,7 @@ function compareGraphTools(leftTool: WorkflowExecutionGraphTool, rightTool: Work
   return mcpToolDisplayName(leftTool).localeCompare(mcpToolDisplayName(rightTool));
 }
 
-function reactFlowNodes(graph: WorkflowExecutionGraph, config: GraphConfig, runState: RunState, activeRunCounts: Map<string, number>, outputEntriesByNodeId: Record<string, GraphOutputEntry[]>, failureEntriesByNodeId: Record<string, GraphFailureEntry>): WorkflowGraphReactNode[] {
+function reactFlowNodes(graph: WorkflowExecutionGraph, config: GraphConfig, runState: RunState, activeRunCounts: Map<string, number>, plannedRunCountsByNodeId: Record<string, number>, outputEntriesByNodeId: Record<string, GraphOutputEntry[]>, failureEntriesByNodeId: Record<string, GraphFailureEntry>): WorkflowGraphReactNode[] {
   const graphNodes = graph.nodes;
   const agentNodes = graphNodes.filter((node) => node.kind === 'agent');
   const lastColumn = Math.max(agentNodes.length + 1, 1);
@@ -1732,7 +1721,7 @@ function reactFlowNodes(graph: WorkflowExecutionGraph, config: GraphConfig, runS
     id: node.id,
     type: 'workflowGraph',
     position: nodePosition(node, lastColumn, graphNodes),
-    data: { node, config, runState, activeRunCount: activeRunCounts.get(node.id) ?? 0, outputEntries: outputEntriesByNodeId[node.id] ?? [], failureEntry: failureEntriesByNodeId[node.id] ?? null },
+    data: { node, config, runState, activeRunCount: activeRunCounts.get(node.id) ?? 0, plannedRunCount: plannedRunCountsByNodeId[node.id] ?? 0, outputEntries: outputEntriesByNodeId[node.id] ?? [], failureEntry: failureEntriesByNodeId[node.id] ?? null },
   }));
 }
 
@@ -1767,6 +1756,7 @@ function sameGraphNodeRuntime(currentNode: WorkflowGraphReactNode, incomingNode:
     currentNode.data.config === incomingNode.data.config &&
     currentNode.data.runState === incomingNode.data.runState &&
     currentNode.data.activeRunCount === incomingNode.data.activeRunCount &&
+    currentNode.data.plannedRunCount === incomingNode.data.plannedRunCount &&
     sameGraphOutputEntries(currentNode.data.outputEntries, incomingNode.data.outputEntries) &&
     sameGraphFailureEntry(currentNode.data.failureEntry, incomingNode.data.failureEntry)
   );
@@ -2485,6 +2475,41 @@ function activeAgentRunCounts(events: ExecutorEvent[]) {
   return activeRunCounts;
 }
 
+function plannedRunCountsByNodeIdFromEvents(events: ExecutorEvent[]) {
+  const plannedRunCountsByNodeId: Record<string, number> = {};
+  const plannedEvent = events.find((event) => event.kind === 'workflow_planned' && isRecord(event.data) && Array.isArray(event.data.steps));
+
+  if (!plannedEvent || !isRecord(plannedEvent.data) || !Array.isArray(plannedEvent.data.steps)) {
+    return plannedRunCountsByNodeId;
+  }
+
+  for (const plannedStep of plannedEvent.data.steps) {
+    collectPlannedRunCounts(plannedStep, plannedRunCountsByNodeId);
+  }
+
+  return plannedRunCountsByNodeId;
+}
+
+function collectPlannedRunCounts(plannedStep: unknown, plannedRunCountsByNodeId: Record<string, number>) {
+  if (!isRecord(plannedStep)) {
+    return;
+  }
+
+  if (Array.isArray(plannedStep.parallel)) {
+    for (const parallelStep of plannedStep.parallel) {
+      collectPlannedRunCounts(parallelStep, plannedRunCountsByNodeId);
+    }
+
+    return;
+  }
+
+  if (plannedStep.type !== 'agent' || typeof plannedStep.agent_name !== 'string') {
+    return;
+  }
+
+  plannedRunCountsByNodeId[plannedStep.agent_name] = typeof plannedStep.iteration_count === 'number' ? plannedStep.iteration_count : 1;
+}
+
 function graphOutputEntriesByNodeId(events: ExecutorEvent[], workflowOutputJson: string) {
   const outputEntriesByNodeId: Record<string, GraphOutputEntry[]> = {};
 
@@ -2584,6 +2609,10 @@ function outputByteSize(bytes: number) {
   return `${(bytes / 1024).toFixed(1)} KB`;
 }
 
+function outputPreview(outputJson: string) {
+  return outputJson.replaceAll(/\s+/g, ' ').trim();
+}
+
 function outputDescription(node: WorkflowExecutionGraphNode, outputEntries: GraphOutputEntry[]) {
   if (node.kind === 'output') {
     return 'Final workflow result streamed by the executor.';
@@ -2639,12 +2668,6 @@ function restoreGraphViewport(): Viewport | null {
 
 function storeGraphViewport(viewport: Viewport) {
   localStorage.setItem(graphViewportStorageKey, JSON.stringify(viewport));
-}
-
-function sameGraphViewport(currentViewport: Viewport, nextViewport: Viewport) {
-  const viewportTolerance = 0.001;
-
-  return Math.abs(currentViewport.x - nextViewport.x) < viewportTolerance && Math.abs(currentViewport.y - nextViewport.y) < viewportTolerance && Math.abs(currentViewport.zoom - nextViewport.zoom) < viewportTolerance;
 }
 
 function restoreOrLayoutGraphNodePositions(nodes: WorkflowGraphReactNode[], edges: Edge[]) {
