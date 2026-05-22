@@ -326,5 +326,3 @@
   Rationale: The user requested a local commit and explicitly said not to push.
 
 ## Incomplete Handoff Notes
-
-- Executor support now uses `superwire_core::testing::WorkflowSource` and schema helpers, and core/LSP inline source helpers share the core workflow template API. CLI tests have not been migrated to shared command/test helpers yet.

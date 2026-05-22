@@ -115,6 +115,9 @@ pub trait CommandOutputAssertions {
     fn assert_success(&self, message: &str);
     fn assert_failure(&self, message: &str);
     fn assert_failure_code(&self, expected_code: i32, message: &str);
+    fn assert_stdout_contains(&self, expected_text: &str, message: &str);
+    fn assert_stderr_contains(&self, expected_text: &str, message: &str);
+    fn assert_stderr_not_contains(&self, unexpected_text: &str, message: &str);
     fn stdout_text(&self) -> String;
     fn stderr_text(&self) -> String;
 }
@@ -131,6 +134,33 @@ impl CommandOutputAssertions for Output {
     fn assert_failure_code(&self, expected_code: i32, message: &str) {
         assert!(!self.status.success(), "{message}");
         assert_eq!(self.status.code(), Some(expected_code));
+    }
+
+    fn assert_stdout_contains(&self, expected_text: &str, message: &str) {
+        let standard_output = self.stdout_text();
+
+        assert!(
+            standard_output.contains(expected_text),
+            "{message}; expected stdout to contain `{expected_text}`, received: {standard_output}"
+        );
+    }
+
+    fn assert_stderr_contains(&self, expected_text: &str, message: &str) {
+        let standard_error = self.stderr_text();
+
+        assert!(
+            standard_error.contains(expected_text),
+            "{message}; expected stderr to contain `{expected_text}`, received: {standard_error}"
+        );
+    }
+
+    fn assert_stderr_not_contains(&self, unexpected_text: &str, message: &str) {
+        let standard_error = self.stderr_text();
+
+        assert!(
+            !standard_error.contains(unexpected_text),
+            "{message}; expected stderr to omit `{unexpected_text}`, received: {standard_error}"
+        );
     }
 
     fn stdout_text(&self) -> String {
@@ -161,7 +191,7 @@ impl TemporaryWorkspace {
     }
 
     pub fn write_file(&self, relative_path: impl AsRef<Path>, contents: &str) -> PathBuf {
-        let absolute_path = self.path(relative_path);
+        let absolute_path = self.resolve_path(relative_path);
 
         if let Some(parent_directory) = absolute_path.parent() {
             fs::create_dir_all(parent_directory).expect("parent directory should be created");
@@ -182,12 +212,53 @@ impl TemporaryWorkspace {
         self.write_file(relative_path, &contents)
     }
 
+    pub fn read_file(&self, path: impl AsRef<Path>) -> String {
+        let absolute_path = self.resolve_path(path);
+
+        fs::read_to_string(&absolute_path)
+            .unwrap_or_else(|read_error| panic!("temporary file {} should read: {read_error}", absolute_path.display()))
+    }
+
+    pub fn read_json_file(&self, path: impl AsRef<Path>) -> Value {
+        let absolute_path = self.resolve_path(path);
+        let file_contents = self.read_file(&absolute_path);
+
+        serde_json::from_str(&file_contents).unwrap_or_else(|parse_error| {
+            panic!(
+                "temporary file {} should contain valid json: {parse_error}",
+                absolute_path.display()
+            )
+        })
+    }
+
+    pub fn assert_file_exists(&self, path: impl AsRef<Path>, message: &str) {
+        let absolute_path = self.resolve_path(path);
+
+        assert!(absolute_path.exists(), "{message}: {}", absolute_path.display());
+    }
+
+    pub fn assert_file_missing(&self, path: impl AsRef<Path>, message: &str) {
+        let absolute_path = self.resolve_path(path);
+
+        assert!(!absolute_path.exists(), "{message}: {}", absolute_path.display());
+    }
+
     pub fn create_directory(&self, relative_path: impl AsRef<Path>) -> PathBuf {
-        let absolute_path = self.path(relative_path);
+        let absolute_path = self.resolve_path(relative_path);
 
         fs::create_dir_all(&absolute_path).expect("temporary directory should be created");
 
         absolute_path
+    }
+
+    fn resolve_path(&self, path: impl AsRef<Path>) -> PathBuf {
+        let path = path.as_ref();
+
+        if path.is_absolute() {
+            return path.to_path_buf();
+        }
+
+        self.root_directory.join(path)
     }
 
     fn unique_suffix() -> String {

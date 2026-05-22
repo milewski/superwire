@@ -1,7 +1,6 @@
 mod harness;
 
 use std::ffi::OsStr;
-use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 
 use harness::{CliCommand, CommandOutputAssertions, TemporaryWorkspace};
@@ -63,18 +62,17 @@ fn writes_single_project_lock_for_multiple_workflows() {
     );
 
     assert_eq!(exit_status, ExitStatus::from_exit_code(ExitCode::Success));
-    assert!(output_lock_path.exists(), "project lock should be written");
-    assert!(
-        !first_workflow_path.with_extension("wire.lock").exists(),
-        "per-workflow lock should not be written"
+    temporary_workspace.assert_file_exists(&output_lock_path, "project lock should be written");
+    temporary_workspace.assert_file_missing(
+        first_workflow_path.with_extension("wire.lock"),
+        "per-workflow lock should not be written",
     );
-    assert!(
-        !second_workflow_path.with_extension("wire.lock").exists(),
-        "per-workflow lock should not be written"
+    temporary_workspace.assert_file_missing(
+        second_workflow_path.with_extension("wire.lock"),
+        "per-workflow lock should not be written",
     );
 
-    let lock_json: Value =
-        serde_json::from_str(&fs::read_to_string(output_lock_path).expect("lock should read")).expect("lock should be valid json");
+    let lock_json = temporary_workspace.read_json_file(&output_lock_path);
 
     assert_eq!(lock_json.pointer("/version"), Some(&json!(1)));
     assert_eq!(
@@ -157,18 +155,17 @@ fn subprocess_writes_single_project_lock_for_multiple_workflows() {
     .output();
 
     command_output.assert_success("workflow lock command should succeed");
-    assert!(output_lock_path.exists(), "project lock should be written");
-    assert!(
-        !first_workflow_path.with_extension("wire.lock").exists(),
-        "per-workflow lock should not be written"
+    temporary_workspace.assert_file_exists(&output_lock_path, "project lock should be written");
+    temporary_workspace.assert_file_missing(
+        first_workflow_path.with_extension("wire.lock"),
+        "per-workflow lock should not be written",
     );
-    assert!(
-        !second_workflow_path.with_extension("wire.lock").exists(),
-        "per-workflow lock should not be written"
+    temporary_workspace.assert_file_missing(
+        second_workflow_path.with_extension("wire.lock"),
+        "per-workflow lock should not be written",
     );
 
-    let lock_json: Value =
-        serde_json::from_str(&fs::read_to_string(output_lock_path).expect("lock should read")).expect("lock should be valid json");
+    let lock_json = temporary_workspace.read_json_file(&output_lock_path);
 
     assert_eq!(lock_json.pointer("/version"), Some(&json!(1)));
     assert_eq!(
@@ -222,8 +219,7 @@ fn recursively_locks_workflows_from_directory_target() {
 
     command_output.assert_success("workflow lock command should succeed");
 
-    let lock_json: Value =
-        serde_json::from_str(&fs::read_to_string(output_lock_path).expect("lock should read")).expect("lock should be valid json");
+    let lock_json = temporary_workspace.read_json_file(&output_lock_path);
 
     assert!(lock_json.pointer("/workflows/workflows~1first.wire").is_some());
     assert!(lock_json.pointer("/workflows/workflows~1nested~1second.wire").is_some());
@@ -233,11 +229,16 @@ fn recursively_locks_workflows_from_directory_target() {
 #[test]
 fn help_includes_project_lock_example() {
     let command_output = CliCommand::workflow_lock([OsStr::new("--help")]).output();
-    let standard_output = command_output.stdout_text();
 
     command_output.assert_success("workflow lock help should succeed");
-    assert!(standard_output.contains("superwire-cli workflow lock ."));
-    assert!(standard_output.contains("superwire-cli workflow lock workflows/*.wire --vars-file .wire.vars --output superwire.lock"));
+    command_output.assert_stdout_contains(
+        "superwire-cli workflow lock .",
+        "workflow lock help should include directory example",
+    );
+    command_output.assert_stdout_contains(
+        "superwire-cli workflow lock workflows/*.wire --vars-file .wire.vars --output superwire.lock",
+        "workflow lock help should include vars-file example",
+    );
 }
 
 #[test]
@@ -256,10 +257,9 @@ fn writes_relative_workflow_keys_when_using_default_output_path() {
     let output_lock_path = temporary_workspace.root_directory.join("superwire.lock");
 
     command_output.assert_success("workflow lock command should succeed");
-    assert!(output_lock_path.exists(), "project lock should be written");
+    temporary_workspace.assert_file_exists(&output_lock_path, "project lock should be written");
 
-    let lock_json: Value =
-        serde_json::from_str(&fs::read_to_string(output_lock_path).expect("lock should read")).expect("lock should be valid json");
+    let lock_json = temporary_workspace.read_json_file(&output_lock_path);
 
     assert!(lock_json.pointer("/workflows/workflows~1absolute-input.wire").is_some());
 }
@@ -297,10 +297,10 @@ fn reads_default_vars_file_next_to_custom_output_path() {
     );
 
     assert_eq!(exit_status, ExitStatus::from_exit_code(ExitCode::Success));
-    assert!(output_lock_path.exists(), "custom output lock should be written");
-    assert!(
-        !temporary_workspace.root_directory.join(".wire.vars").exists(),
-        "default vars file should be resolved beside the lock output"
+    temporary_workspace.assert_file_exists(&output_lock_path, "custom output lock should be written");
+    temporary_workspace.assert_file_missing(
+        temporary_workspace.root_directory.join(".wire.vars"),
+        "default vars file should be resolved beside the lock output",
     );
     assert_eq!(fake_mcp_client_factory.requests("local").len(), 1);
 }
@@ -386,8 +386,7 @@ fn applies_vars_file_overrides_per_workflow_path() {
 
     assert_eq!(exit_status, ExitStatus::from_exit_code(ExitCode::Success));
 
-    let lock_json: Value =
-        serde_json::from_str(&fs::read_to_string(output_lock_path).expect("lock should read")).expect("lock should be valid json");
+    let lock_json = temporary_workspace.read_json_file(&output_lock_path);
 
     assert_eq!(
         lock_json.pointer("/workflows/workflows~1first.wire/servers/local/tools/update-user-name/name"),
@@ -437,8 +436,7 @@ fn appends_new_workflows_when_lock_file_already_exists() {
 
     second_command_output.assert_success("second workflow lock command should succeed");
 
-    let lock_json: Value =
-        serde_json::from_str(&fs::read_to_string(output_lock_path).expect("lock should read")).expect("lock should be valid json");
+    let lock_json = temporary_workspace.read_json_file(&output_lock_path);
 
     assert!(lock_json.pointer("/workflows/workflows~1first.wire").is_some());
     assert!(lock_json.pointer("/workflows/workflows~1second.wire").is_some());
@@ -462,12 +460,14 @@ fn fails_when_mcp_server_requires_runtime_values_without_vars_context() {
     let command_output = CliCommand::workflow_lock([workflow_path.as_os_str()])
         .current_directory(&temporary_workspace.root_directory)
         .output();
-    let standard_error = command_output.stderr_text();
 
     command_output.assert_failure("workflow lock command should fail without runtime context");
-    assert!(standard_error.contains("terminal is non-interactive"));
-    assert!(standard_error.contains("secrets.mcp_endpoint"));
-    assert!(standard_error.contains(".wire.vars"));
+    command_output.assert_stderr_contains(
+        "terminal is non-interactive",
+        "workflow lock command should explain non-interactive mode",
+    );
+    command_output.assert_stderr_contains("secrets.mcp_endpoint", "workflow lock command should identify missing secret");
+    command_output.assert_stderr_contains(".wire.vars", "workflow lock command should suggest vars file");
 }
 
 #[test]
@@ -486,11 +486,13 @@ fn fails_with_actionable_error_for_missing_prompted_values_in_non_interactive_mo
     let command_output = CliCommand::workflow_lock([workflow_path.as_os_str()])
         .current_directory(&temporary_workspace.root_directory)
         .output();
-    let standard_error = command_output.stderr_text();
 
     command_output.assert_failure("workflow lock command should fail in non-interactive mode");
-    assert!(standard_error.contains("terminal is non-interactive"));
-    assert!(standard_error.contains("input.project_id"));
+    command_output.assert_stderr_contains(
+        "terminal is non-interactive",
+        "workflow lock command should explain non-interactive mode",
+    );
+    command_output.assert_stderr_contains("input.project_id", "workflow lock command should identify missing input");
 }
 
 #[test]
@@ -513,12 +515,20 @@ fn reports_missing_nested_object_leaf_values_in_non_interactive_mode() {
     let command_output = CliCommand::workflow_lock([workflow_path.as_os_str()])
         .current_directory(&temporary_workspace.root_directory)
         .output();
-    let standard_error = command_output.stderr_text();
 
     command_output.assert_failure("workflow lock command should fail in non-interactive mode");
-    assert!(standard_error.contains("terminal is non-interactive"));
-    assert!(standard_error.contains("secrets.models.flash"));
-    assert!(!standard_error.contains("secrets.models (json)"));
+    command_output.assert_stderr_contains(
+        "terminal is non-interactive",
+        "workflow lock command should explain non-interactive mode",
+    );
+    command_output.assert_stderr_contains(
+        "secrets.models.flash",
+        "workflow lock command should identify missing nested secret",
+    );
+    command_output.assert_stderr_not_contains(
+        "secrets.models (json)",
+        "workflow lock command should report missing object leaves instead of parent object",
+    );
 }
 
 #[test]
@@ -550,10 +560,9 @@ fn generates_vars_file_from_workflow_directory() {
         .output();
 
     command_output.assert_success("workflow vars command should succeed");
-    assert!(vars_path.exists(), "workflow vars file should be written");
+    temporary_workspace.assert_file_exists(&vars_path, "workflow vars file should be written");
 
-    let vars_json: Value =
-        serde_json::from_str(&fs::read_to_string(vars_path).expect("vars file should read")).expect("vars file should be valid json");
+    let vars_json = temporary_workspace.read_json_file(&vars_path);
 
     assert_eq!(vars_json.pointer("/input/project_id"), Some(&json!(0)));
     assert_eq!(vars_json.pointer("/input/task_group_id"), Some(&json!(0)));
@@ -592,15 +601,13 @@ fn writes_partial_vars_file_even_when_some_workflows_fail_to_parse() {
     ])
     .current_directory(&temporary_workspace.root_directory)
     .output();
-    let standard_error = command_output.stderr_text();
 
     command_output.assert_failure("workflow vars command should fail when one workflow cannot parse");
-    assert!(vars_path.exists(), "workflow vars file should still be written");
-    assert!(standard_error.contains("generated"));
-    assert!(standard_error.contains("partial values"));
+    temporary_workspace.assert_file_exists(&vars_path, "workflow vars file should still be written");
+    command_output.assert_stderr_contains("generated", "workflow vars command should report generated partial file");
+    command_output.assert_stderr_contains("partial values", "workflow vars command should report partial values");
 
-    let vars_json: Value =
-        serde_json::from_str(&fs::read_to_string(vars_path).expect("vars file should read")).expect("vars file should be valid json");
+    let vars_json = temporary_workspace.read_json_file(&vars_path);
 
     assert_eq!(vars_json.pointer("/input/project_id"), Some(&json!(0)));
 }
@@ -780,8 +787,7 @@ fn continues_lock_discovery_when_mcp_server_rejects_initialize_endpoints() {
 
     command_output.assert_success("workflow lock command should continue when initialize endpoints return 406");
 
-    let lock_json: Value =
-        serde_json::from_str(&fs::read_to_string(output_lock_path).expect("lock should read")).expect("lock should be valid json");
+    let lock_json = temporary_workspace.read_json_file(&output_lock_path);
 
     assert_eq!(
         lock_json.pointer("/workflows/workflows~1reject-init.wire/servers/local/tools/update-user-name/name"),

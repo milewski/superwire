@@ -15,7 +15,7 @@ fn formats_all_markdown_fixtures_as_individual_files() {
 
         command_output.assert_success(&format!("fmt command should succeed for fixture {}", fixture_case.fixture_name));
 
-        let formatted_source = fs::read_to_string(&workflow_file_path).expect("formatted workflow source should be readable after fmt");
+        let formatted_source = temporary_workspace.read_file(&workflow_file_path);
 
         assert_eq!(
             formatted_source, fixture_case.expected_after_source,
@@ -53,7 +53,7 @@ fn formats_all_workflow_files_inside_directory_from_markdown_fixtures() {
     command_output.assert_success("fmt command should succeed");
 
     for (workflow_file_path, expected_after_source) in created_workflow_cases {
-        let formatted_source = fs::read_to_string(&workflow_file_path).expect("formatted workflow source should be readable after fmt");
+        let formatted_source = temporary_workspace.read_file(&workflow_file_path);
 
         assert_eq!(formatted_source, expected_after_source);
     }
@@ -73,7 +73,7 @@ fn preserves_comments_for_fixture_cases_that_contain_comments() {
 
         command_output.assert_success(&format!("fmt command should succeed for fixture {}", fixture_case.fixture_name));
 
-        let formatted_source = fs::read_to_string(&workflow_file_path).expect("formatted workflow source should be readable after fmt");
+        let formatted_source = temporary_workspace.read_file(&workflow_file_path);
 
         assert_eq!(
             formatted_source, fixture_case.expected_after_source,
@@ -95,10 +95,12 @@ fn rejects_non_workflow_file_target() {
     let non_workflow_file_path = temporary_workspace.write_file("notes.txt", "not a workflow\n");
 
     let command_output = CliCommand::format_command(non_workflow_file_path.as_path()).output();
-    let stderr_text = command_output.stderr_text();
 
     command_output.assert_failure_code(2, "fmt command should fail for non-.wire files");
-    assert!(stderr_text.contains("expected a .wire workflow file"));
+    command_output.assert_stderr_contains(
+        "expected a .wire workflow file",
+        "fmt command should explain invalid file extension",
+    );
 }
 
 #[test]
@@ -107,10 +109,12 @@ fn rejects_directory_without_workflow_files() {
     let empty_directory_path = temporary_workspace.create_directory("empty");
 
     let command_output = CliCommand::format_command(empty_directory_path.as_path()).output();
-    let stderr_text = command_output.stderr_text();
 
     command_output.assert_failure_code(2, "fmt command should fail when no workflow files are found");
-    assert!(stderr_text.contains("no workflow files (.wire) found"));
+    command_output.assert_stderr_contains(
+        "no workflow files (.wire) found",
+        "fmt command should explain empty directory target",
+    );
 }
 
 fn discover_formatter_fixture_paths() -> Vec<PathBuf> {

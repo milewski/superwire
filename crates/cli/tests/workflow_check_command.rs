@@ -15,10 +15,9 @@ fn validates_workflow_file_when_check_command_succeeds() {
     );
 
     let command_output = CliCommand::workflow_check(workflow_file_path.as_path()).output();
-    let standard_output = command_output.stdout_text();
 
     command_output.assert_success("workflow check command should succeed");
-    assert!(standard_output.contains("workflow is valid"));
+    command_output.assert_stdout_contains("workflow is valid", "workflow check command should report valid workflow");
 }
 
 #[test]
@@ -38,11 +37,7 @@ fn rejects_workflow_file_with_invalid_reference_types() {
     );
 
     let command_output = CliCommand::workflow_check(workflow_file_path.as_path()).output();
-    let standard_error = command_output.stderr_text();
 
     command_output.assert_failure_code(2, "workflow check command should fail");
-    assert!(
-        standard_error.contains("missing") || standard_error.contains("unknown"),
-        "expected validation error details in stderr, received: {standard_error}"
-    );
+    command_output.assert_stderr_contains("missing", "workflow check command should include validation details");
 }
