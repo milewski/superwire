@@ -61,9 +61,9 @@ impl TypedJsonSchema for Value {
         let required_fields = self
             .get("required")
             .and_then(Value::as_array)
-            .map(|required| required.iter().filter_map(Value::as_str).collect::<Vec<_>>())
-            .unwrap_or_default();
-        let include_all_fields = required_fields.is_empty();
+            .map(|required| required.iter().filter_map(Value::as_str).collect::<Vec<_>>());
+        let include_all_fields = required_fields.is_none();
+        let required_fields = required_fields.unwrap_or_default();
         let mut typed_fields = Vec::new();
 
         for (field_name, field_schema) in properties {
@@ -71,13 +71,15 @@ impl TypedJsonSchema for Value {
                 continue;
             }
 
-            if !include_all_fields && !required_fields.contains(&field_name.as_str()) {
+            let field_type = field_schema.type_expression();
+
+            if !include_all_fields && !required_fields.contains(&field_name.as_str()) && !field_type.can_be_null() {
                 continue;
             }
 
             typed_fields.push(TypedField {
                 name: field_name.clone(),
-                field_type: field_schema.type_expression(),
+                field_type,
                 description: field_schema.get("description").and_then(Value::as_str).map(str::to_string),
                 span: SourceSpan::generated(),
             });
@@ -108,6 +110,10 @@ impl TypedJsonSchema for Value {
                 .filter_map(Value::as_str)
                 .map(|enum_value| TypeExpression::StringEnum(enum_value.to_string()))
                 .collect::<Vec<_>>();
+
+            if self.allows_null_type_keyword() {
+                string_enum_values.push(TypeExpression::Null);
+            }
 
             if string_enum_values.len() == 1 {
                 return string_enum_values.remove(0);
@@ -149,6 +155,20 @@ impl TypedJsonSchema for Value {
     }
 }
 
+trait JsonSchemaValueExt {
+    fn allows_null_type_keyword(&self) -> bool;
+}
+
+impl JsonSchemaValueExt for Value {
+    fn allows_null_type_keyword(&self) -> bool {
+        match self.get("type") {
+            Some(Value::String(type_keyword)) => type_keyword == "null",
+            Some(Value::Array(type_keywords)) => type_keywords.iter().any(|type_keyword| type_keyword.as_str() == Some("null")),
+            _ => false,
+        }
+    }
+}
+
 pub(super) fn to_json_value(schema: &impl Serialize) -> Value {
     serde_json::to_value(schema).unwrap_or(Value::Null)
 }
@@ -179,6 +199,73 @@ mod tests {
                 },
                 TypeExpression::Null,
             ])
+        );
+    }
+
+    #[test]
+    fn type_expression_supports_nullable_integer_type_keyword() {
+        let schema = json!({
+            "type": ["integer", "null"],
+        });
+
+        let type_expression = schema.type_expression();
+
+        assert_eq!(
+            type_expression,
+            TypeExpression::Union(vec![TypeExpression::Number, TypeExpression::Null])
+        );
+    }
+
+    #[test]
+    fn type_expression_supports_nullable_string_enum_type_keyword() {
+        let schema = json!({
+            "type": ["string", "null"],
+            "enum": ["picture", "video_recording"],
+        });
+
+        let type_expression = schema.type_expression();
+
+        assert_eq!(
+            type_expression,
+            TypeExpression::Union(vec![
+                TypeExpression::StringEnum("picture".to_string()),
+                TypeExpression::StringEnum("video_recording".to_string()),
+                TypeExpression::Null,
+            ])
+        );
+    }
+
+    #[test]
+    fn typed_fields_include_nullable_properties_that_are_not_required() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "integer"
+                },
+                "task_group_id": {
+                    "type": ["integer", "null"]
+                },
+                "comment": {
+                    "type": "string"
+                }
+            },
+            "required": ["project_id"]
+        });
+
+        let typed_fields = schema.typed_fields();
+        let mut field_names = typed_fields.iter().map(|typed_field| typed_field.name.as_str()).collect::<Vec<_>>();
+        field_names.sort_unstable();
+
+        assert_eq!(field_names, vec!["project_id", "task_group_id"]);
+        let task_group_field = typed_fields
+            .iter()
+            .find(|typed_field| typed_field.name == "task_group_id")
+            .expect("nullable task group field should be retained");
+
+        assert_eq!(
+            task_group_field.field_type,
+            TypeExpression::Union(vec![TypeExpression::Number, TypeExpression::Null])
         );
     }
 }

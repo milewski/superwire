@@ -147,7 +147,8 @@ impl ModelSchema {
     }
 
     fn model_tool_input_json_value(input_type: &WorkflowType, bindings: &Value, schema_cache: &mut ModelSchemaCache) -> Value {
-        let mut input_schema = input_type.json_schema_value_with_cache(&mut schema_cache.workflow_schema_cache);
+        let mut input_schema =
+            input_type.json_schema_value_with_nullable_fields_optional_with_cache(&mut schema_cache.workflow_schema_cache);
         let Some(binding_object) = bindings.as_object() else {
             return input_schema;
         };

@@ -8,7 +8,7 @@ use superwire_core::dsl::{
 };
 use superwire_core::mcp::McpServerConfig;
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
-use superwire_core::semantic::support::types::{validate_value_against_type, WorkflowType};
+use superwire_core::semantic::support::types::WorkflowType;
 use superwire_core::semantic::{PlannedAgent, TypedToolIr};
 use tokio::sync::mpsc;
 
@@ -198,9 +198,12 @@ impl WorkflowExecutor {
             input_arguments.insert(input_field.name.clone(), input_value);
         }
 
-        validate_value_against_type(&Value::Object(input_arguments), &typed_tool.input_type).map_err(|message| ExecutorError::Other {
-            message: format!("deterministic tool call `{tool_name}` input is invalid: {message}"),
-        })?;
+        typed_tool
+            .input_type
+            .validate_value_allowing_missing_nullable_fields(&Value::Object(input_arguments))
+            .map_err(|message| ExecutorError::Other {
+                message: format!("deterministic tool call `{tool_name}` input is invalid: {message}"),
+            })?;
 
         if let Some(binding_object) = bindings.as_object() {
             for (binding_name, binding_value) in binding_object {
@@ -243,7 +246,10 @@ impl WorkflowExecutor {
             input_arguments.insert(input_field.name.clone(), input_value);
         }
 
-        if let Err(message) = validate_value_against_type(&Value::Object(input_arguments.clone()), &typed_tool.input_type) {
+        if let Err(message) = typed_tool
+            .input_type
+            .validate_value_allowing_missing_nullable_fields(&Value::Object(input_arguments.clone()))
+        {
             return Err(ExecutorError::Other {
                 message: format!("deterministic tool call `{tool_name}` input is invalid: {message}"),
             });
@@ -773,9 +779,11 @@ impl TypedToolRuntimeExt for TypedToolIr {
             typed_binding_values.insert(override_binding_field.name.clone(), binding_value);
         }
 
-        validate_value_against_type(&Value::Object(typed_binding_values), &self.binding_type).map_err(|message| ExecutorError::Other {
-            message: format!("tool `{}` binding values are invalid: {message}", self.name),
-        })?;
+        self.binding_type
+            .validate_value_allowing_missing_nullable_fields(&Value::Object(typed_binding_values))
+            .map_err(|message| ExecutorError::Other {
+                message: format!("tool `{}` binding values are invalid: {message}", self.name),
+            })?;
 
         Ok(Value::Object(binding_values))
     }

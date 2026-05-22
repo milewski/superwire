@@ -270,7 +270,50 @@ impl TestMcpCatalog {
                 ),
                 object_schema([schema_field("success", primitive_schema(JsonSchemaType::Boolean))], ["success"]),
             ),
+            self.fetch_qualitative_question_answers_tool(),
         ]
+    }
+
+    fn fetch_qualitative_question_answers_tool(&self) -> Value {
+        mcp_tool(
+            "fetch_qualitative_question_answers",
+            "Fetch qualitative question answers",
+            json!({
+                "type": "object",
+                "properties": {
+                    "project_id": {
+                        "description": "The ID of the project",
+                        "type": "integer"
+                    },
+                    "task_group_id": {
+                        "description": "The ID of the task group to fetch answers from. If omitted, answers are fetched across all task groups in the project.",
+                        "type": ["integer", "null"]
+                    },
+                    "task_types": {
+                        "description": "The task types to filter by (e.g., video_recording, open_written)",
+                        "type": "array",
+                        "items": {
+                            "description": "A valid task type value",
+                            "type": "string",
+                            "enum": [
+                                "picture",
+                                "video_recording",
+                                "multimedia",
+                                "likert_scale",
+                                "multiple_choice",
+                                "open_written",
+                                "numerical",
+                                "sorting"
+                            ]
+                        }
+                    }
+                }
+            }),
+            object_schema(
+                [schema_field("answers", array_schema(primitive_schema(JsonSchemaType::Object)))],
+                ["answers"],
+            ),
+        )
     }
 
     fn edit_project_for_workspace_tool(&self) -> Value {
@@ -1120,6 +1163,54 @@ fn validation_rejects_dynamic_tool_call_missing_required_input() {
         error_message.contains("Missing `dynamic` declaration") || error_message.contains("missing required `input` field `project_id`"),
         "unexpected validation error: {error_message}"
     );
+
+    assert_eq!(server.method_count(TestMcpMethod::ToolsList), 1);
+    assert_eq!(server.method_count(TestMcpMethod::ToolsCall), 0);
+}
+
+#[test]
+fn validation_accepts_dynamic_tool_call_missing_nullable_input() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        provider openai from openai {
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+        }
+
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
+
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        tool fetch_answers from mcp.local.tool.fetch_qualitative_question_answers
+
+        dynamic {
+            data: call tool.fetch_answers {
+                input {
+                    project_id: 31
+                    task_types: ["open_written"]
+                }
+            }
+        }
+
+        output {
+            value: dynamic.data
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+
+    let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
+
+    service
+        .validate(ValidationRequest {
+            workflow_source: Some(workflow_source),
+            workflow_source_base64: None,
+            secrets: Value::Null,
+        })
+        .expect("validation should accept omitted nullable MCP tool input");
 
     assert_eq!(server.method_count(TestMcpMethod::ToolsList), 1);
     assert_eq!(server.method_count(TestMcpMethod::ToolsCall), 0);

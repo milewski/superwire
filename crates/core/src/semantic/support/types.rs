@@ -370,10 +370,128 @@ impl WorkflowType {
         schema
     }
 
+    #[must_use]
+    pub fn json_schema_value_with_nullable_fields_optional_with_cache(&self, schema_cache: &mut WorkflowSchemaCache) -> Value {
+        let mut schema = self.json_schema_value_with_cache(schema_cache);
+
+        self.make_nullable_fields_optional_in_schema(&mut schema);
+
+        schema
+    }
+
+    pub fn validate_value(&self, value: &Value) -> Result<(), String> {
+        self.validate_value_with_schema(value, self.json_schema_value())
+    }
+
+    pub fn validate_value_allowing_missing_nullable_fields(&self, value: &Value) -> Result<(), String> {
+        self.validate_value_with_schema(value, self.json_schema_value_with_nullable_fields_optional())
+    }
+
     fn json_schema_value_uncached(&self) -> Value {
         let mut schema_cache = WorkflowSchemaCache::disabled();
 
         self.json_schema_value_with_recursive_cache(&mut schema_cache)
+    }
+
+    fn json_schema_value_with_nullable_fields_optional(&self) -> Value {
+        let mut schema_cache = WorkflowSchemaCache::disabled();
+
+        self.json_schema_value_with_nullable_fields_optional_with_cache(&mut schema_cache)
+    }
+
+    fn validate_value_with_schema(&self, value: &Value, schema: Value) -> Result<(), String> {
+        let validator = jsonschema::validator_for(&schema)
+            .map_err(|compile_error| format!("failed to compile generated schema for `{self}`: {compile_error}"))?;
+
+        let mut validation_issues = validator.iter_errors(value).map(format_validation_issue).collect::<Vec<_>>();
+
+        if validation_issues.is_empty() {
+            return Ok(());
+        }
+
+        validation_issues.sort();
+        validation_issues.dedup();
+
+        Err(validation_issues.join("; "))
+    }
+
+    fn make_nullable_fields_optional_in_schema(&self, schema: &mut Value) {
+        match self {
+            Self::Object(object_fields) => {
+                self.make_object_nullable_fields_optional_in_schema(object_fields, schema);
+            }
+            Self::Array {
+                item_type,
+                fixed_length: _,
+            } => {
+                if let Some(item_schema) = schema.get_mut("items") {
+                    item_type.make_nullable_fields_optional_in_schema(item_schema);
+                }
+            }
+            Self::Tuple(item_types) => {
+                let Some(prefix_items) = schema.get_mut("prefixItems").and_then(Value::as_array_mut) else {
+                    return;
+                };
+
+                for (item_type, item_schema) in item_types.iter().zip(prefix_items) {
+                    item_type.make_nullable_fields_optional_in_schema(item_schema);
+                }
+            }
+            Self::Variant { discriminator: _, cases } => {
+                let Some(case_schemas) = schema.get_mut("oneOf").and_then(Value::as_array_mut) else {
+                    return;
+                };
+
+                for ((_, case_fields), case_schema) in cases.iter().zip(case_schemas) {
+                    let case_object_type = Self::Object(case_fields.clone());
+
+                    case_object_type.make_nullable_fields_optional_in_schema(case_schema);
+                }
+            }
+            Self::Union(union_members) => {
+                let Some(union_schemas) = schema.get_mut("oneOf").and_then(Value::as_array_mut) else {
+                    return;
+                };
+
+                for (union_member, union_schema) in union_members.iter().zip(union_schemas) {
+                    union_member.make_nullable_fields_optional_in_schema(union_schema);
+                }
+            }
+            Self::Any | Self::String | Self::Integer | Self::Float | Self::Boolean | Self::Null | Self::AnyObject | Self::StringEnum(_) => {
+            }
+        }
+    }
+
+    fn make_object_nullable_fields_optional_in_schema(&self, object_fields: &BTreeMap<String, Self>, schema: &mut Value) {
+        if let Some(properties) = schema.get_mut("properties").and_then(Value::as_object_mut) {
+            for (field_name, field_type) in object_fields {
+                if let Some(field_schema) = properties.get_mut(field_name) {
+                    field_type.make_nullable_fields_optional_in_schema(field_schema);
+                }
+            }
+        }
+
+        let nullable_field_names = object_fields
+            .iter()
+            .filter_map(|(field_name, field_type)| field_type.can_be_null().then_some(field_name.as_str()))
+            .collect::<HashSet<_>>();
+
+        let mut remove_required = false;
+
+        if let Some(required_fields) = schema.get_mut("required").and_then(Value::as_array_mut) {
+            required_fields.retain(|required_field| {
+                required_field
+                    .as_str()
+                    .is_none_or(|required_field_name| !nullable_field_names.contains(required_field_name))
+            });
+            remove_required = required_fields.is_empty();
+        }
+
+        if remove_required {
+            if let Some(schema_object) = schema.as_object_mut() {
+                schema_object.remove("required");
+            }
+        }
     }
 
     fn json_schema_value_with_recursive_cache(&self, schema_cache: &mut WorkflowSchemaCache) -> Value {
@@ -983,20 +1101,7 @@ fn normalize_union_members(union_members: Vec<WorkflowType>) -> WorkflowType {
 }
 
 pub fn validate_value_against_type(value: &Value, expected_type: &WorkflowType) -> Result<(), String> {
-    let schema = workflow_type_to_json_schema(expected_type);
-    let validator = jsonschema::validator_for(&schema)
-        .map_err(|compile_error| format!("failed to compile generated schema for `{expected_type}`: {compile_error}"))?;
-
-    let mut validation_issues = validator.iter_errors(value).map(format_validation_issue).collect::<Vec<_>>();
-
-    if validation_issues.is_empty() {
-        return Ok(());
-    }
-
-    validation_issues.sort();
-    validation_issues.dedup();
-
-    Err(validation_issues.join("; "))
+    expected_type.validate_value(value)
 }
 
 #[must_use]
@@ -1112,11 +1217,12 @@ pub fn ensure_type_matches(expected_type: &WorkflowType, actual_type: &WorkflowT
                     .all(|(expected_item_type, actual_item_type)| ensure_type_matches(expected_item_type, actual_item_type))
         }
         (WorkflowType::Object(expected_fields), WorkflowType::Object(actual_fields)) => {
-            expected_fields.len() == actual_fields.len()
+            actual_fields.keys().all(|field_name| expected_fields.contains_key(field_name))
                 && expected_fields.iter().all(|(field_name, expected_field_type)| {
-                    actual_fields
-                        .get(field_name)
-                        .is_some_and(|actual_field_type| ensure_type_matches(expected_field_type, actual_field_type))
+                    actual_fields.get(field_name).map_or_else(
+                        || expected_field_type.can_be_null(),
+                        |actual_field_type| ensure_type_matches(expected_field_type, actual_field_type),
+                    )
                 })
         }
         (
@@ -1148,6 +1254,9 @@ pub fn ensure_type_matches(expected_type: &WorkflowType, actual_type: &WorkflowT
                         .any(|actual_member| ensure_type_matches(expected_member, actual_member))
                 })
         }
+        (WorkflowType::Union(expected_members), _) => expected_members
+            .iter()
+            .any(|expected_member| ensure_type_matches(expected_member, &actual_type)),
         _ => expected_type == actual_type,
     }
 }

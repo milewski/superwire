@@ -313,6 +313,14 @@ impl ToolCall {
         };
 
         for expected_field_name in expected_fields.keys() {
+            let Some(expected_field_type) = expected_fields.get(expected_field_name) else {
+                continue;
+            };
+
+            if expected_field_type.can_be_null() {
+                continue;
+            }
+
             if fields.iter().any(|field| &field.name == expected_field_name) {
                 continue;
             }
@@ -334,6 +342,10 @@ impl ToolCall {
                 });
             };
 
+            if field.value.is_literal_compatible_with_workflow_type(expected_field_type) {
+                continue;
+            }
+
             let found_field_type = field.value.infer_type(type_inference_context, context)?;
 
             if ensure_type_matches(expected_field_type, &found_field_type) {
@@ -350,6 +362,29 @@ impl ToolCall {
         }
 
         Ok(())
+    }
+}
+
+impl Expression {
+    fn is_literal_compatible_with_workflow_type(&self, expected_type: &WorkflowType) -> bool {
+        match (self, expected_type) {
+            (Self::StringLiteral(string_literal), WorkflowType::StringEnum(enum_values)) => enum_values.contains(string_literal),
+            (Self::StringLiteral(_), WorkflowType::String) => true,
+            (Self::NumberLiteral(number_literal), WorkflowType::Float) => number_literal.replace('_', "").contains('.'),
+            (Self::NumberLiteral(number_literal), WorkflowType::Integer) => !number_literal.replace('_', "").contains('.'),
+            (Self::BooleanLiteral(_), WorkflowType::Boolean) | (Self::NullLiteral, WorkflowType::Null) => true,
+            (Self::ArrayLiteral(array_items), WorkflowType::Array { item_type, fixed_length }) => {
+                fixed_length.is_none_or(|expected_length| {
+                    u64::try_from(array_items.len()).is_ok_and(|actual_length| actual_length == expected_length)
+                }) && array_items
+                    .iter()
+                    .all(|array_item| array_item.is_literal_compatible_with_workflow_type(item_type))
+            }
+            (expression, WorkflowType::Union(union_members)) => union_members
+                .iter()
+                .any(|union_member| expression.is_literal_compatible_with_workflow_type(union_member)),
+            _ => false,
+        }
     }
 }
 
@@ -615,5 +650,98 @@ mod tests {
             .expect("nullable match with fallback should infer");
 
         assert_eq!(inferred_type, WorkflowType::String);
+    }
+
+    #[test]
+    fn tool_call_allows_missing_nullable_input_field() {
+        let mut type_inference_context = empty_type_inference_context();
+        type_inference_context.tool_input_types.insert(
+            "fetch_answers".to_string(),
+            WorkflowType::Object(BTreeMap::from([
+                ("project_id".to_string(), WorkflowType::Integer),
+                ("task_group_id".to_string(), WorkflowType::nullable(WorkflowType::Integer)),
+                (
+                    "task_types".to_string(),
+                    WorkflowType::Array {
+                        item_type: Box::new(WorkflowType::StringEnum(vec!["open_written".to_string()])),
+                        fixed_length: None,
+                    },
+                ),
+            ])),
+        );
+        type_inference_context
+            .tool_output_types
+            .insert("fetch_answers".to_string(), WorkflowType::Object(BTreeMap::new()));
+
+        let tool_call = ToolCall {
+            callee: tool_reference("fetch_answers"),
+            input_fields: vec![
+                object_field("project_id", Expression::NumberLiteral("31".to_string())),
+                object_field(
+                    "task_types",
+                    Expression::ArrayLiteral(vec![Expression::StringLiteral("open_written".to_string())]),
+                ),
+            ],
+            binding_fields: Vec::new(),
+            max_calls: None,
+            span: source_span(),
+        };
+
+        let inferred_type = tool_call
+            .infer_type(&type_inference_context, "test")
+            .expect("missing nullable input field should infer");
+
+        assert_eq!(inferred_type, WorkflowType::Object(BTreeMap::new()));
+    }
+
+    #[test]
+    fn tool_call_allows_null_for_nullable_input_field() {
+        let mut type_inference_context = empty_type_inference_context();
+        type_inference_context.tool_input_types.insert(
+            "fetch_answers".to_string(),
+            WorkflowType::Object(BTreeMap::from([
+                ("project_id".to_string(), WorkflowType::Integer),
+                ("task_group_id".to_string(), WorkflowType::nullable(WorkflowType::Integer)),
+            ])),
+        );
+        type_inference_context
+            .tool_output_types
+            .insert("fetch_answers".to_string(), WorkflowType::Object(BTreeMap::new()));
+
+        let tool_call = ToolCall {
+            callee: tool_reference("fetch_answers"),
+            input_fields: vec![
+                object_field("project_id", Expression::NumberLiteral("31".to_string())),
+                object_field("task_group_id", Expression::NullLiteral),
+            ],
+            binding_fields: Vec::new(),
+            max_calls: None,
+            span: source_span(),
+        };
+
+        let inferred_type = tool_call
+            .infer_type(&type_inference_context, "test")
+            .expect("null nullable input field should infer");
+
+        assert_eq!(inferred_type, WorkflowType::Object(BTreeMap::new()));
+    }
+
+    fn tool_reference(tool_name: &str) -> Reference {
+        Reference {
+            root: ReferenceRoot::Keyword(ReferenceKeyword::Tool),
+            accesses: vec![crate::dsl::ReferenceAccess {
+                field: tool_name.to_string(),
+                optional: false,
+            }],
+            span: source_span(),
+        }
+    }
+
+    fn object_field(field_name: &str, value: Expression) -> crate::dsl::ObjectField {
+        crate::dsl::ObjectField {
+            name: field_name.to_string(),
+            value,
+            span: source_span(),
+        }
     }
 }

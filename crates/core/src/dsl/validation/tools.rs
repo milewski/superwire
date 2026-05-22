@@ -88,7 +88,11 @@ impl AgentToolBindingValidator<'_> {
         binding_fields: &[ObjectField],
         expected_binding_fields: &BTreeMap<String, WorkflowType>,
     ) {
-        for expected_binding_name in expected_binding_fields.keys() {
+        for (expected_binding_name, expected_binding_type) in expected_binding_fields {
+            if expected_binding_type.can_be_null() {
+                continue;
+            }
+
             if binding_fields
                 .iter()
                 .any(|binding_field| &binding_field.name == expected_binding_name)
@@ -223,6 +227,13 @@ impl Expression {
             (Self::NumberLiteral(number_literal), WorkflowType::Float) => number_literal.replace('_', "").contains('.'),
             (Self::NumberLiteral(number_literal), WorkflowType::Integer) => !number_literal.replace('_', "").contains('.'),
             (Self::BooleanLiteral(_), WorkflowType::Boolean) | (Self::NullLiteral, WorkflowType::Null) => true,
+            (Self::ArrayLiteral(array_items), WorkflowType::Array { item_type, fixed_length }) => {
+                fixed_length.is_none_or(|expected_length| {
+                    u64::try_from(array_items.len()).is_ok_and(|actual_length| actual_length == expected_length)
+                }) && array_items
+                    .iter()
+                    .all(|array_item| array_item.is_literal_compatible_with_type(item_type))
+            }
             (expression, WorkflowType::Union(union_members)) => union_members
                 .iter()
                 .any(|union_member| expression.is_literal_compatible_with_type(union_member)),
