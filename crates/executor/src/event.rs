@@ -141,23 +141,35 @@ impl ExecutorEvent {
     }
 
     #[must_use]
-    pub fn agent_started(agent_name: String, model_name: String, tool_names: Vec<String>) -> Self {
+    pub fn agent_started(agent_name: String, model_name: String, tool_names: Vec<String>, iteration_index: Option<usize>) -> Self {
+        let mut event_data = serde_json::Map::from_iter([
+            ("model".to_string(), Value::String(model_name)),
+            ("tools".to_string(), serde_json::json!(tool_names)),
+        ]);
+
+        if let Some(iteration_index) = iteration_index {
+            event_data.insert("iteration_index".to_string(), serde_json::json!(iteration_index));
+        }
+
         Self::new(ExecutorEventKind::AgentStarted)
             .with_agent_name(agent_name)
-            .with_data(serde_json::json!({
-                "model": model_name,
-                "tools": tool_names,
-            }))
+            .with_data(Value::Object(event_data))
     }
 
     #[must_use]
-    pub fn agent_completed(agent_name: String, output: Value, duration: Duration) -> Self {
+    pub fn agent_completed(agent_name: String, output: Value, duration: Duration, iteration_index: Option<usize>) -> Self {
+        let mut event_data = serde_json::Map::from_iter([
+            ("output".to_string(), output),
+            ("duration_ms".to_string(), serde_json::json!(duration_ms(duration))),
+        ]);
+
+        if let Some(iteration_index) = iteration_index {
+            event_data.insert("iteration_index".to_string(), serde_json::json!(iteration_index));
+        }
+
         Self::new(ExecutorEventKind::AgentCompleted)
             .with_agent_name(agent_name)
-            .with_data(serde_json::json!({
-                "output": output,
-                "duration_ms": duration_ms(duration),
-            }))
+            .with_data(Value::Object(event_data))
     }
 
     #[must_use]

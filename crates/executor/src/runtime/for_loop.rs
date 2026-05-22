@@ -51,7 +51,7 @@ impl WorkflowExecutor {
         let agent_name = planned_agent.name.clone();
         let tool_call_tracker = runtime_state.tool_call_tracker();
 
-        for item in items {
+        for (iteration_index, item) in items.iter().enumerate() {
             let mut iteration_state = runtime_state.clone();
             loop_pattern.bind_loop_variables(item, &mut iteration_state)?;
 
@@ -70,6 +70,7 @@ impl WorkflowExecutor {
                         runtime_state: &iteration_state,
                         model_provider,
                         agent_execution_context: &iteration_execution_context,
+                        iteration_index: Some(iteration_index),
                     }))
                     .await
             });

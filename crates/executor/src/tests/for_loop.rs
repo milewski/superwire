@@ -375,6 +375,64 @@ async fn streamed_plan_includes_for_loop_iteration_count() {
 }
 
 #[tokio::test]
+async fn for_loop_events_include_iteration_indexes() {
+    let workflow_source = workflow_source! {
+        provider openai from openai {
+            endpoint: "http://localhost:1234/v1"
+            api_key: "test-api-key"
+        }
+
+        model openai_model from openai {
+            id: "model-a"
+        }
+
+        agent writer for item in ["a", "b"] {
+            model: model.openai_model
+            instruction: "Write {{ item }}"
+            output {
+                value: string
+            }
+        }
+
+        output {
+            values: agent.writer
+        }
+    };
+    let service = ExecutorService::new(TestModelProvider::new(vec![json!({ "value": "a" }), json!({ "value": "b" })]));
+    let mut receiver = service.execute_stream(crate::tests::support::request(workflow_source));
+    let mut started_iteration_indexes = Vec::new();
+    let mut completed_iteration_indexes = Vec::new();
+
+    while let Some(event) = receiver.recv().await {
+        if event.kind == ExecutorEventKind::AgentStarted {
+            started_iteration_indexes.push(
+                event
+                    .data
+                    .as_ref()
+                    .and_then(|data| data.get("iteration_index"))
+                    .and_then(Value::as_u64),
+            );
+        }
+
+        if event.kind == ExecutorEventKind::AgentCompleted {
+            completed_iteration_indexes.push(
+                event
+                    .data
+                    .as_ref()
+                    .and_then(|data| data.get("iteration_index"))
+                    .and_then(Value::as_u64),
+            );
+        }
+    }
+
+    started_iteration_indexes.sort();
+    completed_iteration_indexes.sort();
+
+    assert_eq!(started_iteration_indexes, vec![Some(0), Some(1)]);
+    assert_eq!(completed_iteration_indexes, vec![Some(0), Some(1)]);
+}
+
+#[tokio::test]
 async fn for_loop_can_reference_output_in_later_agent() {
     let workflow_source = workflow_source! {
         provider openai from openai {

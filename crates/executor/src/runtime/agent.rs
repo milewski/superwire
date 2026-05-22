@@ -19,6 +19,7 @@ pub(in crate::runtime) struct AgentRunContext<'a, ModelProviderType> {
     pub(in crate::runtime) runtime_state: &'a RuntimeState,
     pub(in crate::runtime) model_provider: &'a ModelProviderType,
     pub(in crate::runtime) agent_execution_context: &'a AgentExecutionContext,
+    pub(in crate::runtime) iteration_index: Option<usize>,
 }
 
 struct PreparedAgentRequest {
@@ -99,6 +100,7 @@ impl WorkflowExecutor {
                     planned_agent.name.clone(),
                     prepared_request.model_name.clone(),
                     prepared_request.tool_names.clone(),
+                    agent_run_context.iteration_index,
                 ))
                 .await;
         }
@@ -121,6 +123,7 @@ impl WorkflowExecutor {
                     planned_agent.name.clone(),
                     model_response.output.clone(),
                     agent_started_at.elapsed(),
+                    agent_run_context.iteration_index,
                 ))
                 .await;
         }

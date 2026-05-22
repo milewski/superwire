@@ -90,6 +90,7 @@ impl WorkflowExecutor {
                             runtime_state: &runtime_state_snapshot,
                             model_provider,
                             agent_execution_context: &agent_execution_context,
+                            iteration_index: None,
                         }))
                         .await
                 });
