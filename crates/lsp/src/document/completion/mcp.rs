@@ -1,5 +1,5 @@
 use lsp_types::{CompletionItemKind, Position};
-use superwire_core::dsl::{parse_workflow, DeclarationKeyword, ImportKeyword, ToolPropertyName};
+use superwire_core::dsl::{DeclarationKeyword, ImportKeyword, ToolPropertyName};
 use superwire_core::mcp::McpServerLock;
 
 use super::super::position::{byte_offset_for_position, source_span_contains_position};
@@ -157,7 +157,7 @@ impl DocumentState {
 
     fn mcp_tool_batch_schema_source_at_position(&self, position: Position) -> Option<McpToolSchemaSource> {
         let cursor_offset = byte_offset_for_position(&self.text, position)?;
-        let workflow = parse_workflow(&self.text).ok()?;
+        let workflow = self.semantic_snapshot.workflow_document().workflow()?;
 
         workflow.declarations().iter().find_map(|declaration| {
             let (server_name, span, tool_names) = match declaration {
@@ -413,7 +413,7 @@ impl DocumentState {
             return None;
         }
 
-        let workflow = parse_workflow(&self.text).ok()?;
+        let workflow = self.semantic_snapshot.workflow_document().workflow()?;
         let prompt_import_declaration = workflow
             .prompt_imports()
             .filter(|prompt_import_declaration| source_span_contains_position(prompt_import_declaration.span, position))

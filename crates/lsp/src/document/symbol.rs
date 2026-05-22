@@ -1,5 +1,5 @@
 use lsp_types::SymbolKind;
-use superwire_core::dsl::{parse_workflow, Declaration, DeclarationKeyword, ToolDeclaration, TypedField, Workflow};
+use superwire_core::dsl::{Declaration, DeclarationKeyword, ToolDeclaration, TypedField, Workflow};
 
 use super::position::source_span_to_range;
 use super::semantic_index::SemanticIndex;
@@ -8,7 +8,7 @@ use super::{CodeLensHint, DocumentState, DocumentSymbolNode, RenderTypeExpressio
 impl DocumentState {
     #[must_use]
     pub fn document_symbols(&self) -> Vec<DocumentSymbolNode> {
-        if let Ok(workflow) = parse_workflow(&self.text) {
+        if let Some(workflow) = self.semantic_snapshot.workflow_document().workflow() {
             return workflow.document_symbol_nodes(&self.text);
         }
 

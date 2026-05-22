@@ -7,13 +7,23 @@ use superwire_core::dsl::{
 };
 use superwire_core::mcp::McpLock;
 use superwire_core::semantic::{ProviderDriver, SemanticToolingSnapshot, ToolingSymbolCategory, WorkflowSemanticIndex};
+use superwire_core::WorkflowDocument;
 
 use super::types::{AgentSummary, FieldMetadata, ModelSummary, NamedSpan, ProviderSummary, SchemaSummary, SemanticIndex, ToolSummary};
 
 impl SemanticIndex {
-    pub fn from_workflow_with_mcp_lock(workflow: &Workflow, mcp_lock: Option<McpLock>) -> Self {
+    pub fn from_workflow_document(workflow_document: &WorkflowDocument) -> Self {
+        let Some(workflow) = workflow_document.workflow() else {
+            return Self::from_text_fallback(workflow_document.source_text());
+        };
+
+        let workflow_semantics = workflow_document.semantic_index().cloned();
+
+        Self::from_workflow_parts(workflow, workflow_document.mcp_lock().cloned(), workflow_semantics)
+    }
+
+    fn from_workflow_parts(workflow: &Workflow, mcp_lock: Option<McpLock>, workflow_semantics: Option<WorkflowSemanticIndex>) -> Self {
         let tooling_snapshot = SemanticToolingSnapshot::from_workflow(workflow);
-        let workflow_semantics = WorkflowSemanticIndex::from_workflow(workflow);
         let mut semantic_index = Self {
             providers: HashMap::new(),
             provider_locations: Vec::new(),
@@ -60,7 +70,7 @@ impl SemanticIndex {
             has_output_declaration: false,
             tooling_snapshot,
             mcp_lock,
-            workflow_semantics: Some(workflow_semantics),
+            workflow_semantics,
         };
 
         for declaration in workflow.declarations() {

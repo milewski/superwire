@@ -1,6 +1,5 @@
-use superwire_core::dsl::{
-    parse_workflow, AgentExpressionPropertyName, DeclarationKeyword, ImportKeyword, ReferenceKeyword, ToolPropertyName,
-};
+use superwire_core::dsl::{AgentExpressionPropertyName, DeclarationKeyword, ImportKeyword, ReferenceKeyword, ToolPropertyName};
+use superwire_core::WorkflowDocument;
 
 use lsp_types::{Position, Range};
 
@@ -680,7 +679,7 @@ impl DocumentState {
     }
 
     pub(in crate::document) fn semantic_index_for_completion(&self, position: Position) -> SemanticIndex {
-        if self.semantic_snapshot.parse_error.is_none() {
+        if self.semantic_snapshot.parse_error().is_none() {
             return self.semantic_snapshot.semantic_index.clone();
         }
 
@@ -696,12 +695,12 @@ impl DocumentState {
         recovered_source.push_str(COMPLETION_RECOVERY_PLACEHOLDER);
         recovered_source.push_str(&self.text[cursor_offset..]);
 
-        let workflow = parse_workflow(&recovered_source).ok()?;
+        let workflow_document =
+            WorkflowDocument::from_source_with_mcp_lock(recovered_source, self.semantic_snapshot.semantic_index.mcp_lock.clone());
 
-        Some(SemanticIndex::from_workflow_with_mcp_lock(
-            &workflow,
-            self.semantic_snapshot.semantic_index.mcp_lock.clone(),
-        ))
+        workflow_document.workflow()?;
+
+        Some(SemanticIndex::from_workflow_document(&workflow_document))
     }
 
     fn completion_scope(&self, position: Position, line_prefix: &str, semantic_index: &SemanticIndex) -> CompletionScope {

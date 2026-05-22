@@ -21,4 +21,6 @@ pub use ast::{
 pub use formatter::{format_workflow_source, DslFormatError};
 pub use parser::{parse_workflow, DslParseError};
 pub use structure::{DslProperty, PropertyDefinition, PropertyValueKind};
-pub use validation::{validate_workflow, SingletonDeclarationKind, ValidationContext, ValidationIssue, ValidationReport};
+pub use validation::{
+    validate_workflow, SingletonDeclarationKind, ValidationContext, ValidationIssue, ValidationReport, WorkflowValidation,
+};

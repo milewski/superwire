@@ -271,7 +271,7 @@
 
 ## Phase 9: Performance Work
 
-- [ ] Cache parsed workflow, validation report, semantic index, and optional MCP enrichment in a shared workflow document type.
+- [x] Cache parsed workflow, validation report, semantic index, and optional MCP enrichment in a shared workflow document type.
   Description: Introduce a `WorkflowDocument` or similar type that owns source, parse result, validation, semantic index, and enrichment.
   Rationale: Many features parse and index the same source repeatedly.
 

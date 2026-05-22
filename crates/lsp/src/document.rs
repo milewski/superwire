@@ -24,7 +24,7 @@ pub use types::{
 };
 
 use lsp_types::{CompletionItemKind, DiagnosticSeverity, Position};
-use superwire_core::dsl::{parse_workflow, Declaration, Expression, ToolPropertyName, TypeExpression, TypedField};
+use superwire_core::dsl::{Declaration, Expression, ToolPropertyName, TypeExpression, TypedField};
 use superwire_core::mcp::{McpLock, McpToolLock};
 use superwire_core::semantic::ProviderDriver;
 
@@ -84,9 +84,11 @@ impl DocumentState {
         let Some(mcp_lock) = self.semantic_snapshot.semantic_index.mcp_lock.as_ref() else {
             return Vec::new();
         };
-        let Ok(workflow) = parse_workflow(&self.text) else {
+
+        let Some(workflow) = self.semantic_snapshot.workflow_document().workflow() else {
             return Vec::new();
         };
+
         let mut diagnostics = Vec::new();
 
         for declaration in workflow.declarations() {

@@ -2,9 +2,10 @@ use lsp_types::DiagnosticSeverity;
 use superwire_core::diagnostic::{
     Diagnostic as CoreDiagnostic, DiagnosticCode as CoreDiagnosticCode, DiagnosticSeverity as CoreDiagnosticSeverity,
 };
-use superwire_core::dsl::{parse_workflow, validate_workflow, DslParseError};
+use superwire_core::dsl::DslParseError;
 use superwire_core::mcp::McpLock;
 use superwire_core::semantic::build_dynamic_typed_workflow_ir;
+use superwire_core::WorkflowDocument;
 
 use crate::diagnostic_code::DiagnosticCode;
 
@@ -14,31 +15,31 @@ use super::DocumentDiagnostic;
 
 #[derive(Debug)]
 pub struct SemanticSnapshot {
-    pub parse_error: Option<DslParseError>,
+    workflow_document: WorkflowDocument,
     diagnostics: Vec<CoreDiagnostic>,
     pub semantic_index: SemanticIndex,
 }
 
 impl SemanticSnapshot {
     pub fn from_text(source_text: &str, mcp_lock: Option<&McpLock>) -> Self {
-        match parse_workflow(source_text) {
-            Ok(mut workflow) => {
-                if let Some(mcp_lock) = mcp_lock {
-                    mcp_lock.apply_to_workflow(&mut workflow);
-                }
+        let workflow_document = WorkflowDocument::from_source_with_mcp_lock(source_text, mcp_lock.cloned());
 
-                let validation_report = validate_workflow(&workflow);
-                let semantic_index = SemanticIndex::from_workflow_with_mcp_lock(&workflow, mcp_lock.cloned());
-                let mut diagnostics = validation_report.diagnostics();
+        match workflow_document.parse_result() {
+            Ok(workflow) => {
+                let semantic_index = SemanticIndex::from_workflow_document(&workflow_document);
+                let mut diagnostics = workflow_document
+                    .validation_report()
+                    .map(superwire_core::dsl::ValidationReport::diagnostics)
+                    .unwrap_or_default();
 
                 if diagnostics.is_empty() && workflow.find_output().is_some() {
-                    if let Err(semantic_error) = build_dynamic_typed_workflow_ir(&workflow) {
+                    if let Err(semantic_error) = build_dynamic_typed_workflow_ir(workflow) {
                         diagnostics.push(semantic_error.diagnostic());
                     }
                 }
 
                 Self {
-                    parse_error: None,
+                    workflow_document,
                     diagnostics,
                     semantic_index,
                 }
@@ -49,12 +50,20 @@ impl SemanticSnapshot {
                 semantic_index.mcp_lock = mcp_lock.cloned();
 
                 Self {
-                    parse_error: Some(parse_error),
+                    workflow_document,
                     diagnostics,
                     semantic_index,
                 }
             }
         }
+    }
+
+    pub fn parse_error(&self) -> Option<&DslParseError> {
+        self.workflow_document.parse_error()
+    }
+
+    pub fn workflow_document(&self) -> &WorkflowDocument {
+        &self.workflow_document
     }
 
     pub fn diagnostics(&self, source_text: &str) -> Vec<DocumentDiagnostic> {
