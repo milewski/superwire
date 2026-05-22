@@ -221,7 +221,7 @@
   Description: Keep dependency planning, type/schema computation, and execution plan construction pure where possible.
   Rationale: Pure planning is easier to benchmark, cache, and test than async execution.
 
-- [ ] Add runtime benchmarks for parsing, validation, planning, prompt rendering, schema resolution, and fake-provider execution.
+- [x] Add runtime benchmarks for parsing, validation, planning, prompt rendering, schema resolution, and fake-provider execution.
   Description: Add repeatable benchmark targets for representative small, medium, and large workflows.
   Rationale: Performance refactors need baselines to prove improvement and detect regressions.
 

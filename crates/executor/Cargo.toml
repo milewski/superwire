@@ -29,3 +29,7 @@ tower-http = { version = "0.6", features = ["fs"] }
 
 [dev-dependencies]
 schemars = { workspace = true }
+
+[[bench]]
+name = "runtime"
+harness = false
