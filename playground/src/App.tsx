@@ -67,6 +67,8 @@ export default function App() {
   const [draggedCodeFragmentId, setDraggedCodeFragmentId] = useState<string | null>(null);
   const [dragOverCodeFragmentId, setDragOverCodeFragmentId] = useState<string | null>(null);
   const [editorJumpTarget, setEditorJumpTarget] = useState<EditorJumpTarget | null>(null);
+  const [playgroundControlsSentinelElement, setPlaygroundControlsSentinelElement] = useState<HTMLDivElement | null>(null);
+  const [playgroundControlsStuck, setPlaygroundControlsStuck] = useState(false);
   const validationDebounceTimeoutRef = useRef<number | null>(null);
   const graphDebounceTimeoutRef = useRef<number | null>(null);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
@@ -104,6 +106,42 @@ export default function App() {
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
+
+  useEffect(() => {
+    if (!playgroundControlsSentinelElement) {
+      setPlaygroundControlsStuck(false);
+
+      return;
+    }
+
+    let animationFrameIdentifier: number | null = null;
+
+    const updatePlaygroundControlsStuck = () => {
+      animationFrameIdentifier = null;
+      setPlaygroundControlsStuck(playgroundControlsSentinelElement.getBoundingClientRect().top < 0);
+    };
+
+    const requestPlaygroundControlsStuckUpdate = () => {
+      if (animationFrameIdentifier !== null) {
+        return;
+      }
+
+      animationFrameIdentifier = window.requestAnimationFrame(updatePlaygroundControlsStuck);
+    };
+
+    updatePlaygroundControlsStuck();
+    window.addEventListener('scroll', requestPlaygroundControlsStuckUpdate, { passive: true });
+    window.addEventListener('resize', requestPlaygroundControlsStuckUpdate);
+
+    return () => {
+      if (animationFrameIdentifier !== null) {
+        window.cancelAnimationFrame(animationFrameIdentifier);
+      }
+
+      window.removeEventListener('scroll', requestPlaygroundControlsStuckUpdate);
+      window.removeEventListener('resize', requestPlaygroundControlsStuckUpdate);
+    };
+  }, [playgroundControlsSentinelElement]);
 
   useEffect(() => {
     if (!activeTab) {
@@ -871,6 +909,47 @@ export default function App() {
     return event;
   }
 
+  const playgroundControlsSentinel = <div ref={setPlaygroundControlsSentinelElement} className="playground__controls-sentinel" aria-hidden="true" />;
+
+  const playgroundControls = activeTab ? (
+    <div className="playground__controls" data-stuck={playgroundControlsStuck ? 'true' : 'false'}>
+      <nav className="playground-mode-switch" aria-label="Playground mode">
+        <Button variant={activeView === 'workflow' ? 'secondary' : 'ghost'} size="lg" className="playground-mode-switch__button" onClick={() => setTabView('workflow')}><Workflow /> Workflow</Button>
+        <Button variant={activeView === 'graph' ? 'secondary' : 'ghost'} size="lg" className="playground-mode-switch__button" onClick={() => setTabView('graph')}><GitBranch /> Graph</Button>
+      </nav>
+
+      <div className="playground-actions">
+        <div className="playground-cache-controls" aria-label="Cache settings">
+          <ActionTooltip label={activeTab.useCache ? 'Disable agent cache for this workflow tab' : 'Enable agent cache for this workflow tab'}>
+            <Button
+              variant={activeTab.useCache ? 'secondary' : 'ghost'}
+              size="icon-lg"
+              aria-label={activeTab.useCache ? 'Disable cache' : 'Enable cache'}
+              aria-pressed={activeTab.useCache}
+              onClick={toggleCache}
+            >
+              <Database />
+            </Button>
+          </ActionTooltip>
+          <ActionTooltip label="Regenerate cache key for this workflow tab">
+            <Button variant="ghost" size="icon-lg" aria-label="Purge cache" onClick={purgeCache}>
+              <DatabaseZap />
+            </Button>
+          </ActionTooltip>
+        </div>
+        {activeTab.runState === 'running' ? (
+          <ActionTooltip label="Stop the current workflow run">
+            <Button variant="destructive" size="lg" onClick={stopRun}><Square /> Stop</Button>
+          </ActionTooltip>
+        ) : (
+          <ActionTooltip label="Run the workflow with the current input and secrets">
+            <Button className="playground-actions__run" disabled={!canRun} size="lg" onClick={runWorkflow}><Play /> Run workflow</Button>
+          </ActionTooltip>
+        )}
+      </div>
+    </div>
+  ) : null;
+
   return (
     <TooltipProvider>
       <main className={darkMode ? 'dark' : ''}>
@@ -927,176 +1006,144 @@ export default function App() {
               <div className="playground__canvas">
                 {activeTab ? (
                   <section className="playground__content">
-                    <div className="playground__controls">
-                      <nav className="playground-mode-switch" aria-label="Playground mode">
-                        <Button variant={activeView === 'workflow' ? 'secondary' : 'ghost'} size="lg" className="playground-mode-switch__button" onClick={() => setTabView('workflow')}><Workflow /> Workflow</Button>
-                        <Button variant={activeView === 'graph' ? 'secondary' : 'ghost'} size="lg" className="playground-mode-switch__button" onClick={() => setTabView('graph')}><GitBranch /> Graph</Button>
-                      </nav>
-
-                      <div className="playground-actions">
-                        <div className="playground-cache-controls" aria-label="Cache settings">
-                          <ActionTooltip label={activeTab.useCache ? 'Disable agent cache for this workflow tab' : 'Enable agent cache for this workflow tab'}>
-                            <Button
-                              variant={activeTab.useCache ? 'secondary' : 'ghost'}
-                              size="icon-lg"
-                              aria-label={activeTab.useCache ? 'Disable cache' : 'Enable cache'}
-                              aria-pressed={activeTab.useCache}
-                              onClick={toggleCache}
-                            >
-                              <Database />
-                            </Button>
-                          </ActionTooltip>
-                          <ActionTooltip label="Regenerate cache key for this workflow tab">
-                            <Button variant="ghost" size="icon-lg" aria-label="Purge cache" onClick={purgeCache}>
-                              <DatabaseZap />
-                            </Button>
-                          </ActionTooltip>
-                        </div>
-                        {activeTab.runState === 'running' ? (
-                          <ActionTooltip label="Stop the current workflow run">
-                            <Button variant="destructive" size="lg" onClick={stopRun}><Square /> Stop</Button>
-                          </ActionTooltip>
-                        ) : (
-                          <ActionTooltip label="Run the workflow with the current input and secrets">
-                            <Button className="playground-actions__run" disabled={!canRun} size="lg" onClick={runWorkflow}><Play /> Run workflow</Button>
-                          </ActionTooltip>
-                        )}
-                      </div>
-                    </div>
-
                     {activeView === 'workflow' ? (
                       <section className="workflow-layout">
-                        {shouldShowTemplatePicker ? (
-                          <PanelCard title="Start from a template" description="Pick a fixture to quickly explore the DSL." className="template-picker" bodyClassName="template-picker__grid">
+                        <div className="workflow-layout__sticky-scope">
+                          {playgroundControlsSentinel}
+                          {playgroundControls}
+
+                          {shouldShowTemplatePicker ? (
+                            <PanelCard title="Start from a template" description="Pick a fixture to quickly explore the DSL." className="template-picker" bodyClassName="template-picker__grid">
                               {workflowTemplates.map((template) => (
                                 <Button key={template.id} variant="outline" className="template-picker__button" onClick={() => applyWorkflowTemplate(template)}>
                                   <span className="template-picker__name">{template.name}</span>
                                   <span className="template-picker__description">{template.description}</span>
                                 </Button>
                               ))}
-                          </PanelCard>
-                        ) : null}
+                            </PanelCard>
+                          ) : null}
 
-                        <div className="workflow-layout__top workflow-layout__top--single">
-                          <Card className="workflow-editor" data-tone={editorStateTone}>
-                            <div className="workflow-editor__header panel-card__header">
-                              <div className="panel-card__title-block">
-                                <strong>{activeTab.name}</strong>
+                          <div className="workflow-layout__top workflow-layout__top--single">
+                            <Card className="workflow-editor" data-tone={editorStateTone}>
+                              <div className="workflow-editor__header panel-card__header">
+                                <div className="panel-card__title-block">
+                                  <strong>{activeTab.name}</strong>
+                                </div>
+                                <div className="workflow-fragment-actions">
+                                  <ActionTooltip label="Copy this workflow, input, and secrets as portable source">
+                                    <Button variant="ghost" size="sm" onClick={exportWorkflowSource}><Download /> Export</Button>
+                                  </ActionTooltip>
+                                  <ActionTooltip label="Format the active workflow, input, or secrets editor">
+                                    <Button variant="ghost" size="sm" onClick={formatActiveEditor}><RefreshCcw /> Format</Button>
+                                  </ActionTooltip>
+                                  <ActionTooltip label="Validate the workflow without running agents">
+                                    <Button variant="ghost" size="sm" onClick={validateWorkflow}><CheckCircle2 /> Validate</Button>
+                                  </ActionTooltip>
+                                  <ActionTooltip label="Add a new workflow code fragment">
+                                    <Button variant="outline" size="sm" onClick={addCodeFragment}><Plus /> Fragment</Button>
+                                  </ActionTooltip>
+                                </div>
                               </div>
-                              <div className="workflow-fragment-actions">
-                                <ActionTooltip label="Copy this workflow, input, and secrets as portable source">
-                                  <Button variant="ghost" size="sm" onClick={exportWorkflowSource}><Download /> Export</Button>
-                                </ActionTooltip>
-                                <ActionTooltip label="Format the active workflow, input, or secrets editor">
-                                  <Button variant="ghost" size="sm" onClick={formatActiveEditor}><RefreshCcw /> Format</Button>
-                                </ActionTooltip>
-                                <ActionTooltip label="Validate the workflow without running agents">
-                                  <Button variant="ghost" size="sm" onClick={validateWorkflow}><CheckCircle2 /> Validate</Button>
-                                </ActionTooltip>
-                                <ActionTooltip label="Add a new workflow code fragment">
-                                  <Button variant="outline" size="sm" onClick={addCodeFragment}><Plus /> Fragment</Button>
-                                </ActionTooltip>
-                              </div>
-                            </div>
-                            <div className="workflow-editor-tabs" aria-label="Workflow editor tabs">
-                              <div className="workflow-editor-tabs__fragments" aria-label="Workflow code fragments">
-                                {activeTab.codeFragments.map((fragment) => (
+                              <div className="workflow-editor-tabs" aria-label="Workflow editor tabs">
+                                <div className="workflow-editor-tabs__fragments" aria-label="Workflow code fragments">
+                                  {activeTab.codeFragments.map((fragment) => (
+                                    <PlaygroundTabChip
+                                      key={fragment.id}
+                                      size="small"
+                                      active={activeEditorView === 'code' && fragment.id === activeTab.activeCodeFragmentId}
+                                      dragging={draggedCodeFragmentId === fragment.id}
+                                      dragOver={dragOverCodeFragmentId === fragment.id}
+                                      onDragStart={() => handleCodeFragmentDragStart(fragment.id)}
+                                      onDragOver={() => handleCodeFragmentDragOver(fragment.id)}
+                                      onDrop={() => handleCodeFragmentDrop(fragment.id)}
+                                      onDragEnd={clearCodeFragmentDragState}
+                                      trigger={(
+                                        <button type="button" className="playground-tab-chip__trigger" onClick={() => setActiveCodeFragment(fragment.id)}>
+                                          <span className="playground-tab-chip__title">{fragment.name}</span>
+                                        </button>
+                                      )}
+                                      actions={[
+                                        { label: `Rename ${fragment.name}`, icon: <Pencil />, onClick: () => openCodeFragmentRenameDialog(activeTab.id, fragment.id) },
+                                        { label: `Close ${fragment.name}`, icon: <Trash2 />, onClick: () => closeCodeFragment(fragment.id) },
+                                      ]}
+                                    />
+                                  ))}
+                                </div>
+
+                                <div className="workflow-editor-tabs__variables" aria-label="Workflow variables">
                                   <PlaygroundTabChip
-                                    key={fragment.id}
                                     size="small"
-                                    active={activeEditorView === 'code' && fragment.id === activeTab.activeCodeFragmentId}
-                                    dragging={draggedCodeFragmentId === fragment.id}
-                                    dragOver={dragOverCodeFragmentId === fragment.id}
-                                    onDragStart={() => handleCodeFragmentDragStart(fragment.id)}
-                                    onDragOver={() => handleCodeFragmentDragOver(fragment.id)}
-                                    onDrop={() => handleCodeFragmentDrop(fragment.id)}
-                                    onDragEnd={clearCodeFragmentDragState}
+                                    active={activeEditorView === 'input'}
+                                    draggable={false}
+                                    dragging={false}
+                                    dragOver={false}
                                     trigger={(
-                                      <button type="button" className="playground-tab-chip__trigger" onClick={() => setActiveCodeFragment(fragment.id)}>
-                                        <span className="playground-tab-chip__title">{fragment.name}</span>
+                                      <button type="button" className="playground-tab-chip__trigger" onClick={() => setWorkflowEditorView('input')}>
+                                        <span className="playground-tab-chip__title">Input</span>
                                       </button>
                                     )}
-                                    actions={[
-                                      { label: `Rename ${fragment.name}`, icon: <Pencil />, onClick: () => openCodeFragmentRenameDialog(activeTab.id, fragment.id) },
-                                      { label: `Close ${fragment.name}`, icon: <Trash2 />, onClick: () => closeCodeFragment(fragment.id) },
-                                    ]}
+                                    actions={[]}
                                   />
-                                ))}
+                                  <PlaygroundTabChip
+                                    size="small"
+                                    active={activeEditorView === 'secrets'}
+                                    draggable={false}
+                                    dragging={false}
+                                    dragOver={false}
+                                    trigger={(
+                                      <button type="button" className="playground-tab-chip__trigger" onClick={() => setWorkflowEditorView('secrets')}>
+                                        <span className="playground-tab-chip__title">Secrets</span>
+                                      </button>
+                                    )}
+                                    actions={[]}
+                                  />
+                                </div>
                               </div>
-
-                              <div className="workflow-editor-tabs__variables" aria-label="Workflow variables">
-                                <PlaygroundTabChip
-                                  size="small"
-                                  active={activeEditorView === 'input'}
-                                  draggable={false}
-                                  dragging={false}
-                                  dragOver={false}
-                                  trigger={(
-                                    <button type="button" className="playground-tab-chip__trigger" onClick={() => setWorkflowEditorView('input')}>
-                                      <span className="playground-tab-chip__title">Input</span>
-                                    </button>
-                                  )}
-                                  actions={[]}
+                              {activeEditorView === 'code' && activeCodeFragment && activeCodeFragmentSourceMap ? (
+                                <WireEditor
+                                  key={`${activeTab.id}-${activeCodeFragment.id}`}
+                                  value={activeCodeFragment.source}
+                                  fullValue={activeTab.source}
+                                  documentId={activeTab.id}
+                                  documentOffset={activeCodeFragmentSourceMap.sourceStartOffset}
+                                  darkMode={darkMode}
+                                  inputJson={activeTab.inputJson}
+                                  secretsJson={activeTab.secretsJson}
+                                  jumpTarget={activeEditorJumpTarget}
+                                  onChange={updateActiveCodeFragmentSource}
+                                  onDefinitionJump={jumpToFullDocumentPosition}
                                 />
-                                <PlaygroundTabChip
-                                  size="small"
-                                  active={activeEditorView === 'secrets'}
-                                  draggable={false}
-                                  dragging={false}
-                                  dragOver={false}
-                                  trigger={(
-                                    <button type="button" className="playground-tab-chip__trigger" onClick={() => setWorkflowEditorView('secrets')}>
-                                      <span className="playground-tab-chip__title">Secrets</span>
-                                    </button>
-                                  )}
-                                  actions={[]}
+                              ) : null}
+                              {activeEditorView === 'input' ? (
+                                <JsonCodeEditor
+                                  key={`${activeTab.id}-input`}
+                                  value={activeTab.inputJson}
+                                  fullEditor
+                                  className="workflow-editor__json"
+                                  onChange={(inputJson) => updateActiveTab((tab) => ({ ...tab, inputJson, updatedAt: Date.now() }))}
                                 />
+                              ) : null}
+                              {activeEditorView === 'secrets' ? (
+                                <JsonCodeEditor
+                                  key={`${activeTab.id}-secrets`}
+                                  value={activeTab.secretsJson}
+                                  fullEditor
+                                  className="workflow-editor__json"
+                                  onChange={(secretsJson) => updateActiveTab((tab) => ({
+                                    ...tab,
+                                    secretsJson,
+                                    graphState: 'idle',
+                                    graphMessage: 'Graph needs to be regenerated after secrets changes.',
+                                    graphData: null,
+                                    updatedAt: Date.now(),
+                                  }))}
+                                />
+                              ) : null}
+                              <div className={`workflow-editor__message workflow-editor__message--${editorMessageTone}`}>
+                                <span className="workflow-editor__message-line workflow-editor__message-line--full">{editorMessage}</span>
                               </div>
-                            </div>
-                            {activeEditorView === 'code' && activeCodeFragment && activeCodeFragmentSourceMap ? (
-                              <WireEditor
-                                key={`${activeTab.id}-${activeCodeFragment.id}`}
-                                value={activeCodeFragment.source}
-                                fullValue={activeTab.source}
-                                documentId={activeTab.id}
-                                documentOffset={activeCodeFragmentSourceMap.sourceStartOffset}
-                                darkMode={darkMode}
-                                inputJson={activeTab.inputJson}
-                                secretsJson={activeTab.secretsJson}
-                                jumpTarget={activeEditorJumpTarget}
-                                onChange={updateActiveCodeFragmentSource}
-                                onDefinitionJump={jumpToFullDocumentPosition}
-                              />
-                            ) : null}
-                            {activeEditorView === 'input' ? (
-                              <JsonCodeEditor
-                                key={`${activeTab.id}-input`}
-                                value={activeTab.inputJson}
-                                fullEditor
-                                className="workflow-editor__json"
-                                onChange={(inputJson) => updateActiveTab((tab) => ({ ...tab, inputJson, updatedAt: Date.now() }))}
-                              />
-                            ) : null}
-                            {activeEditorView === 'secrets' ? (
-                              <JsonCodeEditor
-                                key={`${activeTab.id}-secrets`}
-                                value={activeTab.secretsJson}
-                                fullEditor
-                                className="workflow-editor__json"
-                                onChange={(secretsJson) => updateActiveTab((tab) => ({
-                                  ...tab,
-                                  secretsJson,
-                                  graphState: 'idle',
-                                  graphMessage: 'Graph needs to be regenerated after secrets changes.',
-                                  graphData: null,
-                                  updatedAt: Date.now(),
-                                }))}
-                              />
-                            ) : null}
-                            <div className={`workflow-editor__message workflow-editor__message--${editorMessageTone}`}>
-                              <span className="workflow-editor__message-line workflow-editor__message-line--full">{editorMessage}</span>
-                            </div>
-                          </Card>
+                            </Card>
+                          </div>
                         </div>
 
                         <div className="workflow-layout__bottom">
@@ -1111,7 +1158,12 @@ export default function App() {
                     ) : null}
 
                     {activeView === 'graph' ? (
-                      <WorkflowGraphView graph={activeTab.graphData} source={activeTab.source} graphState={activeTab.graphState} runState={activeTab.runState} events={activeTab.eventLog} outputJson={activeTab.outputJson} message={activeTab.graphMessage} onRefresh={loadGraph} />
+                      <section className="graph-layout">
+                        {playgroundControlsSentinel}
+                        {playgroundControls}
+
+                        <WorkflowGraphView graph={activeTab.graphData} source={activeTab.source} graphState={activeTab.graphState} runState={activeTab.runState} events={activeTab.eventLog} outputJson={activeTab.outputJson} message={activeTab.graphMessage} onRefresh={loadGraph} />
+                      </section>
                     ) : null}
                   </section>
                 ) : null}

@@ -158,7 +158,7 @@ textarea {
 }
 
 .playground__frame {
-  @apply flex min-h-screen w-full overflow-hidden;
+  @apply flex min-h-screen w-full;
   background: color-mix(in srgb, var(--background) 92%, #000 8%);
 }
 
@@ -244,6 +244,8 @@ textarea {
 .workflow-editor__message {
   @apply px-5 py-3 xl:px-6;
   border-top: 1px solid var(--border);
+  border-bottom-right-radius: inherit;
+  border-bottom-left-radius: inherit;
   background: color-mix(in srgb, var(--card) 82%, #000 18%);
 }
 
@@ -494,8 +496,59 @@ textarea {
   @apply flex min-h-0 flex-1 flex-col gap-5;
 }
 
+.playground__controls-sentinel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
 .playground__controls {
-  @apply flex flex-wrap items-center justify-between gap-3;
+  @apply sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 py-2;
+  position: sticky;
+  isolation: isolate;
+}
+
+.playground__controls::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  z-index: 0;
+  width: 100vw;
+  transform: translateX(-50%) translateY(-0.35rem);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  background: color-mix(in srgb, var(--background) 90%, #000 10%);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.2);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 180ms ease;
+}
+
+.playground__controls[data-stuck="true"]::before {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
+.playground__controls > * {
+  position: relative;
+  z-index: 1;
+}
+
+.playground__controls .playground-mode-switch {
+  @apply transition-shadow;
+  box-shadow: none;
+}
+
+.playground__controls[data-stuck="true"] .playground-mode-switch {
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+}
+
+.playground__controls .playground-actions {
+  @apply rounded-2xl;
 }
 
 .surface-grid {
@@ -703,6 +756,16 @@ textarea {
 
 .workflow-layout {
   @apply grid gap-5;
+}
+
+.workflow-layout__sticky-scope {
+  @apply grid gap-5;
+  position: relative;
+}
+
+.graph-layout {
+  @apply flex min-h-0 flex-1 flex-col gap-5;
+  position: relative;
 }
 
 .template-picker {
