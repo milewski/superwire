@@ -58,6 +58,7 @@ where
 
     let router = Router::new()
         .route("/execute", post(execute_handler::<ModelProviderType>))
+        .route("/execute/{run_identifier}/cancel", post(cancel_stream_handler::<ModelProviderType>))
         .route(
             "/execute/{run_identifier}/events",
             axum::routing::get(reconnect_stream_handler::<ModelProviderType>),
@@ -155,6 +156,20 @@ where
     let response = state.service.invalidate_agent_cache_session(&cache_session)?;
 
     Ok(Json(response).into_response())
+}
+
+async fn cancel_stream_handler<ModelProviderType>(
+    State(state): State<ExecutorRouterState<ModelProviderType>>,
+    Path(run_identifier): Path<String>,
+) -> Result<Response, ExecutorHttpError>
+where
+    ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
+{
+    if !state.service.cancel_streamed_execution(&run_identifier) {
+        return Ok(StatusCode::NOT_FOUND.into_response());
+    }
+
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 async fn reconnect_stream_handler<ModelProviderType>(

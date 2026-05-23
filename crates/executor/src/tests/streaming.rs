@@ -175,6 +175,40 @@ async fn reconnecting_stream_replays_missed_events() {
 }
 
 #[tokio::test]
+async fn cancelling_streamed_execution_aborts_backend_work() {
+    let model_provider = ConcurrentTrackingModelProvider::new(Duration::from_secs(30));
+    let service = ExecutorService::new(model_provider.clone());
+    let mut stream_subscription = service.start_streamed_execution(support::request(fixtures::MINIMUM));
+    let run_identifier = stream_subscription.run_identifier.clone();
+    let mut event_kinds = Vec::new();
+
+    while let Some(sequenced_event) = stream_subscription.receiver.recv().await {
+        let event_kind = sequenced_event.event.kind;
+        event_kinds.push(event_kind.clone());
+
+        if event_kind == ExecutorEventKind::AgentStarted {
+            break;
+        }
+    }
+
+    assert!(service.cancel_streamed_execution(&run_identifier));
+
+    while let Ok(Some(sequenced_event)) = tokio::time::timeout(Duration::from_secs(1), stream_subscription.receiver.recv()).await {
+        event_kinds.push(sequenced_event.event.kind);
+    }
+
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while model_provider.active_requests() != 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("cancelled workflow should abort active model work");
+
+    assert!(event_kinds.contains(&ExecutorEventKind::WorkflowFailed));
+}
+
+#[tokio::test]
 async fn deterministic_tool_call_emits_started_and_completed_events() {
     let server = TestMcpHttpServer::spawn();
     let workflow_source = workflow_source! {

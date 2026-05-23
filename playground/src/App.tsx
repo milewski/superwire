@@ -59,6 +59,7 @@ export default function App() {
   const [eventsOpen, setEventsOpen] = useState(true);
   const [eventGroupingMode, setEventGroupingMode] = useState<EventGroupingMode>(EventGroupingMode.Chronological);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [currentRunIdentifier, setCurrentRunIdentifier] = useState<string | null>(null);
   const [renameDialogTarget, setRenameDialogTarget] = useState<RenameDialogTarget | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
@@ -646,6 +647,8 @@ export default function App() {
         throw new Error(payload.error ?? `Request failed with ${response.status}`);
       }
 
+      setCurrentRunIdentifier(response.headers.get(runIdentifierHeader));
+
       const events = await readWorkflowEventStream(response, currentTab.id, nextAbortController.signal, acceptSseChunk, updateTab);
       const failedEvent = events.find((event) => event.kind === 'workflow_failed');
 
@@ -666,11 +669,23 @@ export default function App() {
       updateTab(currentTab.id, (tab) => ({ ...tab, runState: 'failed', validationState: 'invalid', message: errorMessage(error) }));
     } finally {
       setAbortController(null);
+      setCurrentRunIdentifier(null);
     }
   }
 
-  function stopRun() {
+  async function stopRun() {
     if (abortController) {
+      try {
+        if (currentRunIdentifier) {
+          updateActiveTab((tab) => ({ ...tab, message: 'Cancelling workflow...' }));
+          await cancelWorkflowRun(currentRunIdentifier);
+
+          return;
+        }
+      } catch (error) {
+        updateActiveTab((tab) => ({ ...tab, message: `Run cancelled locally. ${errorMessage(error)}` }));
+      }
+
       abortController.abort();
 
       return;
@@ -1221,6 +1236,15 @@ async function readWorkflowEventStream(
 }
 
 class WorkflowStreamUnavailableError extends Error {}
+
+async function cancelWorkflowRun(runIdentifier: string) {
+  const response = await fetch(`/execute/${encodeURIComponent(runIdentifier)}/cancel`, { method: 'POST' });
+
+  if (!response.ok && response.status !== 404) {
+    const payload: Record<string, unknown> = await responsePayload(response).catch(() => ({}));
+    throw new Error(typeof payload.error === 'string' ? payload.error : `Unable to cancel workflow run (${response.status}).`);
+  }
+}
 
 async function reconnectWorkflowEventStream(runIdentifier: string, lastEventIdentifier: string | null, abortSignal: AbortSignal) {
   const headers: Record<string, string> = {

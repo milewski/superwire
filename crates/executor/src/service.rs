@@ -16,6 +16,7 @@ use std::time::Duration;
 use std::time::Instant;
 use superwire_core::dsl::format_workflow_source;
 use tokio::sync::mpsc;
+use tokio::task::AbortHandle;
 
 const EVENT_BUFFER_SIZE: usize = 64;
 const COMPLETED_STREAM_RETENTION: Duration = Duration::from_secs(20 * 60);
@@ -207,11 +208,13 @@ where
         let max_concurrency = request.options.max_concurrency;
         let cache_options = self.cache_options_for_request(&request);
 
-        tokio::spawn(async move {
+        let execution_task = tokio::spawn(async move {
             registry
                 .run_streamed_execution(request, model_provider, run_identifier, max_concurrency, cache_options)
                 .await;
         });
+        self.streamed_executions
+            .attach_abort_handle(&subscription.run_identifier, execution_task.abort_handle());
 
         subscription
     }
@@ -222,6 +225,10 @@ where
         last_event_identifier: Option<u64>,
     ) -> Option<StreamedExecutionSubscription> {
         self.streamed_executions.subscribe(run_identifier, last_event_identifier)
+    }
+
+    pub fn cancel_streamed_execution(&self, run_identifier: &str) -> bool {
+        self.streamed_executions.cancel(run_identifier)
     }
 
     fn cache_options_for_request(&self, request: &ExecutionRequest) -> AgentCacheOptions {
@@ -296,6 +303,17 @@ impl StreamedExecutionRegistry {
         subscription
     }
 
+    fn attach_abort_handle(&self, run_identifier: &str, abort_handle: AbortHandle) {
+        if let Some(streamed_execution) = self
+            .executions
+            .lock()
+            .expect("streamed execution registry lock should not be poisoned")
+            .get(run_identifier)
+        {
+            streamed_execution.attach_abort_handle(abort_handle);
+        }
+    }
+
     fn subscribe(&self, run_identifier: &str, last_event_identifier: Option<u64>) -> Option<StreamedExecutionSubscription> {
         self.executions
             .lock()
@@ -331,6 +349,27 @@ impl StreamedExecutionRegistry {
             .lock()
             .expect("streamed execution registry lock should not be poisoned")
             .remove(run_identifier);
+    }
+
+    fn cancel(&self, run_identifier: &str) -> bool {
+        let streamed_execution = self
+            .executions
+            .lock()
+            .expect("streamed execution registry lock should not be poisoned")
+            .get(run_identifier)
+            .cloned();
+
+        let Some(streamed_execution) = streamed_execution else {
+            return false;
+        };
+
+        let should_schedule_cleanup = streamed_execution.cancel();
+
+        if should_schedule_cleanup {
+            self.schedule_cleanup(run_identifier.to_string());
+        }
+
+        true
     }
 
     async fn run_streamed_execution<ModelProviderType>(
@@ -389,6 +428,13 @@ struct StreamedExecution {
 }
 
 impl StreamedExecution {
+    fn attach_abort_handle(&self, abort_handle: AbortHandle) {
+        self.state
+            .lock()
+            .expect("streamed execution lock should not be poisoned")
+            .abort_handle = Some(abort_handle);
+    }
+
     fn subscribe(&self, run_identifier: String, last_event_identifier: Option<u64>) -> StreamedExecutionSubscription {
         let mut state = self.state.lock().expect("streamed execution lock should not be poisoned");
         let missed_events = state.events_after(last_event_identifier);
@@ -413,6 +459,11 @@ impl StreamedExecution {
 
     fn record_event(&self, event: ExecutorEvent) -> bool {
         let mut state = self.state.lock().expect("streamed execution lock should not be poisoned");
+
+        if state.completed {
+            return false;
+        }
+
         let sequenced_event = state.next_event(event);
         let completed = sequenced_event.event.is_terminal();
 
@@ -428,6 +479,22 @@ impl StreamedExecution {
 
         completed
     }
+
+    fn cancel(&self) -> bool {
+        let abort_handle = self
+            .state
+            .lock()
+            .expect("streamed execution lock should not be poisoned")
+            .abort_handle
+            .clone();
+        let completed = self.record_event(ExecutorEvent::workflow_failed("Workflow cancelled.".to_string(), None));
+
+        if let Some(abort_handle) = abort_handle {
+            abort_handle.abort();
+        }
+
+        completed
+    }
 }
 
 #[derive(Debug, Default)]
@@ -436,6 +503,7 @@ struct StreamedExecutionState {
     subscribers: Vec<mpsc::Sender<SequencedExecutorEvent>>,
     next_event_identifier: u64,
     completed: bool,
+    abort_handle: Option<AbortHandle>,
 }
 
 impl StreamedExecutionState {

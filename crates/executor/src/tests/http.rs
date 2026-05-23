@@ -1,13 +1,13 @@
 use super::fixtures;
 use super::support;
-use super::support::TrackingModelProvider;
+use super::support::{ConcurrentTrackingModelProvider, TrackingModelProvider};
 use super::tools::TestMcpHttpServer;
 use crate::server::{executor_router_with_service, executor_router_with_service_and_playground_dist};
 use crate::service::ExecutorService;
 use base64::prelude::{Engine as _, BASE64_STANDARD};
 use serde_json::json;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tower::util::ServiceExt;
 
 #[tokio::test]
@@ -209,6 +209,71 @@ async fn http_stream_reconnect_replays_events_after_last_event_identifier() {
 
     assert!(!reconnect_response_body.contains("id: 1"));
     assert!(reconnect_response_body.contains("\"kind\":\"workflow_completed\""));
+}
+
+#[tokio::test]
+async fn http_stream_cancel_aborts_running_execution() {
+    let model_provider = ConcurrentTrackingModelProvider::new(Duration::from_secs(30));
+    let router = executor_router_with_service(ExecutorService::new(model_provider.clone()), true);
+    let request_body = json!({ "workflow_source": fixtures::MINIMUM });
+    let request = axum::http::Request::builder()
+        .method("POST")
+        .uri("/execute")
+        .header("accept", "text/event-stream")
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(request_body.to_string()))
+        .expect("request should build");
+
+    let response = router.clone().oneshot(request).await.expect("request should execute");
+    let run_identifier = response
+        .headers()
+        .get("x-superwire-run-id")
+        .and_then(|header_value| header_value.to_str().ok())
+        .expect("stream response should include run identifier")
+        .to_string();
+
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while model_provider.active_requests() == 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("workflow should start model work before cancellation");
+
+    let cancel_request = axum::http::Request::builder()
+        .method("POST")
+        .uri(format!("/execute/{run_identifier}/cancel"))
+        .body(axum::body::Body::empty())
+        .expect("request should build");
+    let cancel_response = router.clone().oneshot(cancel_request).await.expect("request should execute");
+
+    assert_eq!(cancel_response.status(), axum::http::StatusCode::NO_CONTENT);
+
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while model_provider.active_requests() != 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("cancelled workflow should abort active model work");
+
+    let reconnect_request = axum::http::Request::builder()
+        .method("GET")
+        .uri(format!("/execute/{run_identifier}/events"))
+        .header("accept", "text/event-stream")
+        .body(axum::body::Body::empty())
+        .expect("request should build");
+    let reconnect_response = router.oneshot(reconnect_request).await.expect("request should execute");
+
+    assert_eq!(reconnect_response.status(), axum::http::StatusCode::OK);
+
+    let reconnect_body = axum::body::to_bytes(reconnect_response.into_body(), usize::MAX)
+        .await
+        .expect("response body should read");
+    let reconnect_response_body = String::from_utf8(reconnect_body.to_vec()).expect("response body should be valid UTF-8");
+
+    assert!(reconnect_response_body.contains("\"kind\":\"workflow_failed\""));
+    assert!(reconnect_response_body.contains("Workflow cancelled."));
 }
 
 #[tokio::test]

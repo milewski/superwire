@@ -88,6 +88,16 @@ data: {"output":{"result":{"message":"Welcome to Superwire."}}}
 
 Exact event payloads may evolve with the executor. Treat `workflow_completed` as the terminal success event and `workflow_failed` as the terminal failure event.
 
+Streaming responses include an `x-superwire-run-id` response header. If the client connection drops unintentionally, reconnect with `GET /execute/{run_id}/events` and pass the last received SSE event id with the `Last-Event-ID` header.
+
+To intentionally stop backend work for a running stream, call:
+
+```bash
+curl -X POST http://localhost:13703/execute/{run_id}/cancel
+```
+
+Cancelling is different from disconnecting. A disconnected stream remains available for reconnection; a cancelled run is marked terminal and the executor aborts its backend task.
+
 ## Security notes
 
 - Do not log raw request bodies in production because `secrets` contains provider and MCP credentials.
