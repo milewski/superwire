@@ -231,6 +231,10 @@ pub enum ValidationIssue {
         field_name: String,
         context: ValidationContext,
     },
+    UnknownLocalBindingReference {
+        binding_name: String,
+        context: ValidationContext,
+    },
     UnknownDynamicFieldReference {
         field_name: String,
         context: ValidationContext,
@@ -327,6 +331,7 @@ impl ValidationIssue {
             Self::MissingInputDeclaration { .. } => "missing_input_declaration",
             Self::MissingSecretsDeclaration { .. } => "missing_secrets_declaration",
             Self::UnknownInputFieldReference { .. } => "unknown_input_field_reference",
+            Self::UnknownLocalBindingReference { .. } => "unknown_local_binding_reference",
             Self::UnknownDynamicFieldReference { .. } => "unknown_dynamic_field_reference",
             Self::UnknownSecretsFieldReference { .. } => "unknown_secrets_field_reference",
             Self::SecretReferenceInLlmContext { .. } => "secret_reference_in_llm_context",
@@ -466,6 +471,9 @@ impl ValidationIssue {
             Self::UnknownInputFieldReference { field_name, context } => {
                 format!("Unknown input field `{field_name}` referenced in {}.", context.describe())
             }
+            Self::UnknownLocalBindingReference { binding_name, context } => {
+                format!("Unknown local binding `{binding_name}` referenced in {}.", context.describe())
+            }
             Self::UnknownDynamicFieldReference { field_name, context } => {
                 format!("Unknown dynamic field `{field_name}` referenced in {}.", context.describe())
             }
@@ -537,6 +545,7 @@ impl ValidationIssue {
     }
 
     #[must_use]
+    #[allow(clippy::too_many_lines)]
     fn help_message(&self) -> Option<String> {
         match self {
             Self::DuplicateProvider { .. }
@@ -584,6 +593,10 @@ impl ValidationIssue {
             | Self::InvalidKeywordReferenceRoot { keyword: _, context: _ }
             | Self::MissingDynamicDeclaration { context: _ }
             | Self::UnknownInputFieldReference { field_name: _, context: _ }
+            | Self::UnknownLocalBindingReference {
+                binding_name: _,
+                context: _,
+            }
             | Self::UnknownDynamicFieldReference { field_name: _, context: _ }
             | Self::UnknownSecretsFieldReference { field_name: _, context: _ }
             | Self::SecretReferenceInLlmContext {
@@ -931,6 +944,10 @@ impl From<&ValidationIssue> for DiagnosticCode {
             ValidationIssue::MissingInputDeclaration { context: _ } => Self::MissingInputDeclaration,
             ValidationIssue::MissingSecretsDeclaration { context: _ } => Self::MissingSecretsDeclaration,
             ValidationIssue::UnknownInputFieldReference { field_name: _, context: _ } => Self::UnknownInputFieldReference,
+            ValidationIssue::UnknownLocalBindingReference {
+                binding_name: _,
+                context: _,
+            } => Self::UnknownLocalBindingReference,
             ValidationIssue::UnknownDynamicFieldReference { field_name: _, context: _ } => Self::UnknownDynamicFieldReference,
             ValidationIssue::UnknownSecretsFieldReference { field_name: _, context: _ } => Self::UnknownSecretsFieldReference,
             ValidationIssue::SecretReferenceInLlmContext {

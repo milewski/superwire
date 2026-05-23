@@ -130,6 +130,7 @@ impl From<CoreDiagnosticCode> for DiagnosticCode {
             CoreDiagnosticCode::MissingInputDeclaration => Self::MissingInputDeclaration,
             CoreDiagnosticCode::MissingSecretsDeclaration => Self::MissingSecretsDeclaration,
             CoreDiagnosticCode::UnknownDynamicFieldReference => Self::UnknownDynamicFieldReference,
+            CoreDiagnosticCode::UnknownLocalBindingReference => Self::UnknownLocalBindingReference,
             CoreDiagnosticCode::UnknownInputFieldReference => Self::UnknownInputFieldReference,
             CoreDiagnosticCode::UnknownSecretsFieldReference => Self::UnknownSecretsFieldReference,
             CoreDiagnosticCode::SecretReferenceInLlmContext => Self::SecretReferenceInLlmContext,

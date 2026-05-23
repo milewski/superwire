@@ -164,3 +164,26 @@ fn reports_invalid_reference_path_for_for_loop_agent_output_field() {
 
     assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::InvalidReferencePath);
 }
+
+#[test]
+fn reports_unknown_local_binding_for_missing_for_loop_template_binding() {
+    let diagnostics = inline_diagnostics! {
+        dynamic {
+            examples: [
+                {
+                    id: 123
+                    text: "example"
+                },
+            ]
+        }
+
+        agent stage_1 for { id, text } in dynamic.examples {
+            instruction: "transcript: {{ answer }}"
+            output {
+                summary: string
+            }
+        }
+    };
+
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::UnknownLocalBindingReference);
+}

@@ -68,6 +68,8 @@ pub enum DiagnosticCode {
     MissingSecretsDeclaration,
     #[serde(rename = "unknown_dynamic_field_reference")]
     UnknownDynamicFieldReference,
+    #[serde(rename = "unknown_local_binding_reference")]
+    UnknownLocalBindingReference,
     #[serde(rename = "unknown_input_field_reference")]
     UnknownInputFieldReference,
     #[serde(rename = "unknown_secrets_field_reference")]

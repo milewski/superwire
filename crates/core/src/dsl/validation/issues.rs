@@ -109,6 +109,13 @@ impl Reference {
         }
     }
 
+    pub(super) fn unknown_local_binding_reference_issue(binding_name: &str, context: ValidationContext) -> ValidationIssue {
+        ValidationIssue::UnknownLocalBindingReference {
+            binding_name: binding_name.to_owned(),
+            context,
+        }
+    }
+
     pub(super) fn unknown_secrets_field_reference_issue(field_name: &str, context: ValidationContext) -> ValidationIssue {
         ValidationIssue::UnknownSecretsFieldReference {
             field_name: field_name.to_owned(),

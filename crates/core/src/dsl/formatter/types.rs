@@ -212,8 +212,15 @@ impl TypeExpression {
 
     fn should_break_inside_array(&self) -> bool {
         match self {
-            Self::Object(_) | Self::Variant { discriminator: _, cases: _ } => true,
-            Self::Array { item_type, fixed_length: _ } => item_type.should_break_inside_array(),
+            Self::Object(_)
+            | Self::Variant {
+                discriminator: _,
+                cases: _,
+            } => true,
+            Self::Array {
+                item_type,
+                fixed_length: _,
+            } => item_type.should_break_inside_array(),
             Self::Tuple(tuple_items) | Self::Union(tuple_items) => tuple_items.iter().any(Self::should_break_inside_array),
             Self::String
             | Self::Number

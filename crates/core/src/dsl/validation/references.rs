@@ -284,6 +284,7 @@ struct KeywordReferenceValidationState<'validation> {
     missing_input_declaration_contexts: HashSet<ValidationContext>,
     missing_secrets_declaration_contexts: HashSet<ValidationContext>,
     unknown_dynamic_field_references: HashSet<(ValidationContext, String)>,
+    unknown_local_binding_references: HashSet<(ValidationContext, String)>,
     unknown_input_field_references: HashSet<(ValidationContext, String)>,
     unknown_secrets_field_references: HashSet<(ValidationContext, String)>,
     unknown_resource_references: HashSet<(ValidationContext, String)>,
@@ -312,6 +313,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             missing_input_declaration_contexts: HashSet::new(),
             missing_secrets_declaration_contexts: HashSet::new(),
             unknown_dynamic_field_references: HashSet::new(),
+            unknown_local_binding_references: HashSet::new(),
             unknown_input_field_references: HashSet::new(),
             unknown_secrets_field_references: HashSet::new(),
             unknown_resource_references: HashSet::new(),
@@ -672,6 +674,8 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         secret_reference_policy: SecretReferencePolicy,
     ) {
         let Some(reference_root_keyword) = reference.root_keyword() else {
+            self.validate_local_binding_reference(reference, dynamic_field_types, context);
+
             return;
         };
 
@@ -707,6 +711,32 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             }
             ReferenceKeyword::Model | ReferenceKeyword::Tool | ReferenceKeyword::Resource | ReferenceKeyword::Prompt => {}
         }
+    }
+
+    fn validate_local_binding_reference(
+        &mut self,
+        reference: &Reference,
+        local_binding_types: &HashMap<String, crate::semantic::support::types::WorkflowType>,
+        context: ValidationContext,
+    ) {
+        let Some(binding_name) = reference.root_identifier() else {
+            return;
+        };
+
+        let Some(local_binding_type) = local_binding_types.get(binding_name) else {
+            let issue_key = (context.clone(), binding_name.to_owned());
+
+            if self.unknown_local_binding_references.insert(issue_key) {
+                self.validation_report.push_issue_with_span(
+                    Reference::unknown_local_binding_reference_issue(binding_name, context),
+                    Some(reference.span),
+                );
+            }
+
+            return;
+        };
+
+        self.validate_workflow_type_reference_path_from(reference, local_binding_type.clone(), context, 0);
     }
 
     fn validate_agent_reference(&mut self, reference: &Reference, context: ValidationContext) {
@@ -919,9 +949,19 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         start_type: crate::semantic::support::types::WorkflowType,
         context: ValidationContext,
     ) {
+        self.validate_workflow_type_reference_path_from(reference, start_type, context, 1);
+    }
+
+    fn validate_workflow_type_reference_path_from(
+        &mut self,
+        reference: &Reference,
+        start_type: crate::semantic::support::types::WorkflowType,
+        context: ValidationContext,
+        access_start_index: usize,
+    ) {
         let mut candidate_types = vec![start_type];
 
-        for reference_access in reference.projection_accesses() {
+        for reference_access in reference.accesses_from(access_start_index) {
             if candidate_types.iter().any(workflow_type_can_be_null) && !reference_access.optional {
                 self.push_missing_optional_reference_access(reference, reference_access.field.as_str(), context.clone());
 

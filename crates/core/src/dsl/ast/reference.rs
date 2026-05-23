@@ -41,6 +41,11 @@ impl Reference {
     }
 
     #[must_use]
+    pub fn root_identifier(&self) -> Option<&str> {
+        self.root.as_identifier()
+    }
+
+    #[must_use]
     pub fn is_keyword_root(&self, reference_keyword: ReferenceKeyword) -> bool {
         self.root_keyword() == Some(reference_keyword)
     }

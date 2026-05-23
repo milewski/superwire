@@ -879,6 +879,40 @@ fn reports_unknown_input_field_reference() {
 }
 
 #[test]
+fn reports_unknown_local_binding_reference_in_for_loop_instruction_template() {
+    let workflow = parse_inline_workflow! {
+        provider openai from openai {}
+
+        model plus from openai {
+            id: "test-model"
+        }
+
+        dynamic {
+            examples: [
+                {
+                    id: 123
+                    text: "example"
+                },
+            ]
+        }
+
+        agent stage_1 for { id, text } in dynamic.examples {
+            model: model.plus
+            instruction: "transcript: {{ answer }}"
+            output {
+                summary: string
+            }
+        }
+    };
+
+    assert_workflow_issues_contain!(
+        workflow,
+        ValidationIssue::UnknownLocalBindingReference { binding_name, context }
+            if binding_name == "answer" && *context == ValidationContext::Agent("stage_1".to_owned())
+    );
+}
+
+#[test]
 fn reference_diagnostics_include_reference_span() {
     let workflow_source = workflow_doc_source! {
         /// input {
