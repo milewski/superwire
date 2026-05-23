@@ -1,5 +1,6 @@
 use super::fixtures;
 use crate::api::ValidationRequest;
+use crate::event::ExecutorEventKind;
 use crate::model::{ModelToolSource, ToolCallLimitScope};
 use crate::service::ExecutorService;
 use crate::tests::support::{request, TrackingModelProvider};
@@ -1337,6 +1338,80 @@ async fn mcp_tool_call_projects_result_to_declared_output_schema() {
         })
     );
     assert_eq!(server.method_count(TestMcpMethod::ToolsCall), 1);
+}
+
+#[tokio::test]
+async fn mcp_batch_import_alias_to_same_tool_executes_each_local_tool_with_own_bindings() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        provider openai from openai {
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+        }
+
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
+
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        from mcp.local {
+            bindings {
+                project_id: 14
+            }
+
+            tool fetch_qualitative_question_answers {
+                bindings {
+                    task_types: ["video_recording", "open_written"]
+                }
+            }
+
+            tool fetch_qualitative_question_answers as video_recording_answers {
+                bindings {
+                    task_types: ["video_recording"]
+                }
+            }
+        }
+
+        dynamic {
+            all_qualitative_questions: call tool.fetch_qualitative_question_answers
+            video_recording_answers: call tool.video_recording_answers
+        }
+
+        output {
+            test: dynamic.video_recording_answers
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+
+    let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
+    let mut receiver = service.execute_stream(request(&workflow_source));
+    let mut started_calls = Vec::new();
+
+    while let Some(event) = receiver.recv().await {
+        if event.kind == ExecutorEventKind::McpCallStarted {
+            started_calls.push(event.data.expect("MCP call started event should have data"));
+        }
+    }
+
+    let tool_calls = started_calls
+        .iter()
+        .filter(|event_data| event_data["item_name"] == "fetch_qualitative_question_answers")
+        .collect::<Vec<_>>();
+
+    assert_eq!(tool_calls.len(), 2);
+    assert!(tool_calls.iter().any(|event_data| {
+        event_data["target_name"] == "fetch_qualitative_question_answers"
+            && event_data["params"]["project_id"] == 14
+            && event_data["params"]["task_types"] == json!(["video_recording", "open_written"])
+    }));
+    assert!(tool_calls.iter().any(|event_data| {
+        event_data["target_name"] == "video_recording_answers"
+            && event_data["params"]["project_id"] == 14
+            && event_data["params"]["task_types"] == json!(["video_recording"])
+    }));
 }
 
 #[tokio::test]
