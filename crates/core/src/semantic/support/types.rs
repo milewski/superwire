@@ -221,7 +221,19 @@ impl WorkflowType {
                 if discriminator == field_name {
                     field_types.push(Self::StringEnum(cases.keys().cloned().collect()));
                 } else {
-                    *includes_null = true;
+                    let initial_field_count = field_types.len();
+
+                    for case_fields in cases.values() {
+                        if let Some(field_type) = case_fields.get(field_name) {
+                            field_types.push(field_type.clone());
+                        } else {
+                            *includes_null = true;
+                        }
+                    }
+
+                    if field_types.len() == initial_field_count {
+                        *includes_null = true;
+                    }
                 }
             }
             Self::Union(members) => {
@@ -1389,12 +1401,13 @@ pub fn workflow_type_to_schemars_schema(
 
 fn format_validation_issue(validation_error: ValidationError<'_>) -> String {
     let instance_path = normalize_instance_path(&validation_error.instance_path().to_string());
+    let validation_message = validation_error.masked().to_string();
 
     if instance_path == "$" {
-        return validation_error.to_string();
+        return format!("{instance_path}: {validation_message}");
     }
 
-    format!("{instance_path}: {validation_error}")
+    format!("{instance_path}: {validation_message}")
 }
 
 fn normalize_instance_path(instance_path: &str) -> String {

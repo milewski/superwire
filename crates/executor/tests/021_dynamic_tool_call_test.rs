@@ -35,6 +35,7 @@ async fn executes_dynamic_tool_call_before_agent() {
 
 #[tokio::test]
 async fn fails_when_mcp_tool_output_does_not_match_schema() {
+    let verbose_tool_value = "too-long-to-repeat-".repeat(32);
     let execution_error = TestRunner::workflow(fixtures::DYNAMIC_TOOL_CALL)
         .input(json!({ "project_id": 42, "task_id": 7 }))
         .provider("openai", |provider| {
@@ -42,18 +43,23 @@ async fn fails_when_mcp_tool_output_does_not_match_schema() {
                 model.turn().expect_prompt("Summarize:").respond_json(json!({ "summary": "done" }));
             });
         })
-        .mcp("local", |mcp| {
-            mcp.tool("fetch_task_data", |tool| {
-                tool.input_schema(schema! { project_id: i64, task_id: i64 })
+        .mcp("local", |mcp_builder| {
+            mcp_builder.tool("fetch_task_data", |tool_builder| {
+                tool_builder
+                    .input_schema(schema! { project_id: i64, task_id: i64 })
                     .output_schema(schema! { task_title: String, participants: i64 })
-                    .respond_json(json!({ "task_title": "Survey", "participants": "ten" }));
+                    .respond_json(json!({ "task_title": "Survey", "participants": verbose_tool_value }));
             });
         })
         .run()
         .await
         .expect_err("execution should fail when MCP tool output violates its schema");
 
-    assert!(execution_error.to_string().contains("participants"));
+    let error_message = execution_error.to_string();
+
+    assert!(error_message.contains("$.data.participants"), "{error_message}");
+    assert!(error_message.contains("value is not of type"), "{error_message}");
+    assert!(!error_message.contains("too-long-to-repeat"), "{error_message}");
 }
 
 #[tokio::test]

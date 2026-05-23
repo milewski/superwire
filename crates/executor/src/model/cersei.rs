@@ -931,12 +931,13 @@ fn validate_tool_arguments(arguments: &Value, schema: &Value) -> Result<(), Stri
 
 fn format_validation_issue(validation_error: ValidationError<'_>) -> String {
     let instance_path = normalize_instance_path(&validation_error.instance_path().to_string());
+    let validation_message = validation_error.masked().to_string();
 
     if instance_path == "$" {
-        return validation_error.to_string();
+        return format!("{instance_path}: {validation_message}");
     }
 
-    format!("{instance_path}: {validation_error}")
+    format!("{instance_path}: {validation_message}")
 }
 
 fn normalize_instance_path(instance_path: &str) -> String {
