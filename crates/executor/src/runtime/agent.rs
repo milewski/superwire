@@ -3,7 +3,7 @@ use crate::event::ExecutorEvent;
 use crate::model::{ModelProvider, ModelRequest, ModelSchema, ModelSchemaCache, ModelToolDefinition, ToolCallTracker};
 use crate::runtime::cache::{hash_serializable_value, AgentCacheKey, CachedAgentExecution};
 use crate::runtime::mcp::normalize_prompt;
-use crate::runtime::schema::PlannedAgentSchemaExt;
+use crate::runtime::schema::{AgentOutputInjections, PlannedAgentSchemaExt};
 use crate::runtime::state::RuntimeState;
 use serde::Serialize;
 use serde_json::Value;
@@ -31,6 +31,7 @@ struct PreparedAgentRequest {
     inference: HashMap<String, Value>,
     prompt: String,
     output_schema: ModelSchema,
+    output_injections: AgentOutputInjections,
     tool_definitions: Vec<ModelToolDefinition>,
     tool_names: Vec<String>,
 }
@@ -60,6 +61,7 @@ impl PreparedAgentRequest {
             .map(|(field_name, field_value)| (field_name.clone(), field_value.clone()))
             .collect::<BTreeMap<_, _>>();
         let output_schema = self.output_schema.cache_fingerprint_value(&mut schema_cache);
+        let output_injections = self.output_injections.fingerprint_value();
         let tools = self
             .tool_definitions
             .iter()
@@ -74,6 +76,7 @@ impl PreparedAgentRequest {
             inference,
             prompt: self.prompt.clone(),
             output_schema,
+            output_injections,
             tools,
         })
     }
@@ -108,6 +111,7 @@ struct PreparedAgentRequestCacheFingerprint {
     inference: BTreeMap<String, Value>,
     prompt: String,
     output_schema: Value,
+    output_injections: Value,
     tools: Vec<Value>,
 }
 
@@ -198,7 +202,8 @@ impl WorkflowExecutor {
             }
         }
 
-        let model_response = model_provider
+        let output_injections = prepared_request.output_injections.clone();
+        let mut model_response = model_provider
             .generate(prepared_request.into_model_request(
                 agent_execution_context.event_sender.clone(),
                 self.mcp_pool.clone(),
@@ -207,6 +212,8 @@ impl WorkflowExecutor {
             .await?;
 
         log::debug!("agent `{}` model response received", planned_agent.name);
+
+        model_response.output = planned_agent.inject_output_values(model_response.output, &output_injections)?;
 
         planned_agent.validate_output_value(&model_response.output)?;
 
@@ -280,6 +287,7 @@ impl WorkflowExecutor {
         };
         let mut tool_definitions = self.resolve_agent_use_definitions(planned_agent, evaluation_context)?;
         let output_schema = planned_agent.push_finalize_tool_definition(&mut tool_definitions);
+        let output_injections = planned_agent.output_injections(evaluation_context)?;
         let tool_names = tool_definitions
             .iter()
             .map(ModelToolDefinition::event_display_name)
@@ -292,6 +300,7 @@ impl WorkflowExecutor {
             inference,
             prompt,
             output_schema,
+            output_injections,
             tool_definitions,
             tool_names,
         })

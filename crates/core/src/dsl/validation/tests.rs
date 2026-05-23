@@ -1481,7 +1481,7 @@ fn rejects_schema_field_type_references_that_are_not_enums() {
 }
 
 #[test]
-fn reports_invalid_type_expression_reference_root() {
+fn reports_unknown_local_binding_in_agent_output_type_reference() {
     let workflow = parse_inline_workflow! {
         agent greeting {
             output {
@@ -1492,10 +1492,10 @@ fn reports_invalid_type_expression_reference_root() {
 
     assert_workflow_issues_contain!(
         workflow,
-        ValidationIssue::InvalidTypeExpressionReference {
-            reference_path,
+        ValidationIssue::UnknownLocalBindingReference {
+            binding_name,
             context
-        } if reference_path == "test" && *context == ValidationContext::Agent("greeting".to_owned())
+        } if binding_name == "test" && *context == ValidationContext::Agent("greeting".to_owned())
     );
 }
 

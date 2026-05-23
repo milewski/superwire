@@ -48,7 +48,7 @@ fn reports_invalid_type_expression_reference_diagnostic() {
         }
     };
 
-    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::InvalidTypeExpressionReference);
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::UnknownLocalBindingReference);
 }
 
 #[test]

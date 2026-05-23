@@ -176,12 +176,13 @@ impl Reference {
         }
 
         let Some(reference_root_keyword) = self.root_keyword() else {
-            self.push_invalid_type_expression_reference(context, validation_state);
-
             return;
         };
 
-        if !matches!(reference_root_keyword, ReferenceKeyword::Agent | ReferenceKeyword::Input) {
+        if !matches!(
+            reference_root_keyword,
+            ReferenceKeyword::Agent | ReferenceKeyword::Dynamic | ReferenceKeyword::Input
+        ) {
             self.push_invalid_type_expression_reference(context, validation_state);
         }
     }

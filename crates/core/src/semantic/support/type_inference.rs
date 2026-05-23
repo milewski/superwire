@@ -1,5 +1,7 @@
-use crate::dsl::{Expression, MatchBranch, MatchExpression, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart, ToolCall};
-use crate::semantic::support::types::{ensure_type_matches, WorkflowType};
+use crate::dsl::{
+    Expression, MatchBranch, MatchExpression, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart, ToolCall, TypeExpression,
+};
+use crate::semantic::support::types::{ensure_type_matches, workflow_type_from_dsl, WorkflowType};
 use crate::semantic::WorkflowSemanticError;
 use std::collections::{BTreeSet, HashMap};
 
@@ -128,6 +130,90 @@ impl Expression {
 
                 Ok(WorkflowType::Object(field_types))
             }
+        }
+    }
+}
+
+impl TypeExpression {
+    pub fn infer_agent_output_type<HashBuilder: std::hash::BuildHasher>(
+        &self,
+        type_inference_context: &TypeInferenceContext,
+        named_schema_types: &HashMap<String, TypeExpression, HashBuilder>,
+        context: &str,
+    ) -> Result<WorkflowType, WorkflowSemanticError> {
+        match self {
+            Self::StringEnumReference(reference) if reference.schema_name_and_field_path().is_none() => {
+                Expression::Reference(reference.clone()).infer_type(type_inference_context, context)
+            }
+            Self::Array { item_type, fixed_length } => Ok(WorkflowType::Array {
+                item_type: Box::new(item_type.infer_agent_output_type(type_inference_context, named_schema_types, context)?),
+                fixed_length: *fixed_length,
+            }),
+            Self::Tuple(item_types) => {
+                let mut inferred_item_types = Vec::with_capacity(item_types.len());
+
+                for item_type in item_types {
+                    inferred_item_types.push(item_type.infer_agent_output_type(type_inference_context, named_schema_types, context)?);
+                }
+
+                Ok(WorkflowType::Tuple(inferred_item_types))
+            }
+            Self::Object(fields) => {
+                let mut inferred_fields = std::collections::BTreeMap::new();
+
+                for field in fields {
+                    let field_context = format!("{context} field `{}`", field.name);
+                    let field_type =
+                        field
+                            .field_type
+                            .infer_agent_output_type(type_inference_context, named_schema_types, &field_context)?;
+                    inferred_fields.insert(field.name.clone(), field_type);
+                }
+
+                Ok(WorkflowType::Object(inferred_fields))
+            }
+            Self::Variant { discriminator, cases } => {
+                let mut inferred_cases = std::collections::BTreeMap::new();
+
+                for case in cases {
+                    let mut inferred_fields = std::collections::BTreeMap::new();
+
+                    for field in &case.fields {
+                        let field_context = format!("{context} variant `{}` field `{}`", case.name, field.name);
+                        let field_type =
+                            field
+                                .field_type
+                                .infer_agent_output_type(type_inference_context, named_schema_types, &field_context)?;
+                        inferred_fields.insert(field.name.clone(), field_type);
+                    }
+
+                    inferred_fields.insert(discriminator.clone(), WorkflowType::StringEnum(vec![case.name.clone()]));
+                    inferred_cases.insert(case.name.clone(), inferred_fields);
+                }
+
+                Ok(WorkflowType::Variant {
+                    discriminator: discriminator.clone(),
+                    cases: inferred_cases,
+                })
+            }
+            Self::Union(members) => {
+                let mut inferred_members = Vec::with_capacity(members.len());
+
+                for member in members {
+                    inferred_members.push(member.infer_agent_output_type(type_inference_context, named_schema_types, context)?);
+                }
+
+                Ok(WorkflowType::Union(inferred_members).normalize())
+            }
+            Self::String
+            | Self::Number
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::AnyObject
+            | Self::SchemaReference(_)
+            | Self::StringEnum(_)
+            | Self::StringEnumReference(_) => workflow_type_from_dsl(self, named_schema_types),
         }
     }
 }

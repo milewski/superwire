@@ -38,6 +38,7 @@ pub const VARIANT_MATCH_PROJECTION: &str = include_str!("../fixtures/036_variant
 pub const SCHEMA_TYPES: &str = include_str!("../fixtures/037_schema_types.wire");
 pub const SCHEMA_VARIANT_TYPES: &str = include_str!("../fixtures/038_schema_variant_types.wire");
 pub const CERSEI_PROVIDERS: &str = include_str!("../fixtures/039_cersei_providers.wire");
+pub const AGENT_OUTPUT_INJECTIONS: &str = include_str!("../fixtures/040_agent_output_injections.wire");
 
 // Negative Tests
 pub const MCP_TOOL_OUTPUT_SCHEMA_OVERRIDE_NON_ITERABLE: &str =

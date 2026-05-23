@@ -1,9 +1,10 @@
 use crate::dsl::DslProperty;
 use crate::dsl::{
-    structure, AgentDeclaration, AgentExpressionPropertyName, AgentProperty, Declaration, Expression, InputDeclaration, ModelDeclaration,
-    ModelUsage, ObjectField, OutputDeclaration, ProviderDeclaration, SecretsDeclaration, ToolDeclaration, TypeExpression, Workflow,
+    structure, AgentDeclaration, AgentExpressionPropertyName, AgentForLoop, AgentForLoopPattern, AgentProperty, Declaration, Expression,
+    InputDeclaration, ModelDeclaration, ModelUsage, ObjectField, OutputDeclaration, ProviderDeclaration, SecretsDeclaration,
+    ToolDeclaration, TypeExpression, Workflow,
 };
-use crate::semantic::support::type_inference::TypeInferenceContext;
+use crate::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
 use crate::semantic::support::types::{ensure_type_matches, workflow_type_from_rust_schema, WorkflowSchemaCache, WorkflowType};
 use crate::semantic::WorkflowSemanticError;
 use schemars::JsonSchema;
@@ -122,7 +123,8 @@ where
         .clone();
 
     let tool_types = collect_tool_types(workflow, &named_schema_types)?;
-    let (agents, agent_output_types) = collect_typed_agents(workflow, &named_schema_types)?;
+    let (agents, agent_output_types) =
+        collect_typed_agents(workflow, &named_schema_types, input_type.clone(), secrets_type.clone(), &tool_types)?;
     let workflow_output_type = infer_workflow_output_type(
         workflow,
         &output_declaration,
@@ -157,7 +159,8 @@ pub fn build_dynamic_typed_workflow_ir(workflow: &Workflow) -> Result<TypedWorkf
         .clone();
 
     let tool_types = collect_tool_types(workflow, &named_schema_types)?;
-    let (agents, agent_output_types) = collect_typed_agents(workflow, &named_schema_types)?;
+    let (agents, agent_output_types) =
+        collect_typed_agents(workflow, &named_schema_types, input_type.clone(), secrets_type.clone(), &tool_types)?;
     let workflow_output_type = infer_workflow_output_type(
         workflow,
         &output_declaration,
@@ -252,11 +255,31 @@ fn build_secrets_type(
 fn collect_typed_agents(
     workflow: &Workflow,
     named_schema_types: &HashMap<String, TypeExpression>,
+    input_type: Option<WorkflowType>,
+    secrets_type: Option<WorkflowType>,
+    tool_types: &ToolTypes,
 ) -> Result<(Vec<TypedAgentIr>, HashMap<String, WorkflowType>), WorkflowSemanticError> {
     let provider_declarations = workflow.provider_declarations_by_name();
     let model_declarations = workflow.model_declarations_by_name();
     let mut agents = Vec::new();
     let mut agent_output_types = HashMap::new();
+    let mut workflow_type_inference_context = TypeInferenceContext {
+        input_type: input_type.clone(),
+        secrets_type: secrets_type.clone(),
+        agent_output_types: HashMap::new(),
+        tool_input_types: tool_types.input.clone(),
+        tool_binding_types: tool_types.bindings.clone(),
+        tool_output_types: tool_types.output.clone(),
+        local_binding_types: HashMap::new(),
+    };
+    let workflow_dynamic_fields = workflow
+        .dynamic_blocks()
+        .flat_map(|dynamic_block| dynamic_block.fields.as_slice())
+        .collect::<Vec<_>>();
+
+    infer_dynamic_field_types(workflow_dynamic_fields, &mut workflow_type_inference_context)?;
+
+    let workflow_dynamic_field_types = workflow_type_inference_context.local_binding_types.clone();
 
     for declaration in workflow.declarations() {
         let Declaration::Agent(agent_declaration) = declaration else {
@@ -265,8 +288,39 @@ fn collect_typed_agents(
 
         let iteration_output_type_expression = agent_declaration.inferred_iteration_output_type_expression();
         let final_output_type_expression = agent_declaration.inferred_final_output_type_expression();
-        let iteration_output_type = iteration_output_type_expression.to_workflow_type(named_schema_types)?;
-        let final_output_type = final_output_type_expression.to_workflow_type(named_schema_types)?;
+        let mut agent_type_inference_context = TypeInferenceContext {
+            input_type: input_type.clone(),
+            secrets_type: secrets_type.clone(),
+            agent_output_types: agent_output_types.clone(),
+            tool_input_types: tool_types.input.clone(),
+            tool_binding_types: tool_types.bindings.clone(),
+            tool_output_types: tool_types.output.clone(),
+            local_binding_types: workflow_dynamic_field_types.clone(),
+        };
+
+        if let Some(agent_for_loop) = &agent_declaration.for_loop {
+            let for_loop_binding_types = agent_for_loop.binding_types(&agent_type_inference_context)?;
+
+            agent_type_inference_context.local_binding_types.extend(for_loop_binding_types);
+        }
+
+        let agent_dynamic_fields = agent_declaration
+            .dynamic_blocks()
+            .flat_map(|dynamic_block| dynamic_block.fields.iter())
+            .collect::<Vec<_>>();
+
+        infer_dynamic_field_types(agent_dynamic_fields, &mut agent_type_inference_context)?;
+
+        let iteration_output_type = iteration_output_type_expression.infer_agent_output_type(
+            &agent_type_inference_context,
+            named_schema_types,
+            &format!("agent `{}` output type", agent_declaration.name),
+        )?;
+        let final_output_type = final_output_type_expression.infer_agent_output_type(
+            &agent_type_inference_context,
+            named_schema_types,
+            &format!("agent `{}` final output type", agent_declaration.name),
+        )?;
 
         let model_usage = required_agent_model_usage(agent_declaration)?;
         let model_name = model_usage
@@ -314,6 +368,73 @@ fn collect_typed_agents(
     }
 
     Ok((agents, agent_output_types))
+}
+
+trait AgentForLoopTypeExt {
+    fn binding_types(&self, type_inference_context: &TypeInferenceContext) -> Result<HashMap<String, WorkflowType>, WorkflowSemanticError>;
+}
+
+impl AgentForLoopTypeExt for AgentForLoop {
+    fn binding_types(&self, type_inference_context: &TypeInferenceContext) -> Result<HashMap<String, WorkflowType>, WorkflowSemanticError> {
+        let iterable_type = infer_expression_type(&self.iterable, type_inference_context, "agent for-loop iterable type inference")?;
+        let item_type = iterable_type
+            .array_item_type()
+            .ok_or_else(|| WorkflowSemanticError::ExpressionEvaluation {
+                context: "agent for-loop iterable type inference".to_string(),
+                message: format!("for-loop iterable must be an array, found {iterable_type}"),
+            })?;
+        let mut binding_types = HashMap::new();
+
+        match &self.pattern {
+            AgentForLoopPattern::Identifier(identifier) => {
+                binding_types.insert(identifier.clone(), item_type);
+            }
+            AgentForLoopPattern::ObjectDestructuring(field_names) => {
+                for field_name in field_names {
+                    let field_type = item_type
+                        .field_type(field_name)
+                        .ok_or_else(|| WorkflowSemanticError::ExpressionEvaluation {
+                            context: "agent for-loop binding type inference".to_string(),
+                            message: format!("for-loop item type does not include field `{field_name}`"),
+                        })?;
+
+                    binding_types.insert(field_name.clone(), field_type);
+                }
+            }
+        }
+
+        Ok(binding_types)
+    }
+}
+
+trait WorkflowTypeArrayExt {
+    fn array_item_type(&self) -> Option<WorkflowType>;
+}
+
+impl WorkflowTypeArrayExt for WorkflowType {
+    fn array_item_type(&self) -> Option<WorkflowType> {
+        match self {
+            Self::Array {
+                item_type,
+                fixed_length: _,
+            } => Some((**item_type).clone()),
+            Self::Union(union_members) => union_members.iter().find_map(Self::array_item_type),
+            Self::Any
+            | Self::String
+            | Self::Integer
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::AnyObject
+            | Self::StringEnum(_)
+            | Self::Tuple(_)
+            | Self::Object(_)
+            | Self::Variant {
+                discriminator: _,
+                cases: _,
+            } => None,
+        }
+    }
 }
 
 fn collect_dependencies_for_agent(

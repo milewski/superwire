@@ -149,7 +149,17 @@ pub(super) fn validate_agent_references(workflow: &Workflow, validation_index: &
                                 keyword_reference_validation_state.validation_report,
                             );
                         }
-                        AgentProperty::Output { fields: _, span: _ } | AgentProperty::Unknown { name: _, span: _ } => {}
+                        AgentProperty::Output { fields, span: _ } => {
+                            for output_field in fields {
+                                keyword_reference_validation_state.validate_type_expression_references(
+                                    &output_field.field_type,
+                                    &agent_dynamic_field_types,
+                                    agent_context.clone(),
+                                    SecretReferencePolicy::Forbid,
+                                );
+                            }
+                        }
+                        AgentProperty::Unknown { name: _, span: _ } => {}
                     }
                 }
             }
@@ -600,6 +610,67 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                 }
             }
             Expression::StringLiteral(_) | Expression::NumberLiteral(_) | Expression::BooleanLiteral(_) | Expression::NullLiteral => {}
+        }
+    }
+
+    fn validate_type_expression_references(
+        &mut self,
+        type_expression: &TypeExpression,
+        dynamic_field_types: &HashMap<String, WorkflowType>,
+        context: ValidationContext,
+        secret_reference_policy: SecretReferencePolicy,
+    ) {
+        match type_expression {
+            TypeExpression::StringEnumReference(reference) if reference.schema_name_and_field_path().is_none() => {
+                self.validate_reference(reference, dynamic_field_types, context, secret_reference_policy);
+            }
+            TypeExpression::Array {
+                item_type,
+                fixed_length: _,
+            } => {
+                self.validate_type_expression_references(item_type, dynamic_field_types, context, secret_reference_policy);
+            }
+            TypeExpression::Tuple(type_expressions) | TypeExpression::Union(type_expressions) => {
+                for nested_type_expression in type_expressions {
+                    self.validate_type_expression_references(
+                        nested_type_expression,
+                        dynamic_field_types,
+                        context.clone(),
+                        secret_reference_policy,
+                    );
+                }
+            }
+            TypeExpression::Object(fields) => {
+                for field in fields {
+                    self.validate_type_expression_references(
+                        &field.field_type,
+                        dynamic_field_types,
+                        context.clone(),
+                        secret_reference_policy,
+                    );
+                }
+            }
+            TypeExpression::Variant { discriminator: _, cases } => {
+                for variant_case in cases {
+                    for field in &variant_case.fields {
+                        self.validate_type_expression_references(
+                            &field.field_type,
+                            dynamic_field_types,
+                            context.clone(),
+                            secret_reference_policy,
+                        );
+                    }
+                }
+            }
+            TypeExpression::String
+            | TypeExpression::Number
+            | TypeExpression::Float
+            | TypeExpression::Boolean
+            | TypeExpression::Null
+            | TypeExpression::AnyObject
+            | TypeExpression::SchemaReference(_)
+            | TypeExpression::StringEnum(_)
+            | TypeExpression::StringEnumReference(_) => {}
         }
     }
 
