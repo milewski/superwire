@@ -68,6 +68,9 @@ pub struct ExecutionOptions {
 
     #[serde(default = "default_use_cache")]
     pub use_cache: bool,
+
+    #[serde(default)]
+    pub cache_key: Option<String>,
 }
 
 impl Default for ExecutionOptions {
@@ -76,7 +79,15 @@ impl Default for ExecutionOptions {
             include_events: false,
             max_concurrency: default_max_concurrency(),
             use_cache: default_use_cache(),
+            cache_key: None,
         }
+    }
+}
+
+impl ExecutionOptions {
+    #[must_use]
+    pub fn cache_key_identifier(&self) -> Option<&str> {
+        self.cache_key.as_deref().map(str::trim).filter(|cache_key| !cache_key.is_empty())
     }
 }
 
@@ -96,6 +107,19 @@ pub struct ExecutionResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CacheInvalidationResponse {
     pub purged_entries: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CacheInvalidationRequest {
+    #[serde(default)]
+    pub cache_key: Option<String>,
+}
+
+impl CacheInvalidationRequest {
+    #[must_use]
+    pub fn cache_key_identifier(&self) -> Option<&str> {
+        self.cache_key.as_deref().map(str::trim).filter(|cache_key| !cache_key.is_empty())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

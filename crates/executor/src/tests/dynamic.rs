@@ -257,6 +257,7 @@ async fn agent_dynamic_tool_call_executes_inside_for_loop_agent() {
         include_events: false,
         max_concurrency: 1,
         use_cache: false,
+        cache_key: None,
     };
 
     let output = service

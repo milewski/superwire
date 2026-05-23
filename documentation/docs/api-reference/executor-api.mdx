@@ -21,6 +21,9 @@ The Docker executor exposes three HTTP endpoints:
   "secrets": {
     "api_key": "sk-..."
   },
+  "options": {
+    "cache_key": "tenant-1:conversation-42"
+  },
   "workflow_source_base64": "..."
 }
 ```
@@ -29,6 +32,8 @@ The Docker executor exposes three HTTP endpoints:
 | --- | --- | --- |
 | `input` | object | Public workflow input. Must match the workflow `input` block. |
 | `secrets` | object | Sensitive runtime values. Must match the workflow `secrets` block. |
+| `options.cache_key` | string | Optional client-controlled cache key. When present and caching is enabled, matching agent outputs can be reused for later requests with the same key. |
+| `options.use_cache` | boolean | Optional cache toggle. Defaults to `true`, but cache is only used when `options.cache_key` is present. |
 | `workflow_source_base64` | string | Base64-encoded `.wire` source. |
 
 ## `/execute` response

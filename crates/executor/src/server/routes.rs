@@ -1,4 +1,4 @@
-use crate::api::{ExecutionRequest, FormatRequest, GraphRequest, ValidationRequest};
+use crate::api::{CacheInvalidationRequest, ExecutionRequest, FormatRequest, GraphRequest, ValidationRequest};
 use crate::model::{CerseiModelProvider, ModelProvider};
 use crate::runtime::{AgentCacheConfig, AgentCacheDriver, AgentCacheSession};
 use crate::server::error::ExecutorHttpError;
@@ -25,7 +25,6 @@ use tokio::net::TcpListener;
 use tokio_stream::wrappers::ReceiverStream;
 
 const RUN_IDENTIFIER_HEADER: &str = "x-superwire-run-id";
-const CACHE_SESSION_HEADER: &str = "x-superwire-session-id";
 
 #[derive(Clone)]
 struct ExecutorRouterState<ModelProviderType> {
@@ -126,15 +125,13 @@ where
 {
     match ExecuteResponseKind::from_headers(&request_headers) {
         ExecuteResponseKind::Json => {
-            let cache_session = cache_session_from_headers(&request_headers);
-            let response = state.service.execute_for_session(request, cache_session).await?;
+            let response = state.service.execute(request).await?;
 
             Ok(Json(response).into_response())
         }
 
         ExecuteResponseKind::EventStream => {
-            let cache_session = cache_session_from_headers(&request_headers);
-            let stream_subscription = state.service.start_streamed_execution_for_session(request, cache_session);
+            let stream_subscription = state.service.start_streamed_execution(request);
             let run_identifier = stream_subscription.run_identifier.clone();
             let event_stream = ReceiverStream::new(stream_subscription.receiver).map(event_to_sse_result);
 
@@ -145,12 +142,16 @@ where
 
 async fn invalidate_cache_handler<ModelProviderType>(
     State(state): State<ExecutorRouterState<ModelProviderType>>,
-    request_headers: HeaderMap,
+    request: Option<Json<CacheInvalidationRequest>>,
 ) -> Result<Response, ExecutorHttpError>
 where
     ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
 {
-    let cache_session = cache_session_from_headers(&request_headers);
+    let Some(cache_key) = request.as_ref().and_then(|Json(request)| request.cache_key_identifier()) else {
+        return Ok(StatusCode::BAD_REQUEST.into_response());
+    };
+
+    let cache_session = AgentCacheSession::new(cache_key);
     let response = state.service.invalidate_agent_cache_session(&cache_session)?;
 
     Ok(Json(response).into_response())
@@ -204,35 +205,6 @@ where
     }
 
     response
-}
-
-fn cache_session_from_headers(request_headers: &HeaderMap) -> AgentCacheSession {
-    if let Some(session_identifier) = request_headers
-        .get(CACHE_SESSION_HEADER)
-        .and_then(|header_value| header_value.to_str().ok())
-        .filter(|header_value| !header_value.trim().is_empty())
-    {
-        return AgentCacheSession::new(session_identifier);
-    }
-
-    let user_agent = request_headers
-        .get(header::USER_AGENT)
-        .and_then(|header_value| header_value.to_str().ok())
-        .unwrap_or_default();
-    let accept_language = request_headers
-        .get(header::ACCEPT_LANGUAGE)
-        .and_then(|header_value| header_value.to_str().ok())
-        .unwrap_or_default();
-    let forwarded_for = request_headers
-        .get("x-forwarded-for")
-        .and_then(|header_value| header_value.to_str().ok())
-        .unwrap_or_default();
-    let real_ip = request_headers
-        .get("x-real-ip")
-        .and_then(|header_value| header_value.to_str().ok())
-        .unwrap_or_default();
-
-    AgentCacheSession::from_fingerprint_parts(&[user_agent, accept_language, forwarded_for, real_ip])
 }
 
 enum ExecuteResponseKind {

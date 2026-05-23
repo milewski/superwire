@@ -71,6 +71,18 @@ $result = Workflow::fromSource($source)
     ->run();
 ```
 
+## Cache key
+
+Use `cacheKey()` to opt into executor caching for a specific client-controlled scope. Reuse the same key to reuse matching cached agent outputs, or change the key to start a fresh cache scope.
+
+```php
+$result = Workflow::fromFile(resource_path('workflows/reply.wire'))
+    ->inputs(['message' => 'Hello'])
+    ->secrets(['api_key' => config('services.openai.key')])
+    ->cacheKey("tenant:{$tenantId}:conversation:{$conversationId}")
+    ->run();
+```
+
 ## Stream workflow events
 
 `stream()` yields `ExecutorEvent` instances.

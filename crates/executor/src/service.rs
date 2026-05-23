@@ -76,14 +76,20 @@ where
     ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
 {
     pub async fn execute(&self, request: ExecutionRequest) -> Result<ExecutionResponse, ExecutorError> {
-        self.execute_for_session(request, AgentCacheSession::local()).await
+        self.execute_with_request_cache_key(request).await
     }
 
     pub async fn execute_for_session(
         &self,
-        request: ExecutionRequest,
+        mut request: ExecutionRequest,
         cache_session: AgentCacheSession,
     ) -> Result<ExecutionResponse, ExecutorError> {
+        request.options.cache_key = Some(cache_session.identifier().to_string());
+
+        self.execute_with_request_cache_key(request).await
+    }
+
+    async fn execute_with_request_cache_key(&self, request: ExecutionRequest) -> Result<ExecutionResponse, ExecutorError> {
         let workflow_source = request
             .resolved_workflow_source()
             .map_err(|message| ExecutorError::Other { message })?;
@@ -98,7 +104,7 @@ where
 
         let executor = WorkflowExecutor::from_source_with_runtime_values(&workflow_source, &request.input, &request.secrets)?;
         log::debug!("workflow planned with agent order: {:?}", executor.agent_execution_order());
-        let cache_options = self.cache_options_for_request(&request, cache_session);
+        let cache_options = self.cache_options_for_request(&request);
         let output = executor
             .execute_with_cache(
                 request.input,
@@ -180,20 +186,26 @@ where
     }
 
     pub fn start_streamed_execution(&self, request: ExecutionRequest) -> StreamedExecutionSubscription {
-        self.start_streamed_execution_for_session(request, AgentCacheSession::local())
+        self.start_streamed_execution_with_request_cache_key(request)
     }
 
     pub fn start_streamed_execution_for_session(
         &self,
-        request: ExecutionRequest,
+        mut request: ExecutionRequest,
         cache_session: AgentCacheSession,
     ) -> StreamedExecutionSubscription {
+        request.options.cache_key = Some(cache_session.identifier().to_string());
+
+        self.start_streamed_execution_with_request_cache_key(request)
+    }
+
+    fn start_streamed_execution_with_request_cache_key(&self, request: ExecutionRequest) -> StreamedExecutionSubscription {
         let run_identifier = self.streamed_executions.next_run_identifier();
         let subscription = self.streamed_executions.insert(run_identifier.clone());
         let registry = self.streamed_executions.clone();
         let model_provider = self.model_provider.clone();
         let max_concurrency = request.options.max_concurrency;
-        let cache_options = self.cache_options_for_request(&request, cache_session);
+        let cache_options = self.cache_options_for_request(&request);
 
         tokio::spawn(async move {
             registry
@@ -212,10 +224,16 @@ where
         self.streamed_executions.subscribe(run_identifier, last_event_identifier)
     }
 
-    fn cache_options_for_request(&self, request: &ExecutionRequest, cache_session: AgentCacheSession) -> AgentCacheOptions {
+    fn cache_options_for_request(&self, request: &ExecutionRequest) -> AgentCacheOptions {
         if !request.options.use_cache {
             return AgentCacheOptions::disabled();
         }
+
+        let Some(cache_key) = request.options.cache_key_identifier() else {
+            return AgentCacheOptions::disabled();
+        };
+
+        let cache_session = AgentCacheSession::new(cache_key);
 
         AgentCacheOptions::enabled(cache_session, self.agent_cache_store.clone(), self.agent_cache_time_to_live)
     }

@@ -267,22 +267,6 @@ impl AgentCacheSession {
     }
 
     #[must_use]
-    pub fn from_fingerprint_parts(parts: &[&str]) -> Self {
-        let mut hasher = Sha256::new();
-
-        for part in parts {
-            hasher.update(part.as_bytes());
-            hasher.update([0]);
-        }
-
-        let fingerprint_hash = hasher.finalize();
-
-        Self {
-            identifier: format!("fingerprint:{}", hex_digest(&fingerprint_hash)),
-        }
-    }
-
-    #[must_use]
     pub fn identifier(&self) -> &str {
         &self.identifier
     }

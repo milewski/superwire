@@ -13,8 +13,8 @@ mod test_macros;
 mod tests;
 
 pub use api::{
-    CacheInvalidationResponse, ExecutionOptions, ExecutionRequest, ExecutionResponse, FormatRequest, FormatResponse, GraphRequest,
-    GraphResponse, ValidationRequest, ValidationResponse,
+    CacheInvalidationRequest, CacheInvalidationResponse, ExecutionOptions, ExecutionRequest, ExecutionResponse, FormatRequest,
+    FormatResponse, GraphRequest, GraphResponse, ValidationRequest, ValidationResponse,
 };
 pub use event::{ExecutorEvent, ExecutorEventKind};
 pub use model::{CerseiModelProvider, ModelRequest, ModelResponse};

@@ -25,6 +25,7 @@ export function createWorkflowTab(name: string): WorkflowTab {
     inputJson: '{}',
     secretsJson: '{}',
     useCache: true,
+    cacheKey: uniqueId(),
     validationState: 'idle',
     runState: 'idle',
     message: 'Ready.',
@@ -82,6 +83,7 @@ export function normalizeWorkflowTab(tab: unknown): WorkflowTab {
     inputJson: metadata.inputJson ?? (typeof tab.inputJson === 'string' ? tab.inputJson : JSON.stringify(fieldsToObject(tab.inputFields), null, 2)),
     secretsJson: metadata.secretsJson ?? (typeof tab.secretsJson === 'string' ? tab.secretsJson : JSON.stringify(fieldsToObject(tab.secretFields), null, 2)),
     useCache: typeof tab.useCache === 'boolean' ? tab.useCache : fallbackTab.useCache,
+    cacheKey: typeof tab.cacheKey === 'string' && tab.cacheKey.trim() ? tab.cacheKey : fallbackTab.cacheKey,
     eventLog: Array.isArray(tab.eventLog) ? tab.eventLog : [],
     graphState: normalizeGraphState(tab.graphState),
     graphMessage: typeof tab.graphMessage === 'string' ? tab.graphMessage : fallbackTab.graphMessage,
@@ -123,7 +125,10 @@ function sourceContainsMarkers(source: string) {
 }
 
 export function recoverWorkflowTabAfterReload(tab: unknown): WorkflowTab {
-  const normalizedTab = normalizeWorkflowTab(tab);
+  const normalizedTab = {
+    ...normalizeWorkflowTab(tab),
+    cacheKey: uniqueId(),
+  };
 
   if (normalizedTab.runState !== 'running') {
     return normalizedTab;

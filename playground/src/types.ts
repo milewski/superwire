@@ -24,6 +24,7 @@ export interface WorkflowTab {
   inputJson: string;
   secretsJson: string;
   useCache: boolean;
+  cacheKey: string;
   validationState: ValidationState;
   runState: RunState;
   message: string;

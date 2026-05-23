@@ -32,9 +32,7 @@ import { createWorkflowTab, recoverWorkflowTabAfterReload, parseJsonObject, uniq
 const tabsStorageKey = 'superwire.playground.tabs.v3';
 const activeTabStorageKey = 'superwire.playground.activeTab.v3';
 const themeStorageKey = 'superwire.playground.theme';
-const cacheSessionStorageKey = 'superwire.playground.cacheSession';
 const runIdentifierHeader = 'x-superwire-run-id';
-const cacheSessionHeader = 'x-superwire-session-id';
 const streamReconnectDelayMilliseconds = 1000;
 
 type RenameDialogTarget =
@@ -199,6 +197,7 @@ export default function App() {
       id: uniqueId(),
       name: `${sourceTab.name} copy`,
       codeFragments: sourceTab.codeFragments.map((fragment) => createWorkflowCodeFragment(fragment.name, fragment.source)),
+      cacheKey: uniqueId(),
       runState: 'idle',
       validationState: 'idle',
       message: 'Duplicated workflow.',
@@ -523,7 +522,12 @@ export default function App() {
 
     if (includeInput) {
       body.input = parseJsonObject(currentTab.inputJson, 'input');
-      body.options = { include_events: true, max_concurrency: 5, use_cache: currentTab.useCache };
+      body.options = {
+        include_events: true,
+        max_concurrency: 5,
+        use_cache: currentTab.useCache,
+        cache_key: currentTab.cacheKey,
+      };
     }
 
     return body;
@@ -632,7 +636,6 @@ export default function App() {
         headers: {
           accept: 'text/event-stream',
           'content-type': 'application/json',
-          [cacheSessionHeader]: cacheSessionIdentifier(),
         },
         body: JSON.stringify(requestBody(currentTab, true)),
         signal: nextAbortController.signal,
@@ -685,27 +688,13 @@ export default function App() {
     }));
   }
 
-  async function purgeCache() {
-    const currentTab = requireActiveTab(activeTab);
-
-    try {
-      const response = await fetch('/cache/invalidate', {
-        method: 'POST',
-        headers: { [cacheSessionHeader]: cacheSessionIdentifier() },
-      });
-      const payload = await responsePayload(response);
-
-      if (!response.ok) {
-        throw new Error(stringPayloadValue(payload.error) ?? `Request failed with ${response.status}`);
-      }
-
-      updateTab(currentTab.id, (tab) => ({
-        ...tab,
-        message: `Purged ${numberPayloadValue(payload.purged_entries) ?? 0} cache entries.`,
-      }));
-    } catch (error) {
-      updateTab(currentTab.id, (tab) => ({ ...tab, validationState: 'invalid', message: errorMessage(error) }));
-    }
+  function purgeCache() {
+    updateActiveTab((tab) => ({
+      ...tab,
+      cacheKey: uniqueId(),
+      message: 'Cache key regenerated.',
+      updatedAt: Date.now(),
+    }));
   }
 
   function formatRuntimeJson(fieldName: 'inputJson' | 'secretsJson') {
@@ -942,7 +931,7 @@ export default function App() {
                               <Database />
                             </Button>
                           </ActionTooltip>
-                          <ActionTooltip label="Purge cached agent outputs for this browser session">
+                          <ActionTooltip label="Regenerate cache key for this workflow tab">
                             <Button variant="ghost" size="icon-lg" aria-label="Purge cache" onClick={purgeCache}>
                               <DatabaseZap />
                             </Button>
@@ -1441,23 +1430,6 @@ async function responsePayload(response: Response): Promise<Record<string, unkno
 
 function stringPayloadValue(value: unknown) {
   return typeof value === 'string' ? value : null;
-}
-
-function numberPayloadValue(value: unknown) {
-  return typeof value === 'number' ? value : null;
-}
-
-function cacheSessionIdentifier() {
-  const savedSessionIdentifier = localStorage.getItem(cacheSessionStorageKey);
-
-  if (savedSessionIdentifier) {
-    return savedSessionIdentifier;
-  }
-
-  const sessionIdentifier = uniqueId();
-  localStorage.setItem(cacheSessionStorageKey, sessionIdentifier);
-
-  return sessionIdentifier;
 }
 
 function lspPositionToOffset(source: string, position: LspPosition): number {

@@ -3,7 +3,7 @@ title: Agent Caching
 description: Configure in-memory and Redis-backed agent execution caching.
 ---
 
-Superwire can cache completed agent executions for repeat requests that use the same workflow fingerprint and cache session. Caching is enabled by default for executor requests unless the request sets `options.use_cache` to `false`.
+Superwire can cache completed agent executions for repeat requests that use the same client-provided cache key. The executor only reads or writes cache entries when `options.cache_key` is present and `options.use_cache` is not `false`.
 
 ## Cache drivers
 
@@ -41,26 +41,33 @@ For Redis without a password, omit `--redis-password`.
 superwire-executor --cache-driver redis --redis-host redis.internal:6379 --cache-ttl 30m
 ```
 
-## Request cache sessions
+## Request cache keys
 
-Cache entries are separated by the `x-superwire-session-id` request header. Requests with the same session can reuse cached agent outputs; different sessions do not share entries.
+Cache entries are separated by `options.cache_key` in the `/execute` request body. Requests with the same cache key can reuse matching agent outputs. Requests with different cache keys do not share entries.
 
 ```bash
 curl -X POST http://localhost:13703/execute \
   -H "content-type: application/json" \
-  -H "x-superwire-session-id: browser-a" \
-  -d '{"workflow_source":"agent reply { instruction: \"Say hello\" output: string } output { result: agent.reply }"}'
+  -d '{
+    "workflow_source": "agent reply { instruction: \"Say hello\" output: string } output { result: agent.reply }",
+    "options": {
+      "cache_key": "tenant-1:conversation-42"
+    }
+  }'
 ```
 
-When the session header is omitted, the executor uses the local session.
+When `options.cache_key` is omitted or empty, the executor bypasses cache reads and writes for that request.
 
-## Invalidate a session
+## Rotate or invalidate a cache key
 
-Invalidate cached entries for the current session with `POST /cache/invalidate`.
+The simplest way to invalidate cached results is to send a new cache key. The playground does this automatically when the page loads, and its purge cache action regenerates the current workflow tab's cache key.
+
+If you need to delete stored entries for a cache key, call `POST /cache/invalidate`.
 
 ```bash
 curl -X POST http://localhost:13703/cache/invalidate \
-  -H "x-superwire-session-id: browser-a"
+  -H "content-type: application/json" \
+  -d '{ "cache_key": "tenant-1:conversation-42" }'
 ```
 
 The response includes the number of entries removed from the configured cache driver.
@@ -73,6 +80,7 @@ Set `options.use_cache` to `false` to bypass reads and writes for a request.
 {
   "workflow_source_base64": "...",
   "options": {
+    "cache_key": "tenant-1:conversation-42",
     "use_cache": false
   }
 }
