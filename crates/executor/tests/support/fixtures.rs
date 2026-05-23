@@ -40,6 +40,7 @@ pub const SCHEMA_VARIANT_TYPES: &str = include_str!("../fixtures/038_schema_vari
 pub const CERSEI_PROVIDERS: &str = include_str!("../fixtures/039_cersei_providers.wire");
 pub const AGENT_OUTPUT_INJECTIONS: &str = include_str!("../fixtures/040_agent_output_injections.wire");
 pub const ARRAY_PLUCK_ASSETS: &str = include_str!("../fixtures/041_array_pluck_assets.wire");
+pub const ARRAY_PLUCK_MODES: &str = include_str!("../fixtures/042_array_pluck_modes.wire");
 
 // Negative Tests
 pub const MCP_TOOL_OUTPUT_SCHEMA_OVERRIDE_NON_ITERABLE: &str =

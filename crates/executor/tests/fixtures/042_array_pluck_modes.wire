@@ -1,0 +1,88 @@
+dynamic {
+    data: [
+        {
+            example: 1
+            examples: [
+                { example: 10 },
+                { example: null },
+                { other: true },
+            ]
+            groups: [
+                [{ example: 100 }],
+                [{ example: 101 }],
+            ]
+        },
+        {
+            example: null
+            examples: [{ example: 20 }]
+            groups: [[{ example: 102 }]]
+        },
+        {
+            other: true
+            examples: null
+            groups: null
+        },
+        null,
+        {
+            example: "mixed"
+            examples: [{ example: "thirty" }]
+            groups: [[{ example: 103 }]]
+        },
+    ]
+
+    array_data: [
+        {
+            examples: [
+                [1, null],
+                [2, null],
+            ]
+        },
+        { examples: [4] },
+        { other: true },
+        null,
+    ]
+
+    flat_strict: [
+        { value: 1 },
+        { value: 2 },
+        { value: 3 },
+    ]
+
+    nested_strict: [
+        {
+            examples: [
+                { value: "a" },
+                { value: "b" },
+            ]
+        },
+        {
+            examples: [{ value: "c" }]
+        },
+    ]
+
+    strict_array_data: [
+        {
+            examples: [
+                [1],
+                [2],
+            ]
+        },
+        {
+            examples: [[3]]
+        },
+    ]
+}
+
+output {
+    example1_all_flat: dynamic.data.*.example
+    example2_non_null_flat: dynamic.data.**.example
+    example3_strict_flat: dynamic.flat_strict.***.value
+    example4_all_nested: dynamic.data.*.examples.*.example
+    example5_non_null_nested: dynamic.data.*.examples.**.example
+    example6_strict_nested: dynamic.nested_strict.*.examples.***.value
+    example7_array_values_all: dynamic.array_data.*.examples
+    example8_array_values_non_null: dynamic.array_data.**.examples
+    example9_array_values_strict: dynamic.strict_array_data.***.examples
+    example10_array_items_all: dynamic.data.*.groups.*.example
+    example11_array_items_non_null: dynamic.data.*.groups.**.example
+}

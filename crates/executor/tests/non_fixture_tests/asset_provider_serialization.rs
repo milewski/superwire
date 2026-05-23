@@ -1,9 +1,6 @@
-#[macro_use]
-mod support;
-
+use crate::support::runner::TestRunner;
 use serde_json::{json, Value};
 use superwire_core::workflow_source;
-use support::runner::TestRunner;
 
 #[tokio::test]
 async fn sends_image_asset_as_openai_compatible_content_block() {
