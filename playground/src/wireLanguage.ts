@@ -54,6 +54,10 @@ const types = tokenSets.types;
 const constants = new Set(['false', 'true']);
 
 const wireStreamLanguage = StreamLanguage.define({
+  languageData: {
+    commentTokens: { line: '//' },
+  },
+
   token(stream) {
     if (stream.match('//')) {
       stream.skipToEnd();
