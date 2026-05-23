@@ -132,6 +132,7 @@
               "api-reference/diagnostics",
               "advanced/parallel-execution",
               "advanced/context-sharing",
+              "advanced/caching",
               "advanced/tool-calling",
               "advanced/error-handling"
             ]

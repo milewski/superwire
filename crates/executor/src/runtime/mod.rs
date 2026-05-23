@@ -11,7 +11,10 @@ pub mod state;
 mod tools;
 
 pub(in crate::runtime) use agent::AgentRunContext;
-pub use cache::{AgentCacheDriver, AgentCacheOptions, AgentCacheSession, AgentCacheTimeToLive, DEFAULT_AGENT_CACHE_TIME_TO_LIVE};
+pub use cache::{
+    AgentCacheConfig, AgentCacheDriver, AgentCacheOptions, AgentCacheSession, AgentCacheTimeToLive, RedisAgentCacheConfig,
+    DEFAULT_AGENT_CACHE_TIME_TO_LIVE,
+};
 pub(in crate::runtime) use configuration::RuntimeValidationContext;
 pub use error::ExecutorError;
 pub(in crate::runtime) use schema::value_object;

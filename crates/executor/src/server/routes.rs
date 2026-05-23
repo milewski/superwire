@@ -1,6 +1,6 @@
 use crate::api::{ExecutionRequest, FormatRequest, GraphRequest, ValidationRequest};
 use crate::model::{CerseiModelProvider, ModelProvider};
-use crate::runtime::{AgentCacheDriver, AgentCacheSession};
+use crate::runtime::{AgentCacheConfig, AgentCacheDriver, AgentCacheSession};
 use crate::server::error::ExecutorHttpError;
 use crate::server::sse::event_to_sse_result;
 use crate::service::ExecutorService;
@@ -100,9 +100,18 @@ pub async fn serve_executor_with_cache(
     cache_driver: AgentCacheDriver,
     cache_time_to_live: Duration,
 ) -> Result<(), std::io::Error> {
+    serve_executor_with_agent_cache(address, disable_playground, AgentCacheConfig::new(cache_driver), cache_time_to_live).await
+}
+
+pub async fn serve_executor_with_agent_cache(
+    address: SocketAddr,
+    disable_playground: bool,
+    cache_config: AgentCacheConfig,
+    cache_time_to_live: Duration,
+) -> Result<(), std::io::Error> {
     let listener = TcpListener::bind(address).await?;
     let service =
-        ExecutorService::with_agent_cache_driver(CerseiModelProvider, cache_driver, cache_time_to_live).map_err(std::io::Error::other)?;
+        ExecutorService::with_agent_cache_config(CerseiModelProvider, cache_config, cache_time_to_live).map_err(std::io::Error::other)?;
 
     axum::serve(listener, executor_router_with_service(service, disable_playground)).await
 }

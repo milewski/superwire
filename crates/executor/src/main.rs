@@ -1,6 +1,8 @@
 use clap::Parser;
 use std::net::SocketAddr;
-use superwire_executor::{serve_executor_with_cache, AgentCacheDriver, AgentCacheTimeToLive};
+use superwire_executor::{
+    serve_executor_with_agent_cache, AgentCacheConfig, AgentCacheDriver, AgentCacheTimeToLive, RedisAgentCacheConfig,
+};
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -15,6 +17,15 @@ struct Cli {
 
     #[arg(long = "cache-ttl", default_value_t = AgentCacheTimeToLive::default())]
     cache_time_to_live: AgentCacheTimeToLive,
+
+    #[arg(long, default_value = "127.0.0.1:6379")]
+    redis_host: String,
+
+    #[arg(long)]
+    redis_password: Option<String>,
+
+    #[arg(long, default_value_t = 0)]
+    redis_database: u8,
 }
 
 #[tokio::main]
@@ -29,10 +40,12 @@ async fn main() {
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
+    let redis_config = RedisAgentCacheConfig::new(cli.redis_host, cli.redis_password, cli.redis_database);
+    let cache_config = AgentCacheConfig::new(cli.cache_driver).with_redis(redis_config);
 
     log::info!("starting executor server on {}", cli.address);
 
-    serve_executor_with_cache(cli.address, cli.disable_playground, cli.cache_driver, cli.cache_time_to_live.0).await?;
+    serve_executor_with_agent_cache(cli.address, cli.disable_playground, cache_config, cli.cache_time_to_live.0).await?;
 
     Ok(())
 }

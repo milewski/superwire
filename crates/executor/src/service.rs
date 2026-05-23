@@ -4,7 +4,9 @@ use crate::api::{
 };
 use crate::event::ExecutorEvent;
 use crate::model::{CerseiModelProvider, ModelProvider};
-use crate::runtime::cache::{AgentCacheDriver, AgentCacheOptions, AgentCacheSession, AgentCacheStore, DEFAULT_AGENT_CACHE_TIME_TO_LIVE};
+use crate::runtime::cache::{
+    AgentCacheConfig, AgentCacheDriver, AgentCacheOptions, AgentCacheSession, AgentCacheStore, DEFAULT_AGENT_CACHE_TIME_TO_LIVE,
+};
 use crate::runtime::{ExecutorError, WorkflowExecutor};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -52,10 +54,18 @@ impl<ModelProviderType> ExecutorService<ModelProviderType> {
         cache_driver: AgentCacheDriver,
         cache_time_to_live: Duration,
     ) -> Result<Self, ExecutorError> {
+        Self::with_agent_cache_config(model_provider, AgentCacheConfig::new(cache_driver), cache_time_to_live)
+    }
+
+    pub fn with_agent_cache_config(
+        model_provider: ModelProviderType,
+        cache_config: AgentCacheConfig,
+        cache_time_to_live: Duration,
+    ) -> Result<Self, ExecutorError> {
         Ok(Self {
             model_provider,
             streamed_executions: StreamedExecutionRegistry::default(),
-            agent_cache_store: cache_driver.build_store()?,
+            agent_cache_store: cache_config.build_store()?,
             agent_cache_time_to_live: cache_time_to_live,
         })
     }

@@ -1,0 +1,79 @@
+---
+title: Agent Caching
+description: Configure in-memory and Redis-backed agent execution caching.
+---
+
+Superwire can cache completed agent executions for repeat requests that use the same workflow fingerprint and cache session. Caching is enabled by default for executor requests unless the request sets `options.use_cache` to `false`.
+
+## Cache drivers
+
+The executor supports two cache drivers:
+
+| Driver | Use case |
+| --- | --- |
+| `in-memory` | Local development or a single executor process. Entries are lost when the process exits and are not shared across replicas. |
+| `redis` | Shared cache storage for multiple executor processes or deployments that need cache persistence outside the executor process. |
+
+The default cache driver is `in-memory`.
+
+## Run with in-memory cache
+
+```bash
+superwire-executor --cache-driver in-memory --cache-ttl 1h
+```
+
+## Run with Redis cache
+
+Use `--cache-driver redis` and provide the Redis host. Add `--redis-password` when your Redis instance requires authentication.
+
+```bash
+superwire-executor \
+  --cache-driver redis \
+  --redis-host 127.0.0.1:6379 \
+  --redis-password "$REDIS_PASSWORD" \
+  --redis-database 0 \
+  --cache-ttl 30m
+```
+
+For Redis without a password, omit `--redis-password`.
+
+```bash
+superwire-executor --cache-driver redis --redis-host redis.internal:6379 --cache-ttl 30m
+```
+
+## Request cache sessions
+
+Cache entries are separated by the `x-superwire-session-id` request header. Requests with the same session can reuse cached agent outputs; different sessions do not share entries.
+
+```bash
+curl -X POST http://localhost:13703/execute \
+  -H "content-type: application/json" \
+  -H "x-superwire-session-id: browser-a" \
+  -d '{"workflow_source":"agent reply { instruction: \"Say hello\" output: string } output { result: agent.reply }"}'
+```
+
+When the session header is omitted, the executor uses the local session.
+
+## Invalidate a session
+
+Invalidate cached entries for the current session with `POST /cache/invalidate`.
+
+```bash
+curl -X POST http://localhost:13703/cache/invalidate \
+  -H "x-superwire-session-id: browser-a"
+```
+
+The response includes the number of entries removed from the configured cache driver.
+
+## Disable caching per request
+
+Set `options.use_cache` to `false` to bypass reads and writes for a request.
+
+```json
+{
+  "workflow_source_base64": "...",
+  "options": {
+    "use_cache": false
+  }
+}
+```
