@@ -1,6 +1,6 @@
 use clap::Parser;
 use std::net::SocketAddr;
-use superwire_executor::serve_executor;
+use superwire_executor::{serve_executor_with_cache, AgentCacheDriver, AgentCacheTimeToLive};
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -9,6 +9,12 @@ struct Cli {
 
     #[arg(long, default_value_t = false)]
     disable_playground: bool,
+
+    #[arg(long, default_value_t = AgentCacheDriver::InMemory)]
+    cache_driver: AgentCacheDriver,
+
+    #[arg(long = "cache-ttl", default_value_t = AgentCacheTimeToLive::default())]
+    cache_time_to_live: AgentCacheTimeToLive,
 }
 
 #[tokio::main]
@@ -26,7 +32,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     log::info!("starting executor server on {}", cli.address);
 
-    serve_executor(cli.address, cli.disable_playground).await?;
+    serve_executor_with_cache(cli.address, cli.disable_playground, cli.cache_driver, cli.cache_time_to_live.0).await?;
 
     Ok(())
 }

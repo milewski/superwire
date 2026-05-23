@@ -4,6 +4,7 @@ use super::{
 };
 use crate::event::ExecutorEvent;
 use crate::model::{ModelProvider, ToolCallTracker};
+use crate::runtime::cache::AgentCacheOptions;
 use crate::runtime::state::RuntimeState;
 use futures::future::try_join_all;
 use serde_json::Value;
@@ -18,6 +19,29 @@ impl WorkflowExecutor {
         model_provider: &ModelProviderType,
         event_sender: Option<mpsc::Sender<ExecutorEvent>>,
         max_concurrency: usize,
+    ) -> Result<Value, ExecutorError>
+    where
+        ModelProviderType: ModelProvider,
+    {
+        self.execute_with_cache(
+            input,
+            secrets,
+            model_provider,
+            event_sender,
+            max_concurrency,
+            AgentCacheOptions::disabled(),
+        )
+        .await
+    }
+
+    pub async fn execute_with_cache<ModelProviderType>(
+        &self,
+        input: Value,
+        secrets: Value,
+        model_provider: &ModelProviderType,
+        event_sender: Option<mpsc::Sender<ExecutorEvent>>,
+        max_concurrency: usize,
+        cache_options: AgentCacheOptions,
     ) -> Result<Value, ExecutorError>
     where
         ModelProviderType: ModelProvider,
@@ -67,6 +91,7 @@ impl WorkflowExecutor {
                 import_context: import_context.clone(),
                 tool_call_tracker: tool_call_tracker.clone(),
                 runtime_concurrency_limiter: runtime_concurrency_limiter.clone(),
+                cache_options: cache_options.clone(),
             };
 
             for planned_agent in for_loop_agents {

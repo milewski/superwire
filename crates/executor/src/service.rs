@@ -1,8 +1,10 @@
 use crate::api::{
-    ExecutionRequest, ExecutionResponse, FormatRequest, FormatResponse, GraphRequest, GraphResponse, ValidationRequest, ValidationResponse,
+    CacheInvalidationResponse, ExecutionRequest, ExecutionResponse, FormatRequest, FormatResponse, GraphRequest, GraphResponse,
+    ValidationRequest, ValidationResponse,
 };
 use crate::event::ExecutorEvent;
 use crate::model::{CerseiModelProvider, ModelProvider};
+use crate::runtime::cache::{AgentCacheDriver, AgentCacheOptions, AgentCacheSession, AgentCacheStore, DEFAULT_AGENT_CACHE_TIME_TO_LIVE};
 use crate::runtime::{ExecutorError, WorkflowExecutor};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -20,6 +22,8 @@ const COMPLETED_STREAM_RETENTION: Duration = Duration::from_secs(20 * 60);
 pub struct ExecutorService<ModelProviderType = CerseiModelProvider> {
     model_provider: ModelProviderType,
     streamed_executions: StreamedExecutionRegistry,
+    agent_cache_store: Arc<dyn AgentCacheStore>,
+    agent_cache_time_to_live: Duration,
 }
 
 impl Default for ExecutorService<CerseiModelProvider> {
@@ -31,10 +35,29 @@ impl Default for ExecutorService<CerseiModelProvider> {
 impl<ModelProviderType> ExecutorService<ModelProviderType> {
     #[must_use]
     pub fn new(model_provider: ModelProviderType) -> Self {
+        let agent_cache_store = AgentCacheDriver::InMemory
+            .build_store()
+            .expect("in-memory agent cache store should build");
+
         Self {
             model_provider,
             streamed_executions: StreamedExecutionRegistry::default(),
+            agent_cache_store,
+            agent_cache_time_to_live: DEFAULT_AGENT_CACHE_TIME_TO_LIVE,
         }
+    }
+
+    pub fn with_agent_cache_driver(
+        model_provider: ModelProviderType,
+        cache_driver: AgentCacheDriver,
+        cache_time_to_live: Duration,
+    ) -> Result<Self, ExecutorError> {
+        Ok(Self {
+            model_provider,
+            streamed_executions: StreamedExecutionRegistry::default(),
+            agent_cache_store: cache_driver.build_store()?,
+            agent_cache_time_to_live: cache_time_to_live,
+        })
     }
 }
 
@@ -43,6 +66,14 @@ where
     ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
 {
     pub async fn execute(&self, request: ExecutionRequest) -> Result<ExecutionResponse, ExecutorError> {
+        self.execute_for_session(request, AgentCacheSession::local()).await
+    }
+
+    pub async fn execute_for_session(
+        &self,
+        request: ExecutionRequest,
+        cache_session: AgentCacheSession,
+    ) -> Result<ExecutionResponse, ExecutorError> {
         let workflow_source = request
             .resolved_workflow_source()
             .map_err(|message| ExecutorError::Other { message })?;
@@ -57,19 +88,27 @@ where
 
         let executor = WorkflowExecutor::from_source_with_runtime_values(&workflow_source, &request.input, &request.secrets)?;
         log::debug!("workflow planned with agent order: {:?}", executor.agent_execution_order());
+        let cache_options = self.cache_options_for_request(&request, cache_session);
         let output = executor
-            .execute(
+            .execute_with_cache(
                 request.input,
                 request.secrets,
                 &self.model_provider,
                 None,
                 request.options.max_concurrency,
+                cache_options,
             )
             .await?;
 
         log::info!("workflow execution completed");
 
         Ok(ExecutionResponse { output })
+    }
+
+    pub fn invalidate_agent_cache_session(&self, cache_session: &AgentCacheSession) -> Result<CacheInvalidationResponse, ExecutorError> {
+        let purged_entries = self.agent_cache_store.purge_session(cache_session)?;
+
+        Ok(CacheInvalidationResponse { purged_entries })
     }
 
     pub fn validate(&self, request: ValidationRequest) -> Result<ValidationResponse, ExecutorError> {
@@ -131,15 +170,24 @@ where
     }
 
     pub fn start_streamed_execution(&self, request: ExecutionRequest) -> StreamedExecutionSubscription {
+        self.start_streamed_execution_for_session(request, AgentCacheSession::local())
+    }
+
+    pub fn start_streamed_execution_for_session(
+        &self,
+        request: ExecutionRequest,
+        cache_session: AgentCacheSession,
+    ) -> StreamedExecutionSubscription {
         let run_identifier = self.streamed_executions.next_run_identifier();
         let subscription = self.streamed_executions.insert(run_identifier.clone());
         let registry = self.streamed_executions.clone();
         let model_provider = self.model_provider.clone();
         let max_concurrency = request.options.max_concurrency;
+        let cache_options = self.cache_options_for_request(&request, cache_session);
 
         tokio::spawn(async move {
             registry
-                .run_streamed_execution(request, model_provider, run_identifier, max_concurrency)
+                .run_streamed_execution(request, model_provider, run_identifier, max_concurrency, cache_options)
                 .await;
         });
 
@@ -152,6 +200,14 @@ where
         last_event_identifier: Option<u64>,
     ) -> Option<StreamedExecutionSubscription> {
         self.streamed_executions.subscribe(run_identifier, last_event_identifier)
+    }
+
+    fn cache_options_for_request(&self, request: &ExecutionRequest, cache_session: AgentCacheSession) -> AgentCacheOptions {
+        if !request.options.use_cache {
+            return AgentCacheOptions::disabled();
+        }
+
+        AgentCacheOptions::enabled(cache_session, self.agent_cache_store.clone(), self.agent_cache_time_to_live)
     }
 }
 
@@ -255,6 +311,7 @@ impl StreamedExecutionRegistry {
         model_provider: ModelProviderType,
         run_identifier: String,
         max_concurrency: usize,
+        cache_options: AgentCacheOptions,
     ) where
         ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
     {
@@ -268,8 +325,15 @@ impl StreamedExecutionRegistry {
         });
 
         let workflow_started_at = Instant::now();
-        let execution_result =
-            run_streamed_execution(request, model_provider, event_sender.clone(), max_concurrency, workflow_started_at).await;
+        let execution_result = run_streamed_execution(
+            request,
+            model_provider,
+            event_sender.clone(),
+            max_concurrency,
+            workflow_started_at,
+            cache_options,
+        )
+        .await;
 
         if let Err(error) = execution_result {
             log::error!("streamed workflow execution failed: {error}");
@@ -371,6 +435,7 @@ async fn run_streamed_execution<ModelProviderType>(
     event_sender: mpsc::Sender<ExecutorEvent>,
     max_concurrency: usize,
     workflow_started_at: Instant,
+    cache_options: AgentCacheOptions,
 ) -> Result<(), ExecutorError>
 where
     ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
@@ -424,12 +489,13 @@ where
     }
 
     let output = executor
-        .execute(
+        .execute_with_cache(
             request.input,
             request.secrets,
             &model_provider,
             Some(event_sender.clone()),
             max_concurrency,
+            cache_options,
         )
         .await?;
 

@@ -13,11 +13,14 @@ mod test_macros;
 mod tests;
 
 pub use api::{
-    ExecutionOptions, ExecutionRequest, ExecutionResponse, FormatRequest, FormatResponse, GraphRequest, GraphResponse, ValidationRequest,
-    ValidationResponse,
+    CacheInvalidationResponse, ExecutionOptions, ExecutionRequest, ExecutionResponse, FormatRequest, FormatResponse, GraphRequest,
+    GraphResponse, ValidationRequest, ValidationResponse,
 };
 pub use event::{ExecutorEvent, ExecutorEventKind};
 pub use model::{CerseiModelProvider, ModelRequest, ModelResponse};
-pub use runtime::{ExecutorError, WorkflowExecutor};
-pub use server::{executor_router, executor_router_with_service, serve_executor};
+pub use runtime::{
+    AgentCacheDriver, AgentCacheOptions, AgentCacheSession, AgentCacheTimeToLive, ExecutorError, WorkflowExecutor,
+    DEFAULT_AGENT_CACHE_TIME_TO_LIVE,
+};
+pub use server::{executor_router, executor_router_with_service, serve_executor, serve_executor_with_cache};
 pub use service::ExecutorService;

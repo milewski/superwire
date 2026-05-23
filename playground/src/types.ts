@@ -23,6 +23,7 @@ export interface WorkflowTab {
   codeFragmentsUseMarkers: boolean;
   inputJson: string;
   secretsJson: string;
+  useCache: boolean;
   validationState: ValidationState;
   runState: RunState;
   message: string;

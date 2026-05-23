@@ -256,6 +256,7 @@ async fn agent_dynamic_tool_call_executes_inside_for_loop_agent() {
     request.options = ExecutionOptions {
         include_events: false,
         max_concurrency: 1,
+        use_cache: false,
     };
 
     let output = service

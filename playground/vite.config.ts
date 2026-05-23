@@ -25,6 +25,7 @@ export default defineConfig({
       '/validate': executorServerTarget,
       '/graph': executorServerTarget,
       '/format': executorServerTarget,
+      '/cache': executorServerTarget,
       '/lsp': {
         target: 'ws://127.0.0.1:3000',
         ws: true,

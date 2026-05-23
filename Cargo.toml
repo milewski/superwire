@@ -29,5 +29,7 @@ colog = "1.4"
 jsonschema = "0.45"
 regex = "1.12"
 once_cell = "1.20"
+humantime = "2.3"
+sha2 = "0.10"
 cersei-provider = { git = "https://github.com/pacifio/cersei", package = "cersei-provider" }
 cersei-types = { git = "https://github.com/pacifio/cersei", package = "cersei-types" }

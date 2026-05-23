@@ -191,10 +191,11 @@ impl ExecutorEvent {
     }
 
     #[must_use]
-    pub fn agent_completed(agent_name: String, output: Value, duration: Duration, iteration_index: Option<usize>) -> Self {
+    pub fn agent_completed(agent_name: String, output: Value, duration: Duration, iteration_index: Option<usize>, cache_hit: bool) -> Self {
         let mut event_data = serde_json::Map::from_iter([
             ("output".to_string(), output),
             ("duration_ms".to_string(), serde_json::json!(duration_ms(duration))),
+            ("cache_hit".to_string(), serde_json::json!(cache_hit)),
         ]);
 
         if let Some(iteration_index) = iteration_index {

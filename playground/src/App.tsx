@@ -1,17 +1,17 @@
-import { Copy, Download, GitBranch, Moon, Pencil, Play, Plus, RefreshCcw, Square, Sun, Trash2, Workflow } from 'lucide-react';
+import { CheckCircle2, Copy, Database, DatabaseZap, Download, GitBranch, Moon, Pencil, Play, Plus, RefreshCcw, Square, Sun, Trash2, Workflow } from 'lucide-react';
+import type { ReactElement } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import JsonCodeEditor from '@/components/json-code-editor';
 import PanelCard from '@/components/panel-card';
 import EventLog, { EventGroupingMode } from '@/components/playground/event-log';
 import OutputBox from '@/components/playground/output-box';
 import PlaygroundTabChip from '@/components/playground/tab-chip';
 import RunStateBadge from '@/components/playground/run-state-badge';
-import StatusPill from '@/components/playground/status-pill';
 import WorkflowGraphView from '@/components/playground/workflow-graph-view';
 import logoSource from '../../documentation/docs/public/logo-horizontal.svg';
 import type { ExecutorEvent, PlaygroundView, WorkflowEditorView, WorkflowExecutionGraph, WorkflowTab } from './types';
@@ -32,7 +32,9 @@ import { createWorkflowTab, recoverWorkflowTabAfterReload, parseJsonObject, uniq
 const tabsStorageKey = 'superwire.playground.tabs.v3';
 const activeTabStorageKey = 'superwire.playground.activeTab.v3';
 const themeStorageKey = 'superwire.playground.theme';
+const cacheSessionStorageKey = 'superwire.playground.cacheSession';
 const runIdentifierHeader = 'x-superwire-run-id';
+const cacheSessionHeader = 'x-superwire-session-id';
 const streamReconnectDelayMilliseconds = 1000;
 
 type RenameDialogTarget =
@@ -75,6 +77,7 @@ export default function App() {
   const shouldShowTemplatePicker = activeView === 'workflow' && activeEditorView === 'code' && (activeTab?.source.trim() ?? '') === '';
   const activeJsonValidationError = activeTab ? editorJsonValidationError(activeTab, activeEditorView) : null;
   const editorMessageTone = activeJsonValidationError ? 'error' : resolveEditorMessageTone(activeTab);
+  const editorStateTone = activeTab ? workflowEditorTone(activeTab) : 'neutral';
   const editorMessage = activeJsonValidationError ?? activeTab?.message ?? 'Ready.';
   const activeCodeFragment = activeTab?.codeFragments.find((fragment) => fragment.id === activeTab.activeCodeFragmentId) ?? activeTab?.codeFragments[0];
   const activeCodeFragmentSourceMap = activeTab && activeCodeFragment
@@ -520,7 +523,7 @@ export default function App() {
 
     if (includeInput) {
       body.input = parseJsonObject(currentTab.inputJson, 'input');
-      body.options = { include_events: true, max_concurrency: 5 };
+      body.options = { include_events: true, max_concurrency: 5, use_cache: currentTab.useCache };
     }
 
     return body;
@@ -629,6 +632,7 @@ export default function App() {
         headers: {
           accept: 'text/event-stream',
           'content-type': 'application/json',
+          [cacheSessionHeader]: cacheSessionIdentifier(),
         },
         body: JSON.stringify(requestBody(currentTab, true)),
         signal: nextAbortController.signal,
@@ -670,6 +674,38 @@ export default function App() {
     }
 
     updateActiveTab((tab) => ({ ...tab, runState: 'idle', message: 'Run connection was lost. Start a new run to continue.' }));
+  }
+
+  function toggleCache() {
+    updateActiveTab((tab) => ({
+      ...tab,
+      useCache: !tab.useCache,
+      message: !tab.useCache ? 'Agent cache enabled.' : 'Agent cache disabled.',
+      updatedAt: Date.now(),
+    }));
+  }
+
+  async function purgeCache() {
+    const currentTab = requireActiveTab(activeTab);
+
+    try {
+      const response = await fetch('/cache/invalidate', {
+        method: 'POST',
+        headers: { [cacheSessionHeader]: cacheSessionIdentifier() },
+      });
+      const payload = await responsePayload(response);
+
+      if (!response.ok) {
+        throw new Error(stringPayloadValue(payload.error) ?? `Request failed with ${response.status}`);
+      }
+
+      updateTab(currentTab.id, (tab) => ({
+        ...tab,
+        message: `Purged ${numberPayloadValue(payload.purged_entries) ?? 0} cache entries.`,
+      }));
+    } catch (error) {
+      updateTab(currentTab.id, (tab) => ({ ...tab, validationState: 'invalid', message: errorMessage(error) }));
+    }
   }
 
   function formatRuntimeJson(fieldName: 'inputJson' | 'secretsJson') {
@@ -843,9 +879,11 @@ export default function App() {
                 </div>
 
                 <div className="playground__topbar-actions">
-                  <Button className="playground__theme-toggle" variant="ghost" size="icon-lg" aria-label="Toggle theme" onClick={toggleTheme}>
-                    {darkMode ? <Sun /> : <Moon />}
-                  </Button>
+                  <ActionTooltip label="Toggle color theme">
+                    <Button className="playground__theme-toggle" variant="ghost" size="icon-lg" aria-label="Toggle theme" onClick={toggleTheme}>
+                      {darkMode ? <Sun /> : <Moon />}
+                    </Button>
+                  </ActionTooltip>
                 </div>
               </header>
 
@@ -892,12 +930,32 @@ export default function App() {
                       </nav>
 
                       <div className="playground-actions">
-                        <StatusPill state={activeTab.validationState} />
-                        <Button variant="ghost" size="lg" onClick={validateWorkflow}>Validate</Button>
+                        <div className="playground-cache-controls" aria-label="Cache settings">
+                          <ActionTooltip label={activeTab.useCache ? 'Disable agent cache for this workflow tab' : 'Enable agent cache for this workflow tab'}>
+                            <Button
+                              variant={activeTab.useCache ? 'secondary' : 'ghost'}
+                              size="icon-lg"
+                              aria-label={activeTab.useCache ? 'Disable cache' : 'Enable cache'}
+                              aria-pressed={activeTab.useCache}
+                              onClick={toggleCache}
+                            >
+                              <Database />
+                            </Button>
+                          </ActionTooltip>
+                          <ActionTooltip label="Purge cached agent outputs for this browser session">
+                            <Button variant="ghost" size="icon-lg" aria-label="Purge cache" onClick={purgeCache}>
+                              <DatabaseZap />
+                            </Button>
+                          </ActionTooltip>
+                        </div>
                         {activeTab.runState === 'running' ? (
-                          <Button variant="destructive" size="lg" onClick={stopRun}><Square /> Stop</Button>
+                          <ActionTooltip label="Stop the current workflow run">
+                            <Button variant="destructive" size="lg" onClick={stopRun}><Square /> Stop</Button>
+                          </ActionTooltip>
                         ) : (
-                          <Button className="playground-actions__run" disabled={!canRun} size="lg" onClick={runWorkflow}><Play /> Run workflow</Button>
+                          <ActionTooltip label="Run the workflow with the current input and secrets">
+                            <Button className="playground-actions__run" disabled={!canRun} size="lg" onClick={runWorkflow}><Play /> Run workflow</Button>
+                          </ActionTooltip>
                         )}
                       </div>
                     </div>
@@ -916,15 +974,24 @@ export default function App() {
                         ) : null}
 
                         <div className="workflow-layout__top workflow-layout__top--single">
-                          <Card className="workflow-editor">
+                          <Card className="workflow-editor" data-tone={editorStateTone}>
                             <div className="workflow-editor__header panel-card__header">
                               <div className="panel-card__title-block">
                                 <strong>{activeTab.name}</strong>
                               </div>
                               <div className="workflow-fragment-actions">
-                                <Button variant="ghost" size="sm" onClick={exportWorkflowSource}><Download /> Export</Button>
-                                <Button variant="ghost" size="sm" onClick={formatActiveEditor}><RefreshCcw /> Format</Button>
-                                <Button variant="outline" size="sm" onClick={addCodeFragment}><Plus /> Fragment</Button>
+                                <ActionTooltip label="Copy this workflow, input, and secrets as portable source">
+                                  <Button variant="ghost" size="sm" onClick={exportWorkflowSource}><Download /> Export</Button>
+                                </ActionTooltip>
+                                <ActionTooltip label="Format the active workflow, input, or secrets editor">
+                                  <Button variant="ghost" size="sm" onClick={formatActiveEditor}><RefreshCcw /> Format</Button>
+                                </ActionTooltip>
+                                <ActionTooltip label="Validate the workflow without running agents">
+                                  <Button variant="ghost" size="sm" onClick={validateWorkflow}><CheckCircle2 /> Validate</Button>
+                                </ActionTooltip>
+                                <ActionTooltip label="Add a new workflow code fragment">
+                                  <Button variant="outline" size="sm" onClick={addCodeFragment}><Plus /> Fragment</Button>
+                                </ActionTooltip>
                               </div>
                             </div>
                             <div className="workflow-editor-tabs" aria-label="Workflow editor tabs">
@@ -1376,6 +1443,23 @@ function stringPayloadValue(value: unknown) {
   return typeof value === 'string' ? value : null;
 }
 
+function numberPayloadValue(value: unknown) {
+  return typeof value === 'number' ? value : null;
+}
+
+function cacheSessionIdentifier() {
+  const savedSessionIdentifier = localStorage.getItem(cacheSessionStorageKey);
+
+  if (savedSessionIdentifier) {
+    return savedSessionIdentifier;
+  }
+
+  const sessionIdentifier = uniqueId();
+  localStorage.setItem(cacheSessionStorageKey, sessionIdentifier);
+
+  return sessionIdentifier;
+}
+
 function lspPositionToOffset(source: string, position: LspPosition): number {
   const lines = source.split('\n');
   const targetLineIndex = Math.min(Math.max(position.line, 0), Math.max(lines.length - 1, 0));
@@ -1412,10 +1496,35 @@ function resolveEditorMessageTone(activeTab: WorkflowTab | undefined): 'neutral'
   return 'neutral';
 }
 
+function workflowEditorTone(tab: WorkflowTab): 'neutral' | 'success' | 'error' | 'running' {
+  if (tab.validationState === 'invalid' || tab.runState === 'failed') {
+    return 'error';
+  }
+
+  if (tab.runState === 'running') {
+    return 'running';
+  }
+
+  if (tab.validationState === 'valid' || tab.runState === 'completed') {
+    return 'success';
+  }
+
+  return 'neutral';
+}
+
 function workflowTabTone(tab: WorkflowTab): 'default' | 'error' {
   return tab.validationState === 'invalid' || tab.runState === 'failed' ? 'error' : 'default';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+function ActionTooltip({ children, label }: { children: ReactElement; label: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="bottom" sideOffset={8}>{label}</TooltipContent>
+    </Tooltip>
+  );
 }

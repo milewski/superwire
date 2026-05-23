@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use clap::Args;
 use serde_json::Value;
 use superwire_core::dsl::parse_workflow;
-use superwire_executor::{CerseiModelProvider, ExecutorError, WorkflowExecutor};
+use superwire_executor::{
+    AgentCacheDriver, AgentCacheOptions, AgentCacheSession, AgentCacheTimeToLive, CerseiModelProvider, ExecutorError, WorkflowExecutor,
+};
 
 use super::json::WorkflowPayloadSources;
 use super::schema::CliRuntimeSchemaContext;
@@ -32,6 +34,15 @@ pub(super) struct RunWorkflowCommand {
 
     #[arg(long, action = clap::ArgAction::SetTrue)]
     pretty: bool,
+
+    #[arg(long, default_value_t = AgentCacheDriver::InMemory)]
+    cache_driver: AgentCacheDriver,
+
+    #[arg(long = "cache-ttl", default_value_t = AgentCacheTimeToLive::default())]
+    cache_time_to_live: AgentCacheTimeToLive,
+
+    #[arg(long = "no-cache", action = clap::ArgAction::SetFalse, default_value_t = true)]
+    use_cache: bool,
 }
 
 impl RunWorkflowCommand {
@@ -56,14 +67,16 @@ impl RunWorkflowCommand {
         let _runtime_schema_context = CliRuntimeSchemaContext::from_workflow(&parsed_workflow)?;
         let workflow_executor =
             WorkflowExecutor::from_source(&workflow_source).map_err(|error| CommandError::internal(error.to_string()))?;
+        let cache_options = self.cache_options()?;
 
         let output_value = async_runtime
-            .block_on(workflow_executor.execute(
+            .block_on(workflow_executor.execute_with_cache(
                 Value::Object(input_value),
                 Value::Object(secrets_value),
                 &CerseiModelProvider,
                 None,
                 10,
+                cache_options,
             ))
             .map_err(Self::map_workflow_runtime_error)?;
 
@@ -94,6 +107,23 @@ impl RunWorkflowCommand {
             self.secrets_file.as_deref(),
             self.set.as_deref(),
         )
+    }
+
+    fn cache_options(&self) -> Result<AgentCacheOptions, CommandError> {
+        if !self.use_cache {
+            return Ok(AgentCacheOptions::disabled());
+        }
+
+        let cache_store = self
+            .cache_driver
+            .build_store()
+            .map_err(|error| CommandError::internal(error.to_string()))?;
+
+        Ok(AgentCacheOptions::enabled(
+            AgentCacheSession::local(),
+            cache_store,
+            self.cache_time_to_live.0,
+        ))
     }
 
     fn map_workflow_runtime_error(error: ExecutorError) -> CommandError {

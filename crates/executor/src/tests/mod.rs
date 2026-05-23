@@ -1,6 +1,7 @@
 mod fixtures;
 mod support;
 
+mod cache;
 mod dynamic;
 mod execution;
 mod for_loop;

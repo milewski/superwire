@@ -76,6 +76,11 @@ impl ModelSchema {
     }
 
     #[must_use]
+    pub(crate) fn cache_fingerprint_value(&self, schema_cache: &mut ModelSchemaCache) -> Value {
+        self.json_value_with_cache(schema_cache)
+    }
+
+    #[must_use]
     pub fn json_value_with_cache(&self, schema_cache: &mut ModelSchemaCache) -> Value {
         let Some(schema_cache_key) = self.schema_cache_key() else {
             return self.uncached_json_value_with_cache(schema_cache);
@@ -317,6 +322,20 @@ impl ModelToolDefinition {
             _ => self.name.clone(),
         }
     }
+
+    #[must_use]
+    pub(crate) fn cache_fingerprint_value(&self, schema_cache: &mut ModelSchemaCache) -> Value {
+        serde_json::json!({
+            "name": self.name,
+            "description": self.description,
+            "source": self.source.cache_fingerprint_value(),
+            "input_schema": self.input_schema.cache_fingerprint_value(schema_cache),
+            "output_schema": self.output_schema.cache_fingerprint_value(schema_cache),
+            "bindings": self.bindings,
+            "max_calls": self.max_calls,
+            "max_calls_scope": self.max_calls_scope.cache_fingerprint_value(),
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -356,6 +375,19 @@ impl ToolCallLimitScope {
         match self {
             Self::Workflow => tool_name.to_string(),
             Self::Agent { agent_name } => format!("{agent_name}::{tool_name}"),
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn cache_fingerprint_value(&self) -> Value {
+        match self {
+            Self::Workflow => serde_json::json!({ "kind": "workflow" }),
+            Self::Agent { agent_name } => {
+                serde_json::json!({
+                    "kind": "agent",
+                    "agent_name": agent_name,
+                })
+            }
         }
     }
 }
@@ -410,6 +442,56 @@ pub enum ModelToolSource {
         endpoint: String,
         headers: BTreeMap<String, String>,
     },
+}
+
+impl ModelToolSource {
+    #[must_use]
+    pub(crate) fn cache_fingerprint_value(&self) -> Value {
+        match self {
+            Self::Finalize => serde_json::json!({
+                "kind": "finalize",
+            }),
+            Self::Local => serde_json::json!({
+                "kind": "local",
+            }),
+            Self::Mcp {
+                server_name,
+                tool_name,
+                endpoint,
+                headers,
+            } => serde_json::json!({
+                "kind": "mcp_tool",
+                "server_name": server_name,
+                "tool_name": tool_name,
+                "endpoint": endpoint,
+                "headers": headers,
+            }),
+            Self::McpPrompt {
+                server_name,
+                prompt_name,
+                endpoint,
+                headers,
+            } => serde_json::json!({
+                "kind": "mcp_prompt",
+                "server_name": server_name,
+                "prompt_name": prompt_name,
+                "endpoint": endpoint,
+                "headers": headers,
+            }),
+            Self::McpResource {
+                server_name,
+                resource_name,
+                endpoint,
+                headers,
+            } => serde_json::json!({
+                "kind": "mcp_resource",
+                "server_name": server_name,
+                "resource_name": resource_name,
+                "endpoint": endpoint,
+                "headers": headers,
+            }),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

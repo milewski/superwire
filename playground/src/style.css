@@ -545,6 +545,26 @@ textarea {
   @apply px-4 py-3;
 }
 
+.workflow-editor[data-tone="success"] {
+  border-color: color-mix(in srgb, #22c55e 28%, var(--border));
+}
+
+.workflow-editor[data-tone="success"] .workflow-editor__header {
+  background: linear-gradient(90deg, color-mix(in srgb, #22c55e 10%, transparent), transparent 44%);
+}
+
+.workflow-editor[data-tone="error"] {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+}
+
+.workflow-editor[data-tone="error"] .workflow-editor__header {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--danger) 12%, transparent), transparent 44%);
+}
+
+.workflow-editor[data-tone="running"] .workflow-editor__header {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent 44%);
+}
+
 .workflow-fragment-actions {
   @apply flex shrink-0 flex-wrap items-center justify-end gap-2;
 }
@@ -574,8 +594,20 @@ textarea {
   @apply flex flex-wrap items-center justify-end gap-2;
 }
 
-.playground-actions .status-pill {
-  @apply mr-1;
+.playground-cache-controls {
+  @apply flex items-center gap-1 rounded-xl border p-1;
+  border-color: color-mix(in srgb, var(--border) 78%, transparent);
+  background: color-mix(in srgb, var(--card) 86%, var(--foreground) 14%);
+}
+
+.playground-cache-controls button {
+  @apply h-8 w-8 rounded-lg;
+  color: var(--muted-foreground);
+}
+
+.playground-cache-controls button[data-variant="secondary"] {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
 }
 
 .playground-actions__run {

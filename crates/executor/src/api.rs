@@ -65,6 +65,9 @@ pub struct ExecutionOptions {
 
     #[serde(default = "default_max_concurrency")]
     pub max_concurrency: usize,
+
+    #[serde(default = "default_use_cache")]
+    pub use_cache: bool,
 }
 
 impl Default for ExecutionOptions {
@@ -72,6 +75,7 @@ impl Default for ExecutionOptions {
         Self {
             include_events: false,
             max_concurrency: default_max_concurrency(),
+            use_cache: default_use_cache(),
         }
     }
 }
@@ -80,9 +84,18 @@ fn default_max_concurrency() -> usize {
     5
 }
 
+fn default_use_cache() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ExecutionResponse {
     pub output: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CacheInvalidationResponse {
+    pub purged_entries: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]

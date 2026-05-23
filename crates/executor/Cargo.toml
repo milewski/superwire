@@ -15,10 +15,12 @@ cersei-types = { workspace = true }
 clap = { workspace = true }
 colog = { workspace = true }
 futures = "0.3"
+humantime = { workspace = true }
 jsonschema = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 superwire-core = { path = "../core" }
 superwire-lsp = { path = "../lsp" }
 thiserror = { workspace = true }

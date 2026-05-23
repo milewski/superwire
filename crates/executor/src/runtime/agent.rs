@@ -1,11 +1,13 @@
 use super::{AgentExecutionContext, CompletedAgentExecution, ExecutorError, ToolCallExecutionContext, WorkflowExecutor};
 use crate::event::ExecutorEvent;
 use crate::model::{ModelProvider, ModelRequest, ModelSchema, ModelSchemaCache, ModelToolDefinition, ToolCallTracker};
+use crate::runtime::cache::{hash_serializable_value, AgentCacheKey, CachedAgentExecution};
 use crate::runtime::mcp::normalize_prompt;
 use crate::runtime::schema::PlannedAgentSchemaExt;
 use crate::runtime::state::RuntimeState;
+use serde::Serialize;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
 use superwire_core::dsl::{AgentExpressionPropertyName, AgentProperty};
 use superwire_core::mcp::McpClientPool;
@@ -34,6 +36,48 @@ struct PreparedAgentRequest {
 }
 
 impl PreparedAgentRequest {
+    fn cache_key(&self, agent_execution_context: &AgentExecutionContext) -> Result<Option<AgentCacheKey>, ExecutorError> {
+        if !agent_execution_context.cache_options.is_enabled() {
+            return Ok(None);
+        }
+
+        let fingerprint = self.cache_fingerprint()?;
+        let agent_hash = hash_serializable_value(&fingerprint)?;
+
+        Ok(Some(AgentCacheKey::new(&agent_execution_context.cache_options.session, agent_hash)))
+    }
+
+    fn cache_fingerprint(&self) -> Result<PreparedAgentRequestCacheFingerprint, ExecutorError> {
+        let mut schema_cache = ModelSchemaCache::new();
+        let provider = ProviderConfigCacheFingerprint {
+            driver: self.provider_config.driver.as_str().to_string(),
+            endpoint: self.provider_config.endpoint.clone(),
+            api_key: self.provider_config.api_key.clone(),
+        };
+        let inference = self
+            .inference
+            .iter()
+            .map(|(field_name, field_value)| (field_name.clone(), field_value.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let output_schema = self.output_schema.cache_fingerprint_value(&mut schema_cache);
+        let tools = self
+            .tool_definitions
+            .iter()
+            .map(|tool_definition| tool_definition.cache_fingerprint_value(&mut schema_cache))
+            .collect::<Vec<_>>();
+
+        Ok(PreparedAgentRequestCacheFingerprint {
+            version: 1,
+            agent_name: self.agent_name.clone(),
+            provider,
+            model_name: self.model_name.clone(),
+            inference,
+            prompt: self.prompt.clone(),
+            output_schema,
+            tools,
+        })
+    }
+
     fn into_model_request(
         self,
         event_sender: Option<mpsc::Sender<ExecutorEvent>>,
@@ -53,6 +97,25 @@ impl PreparedAgentRequest {
             tool_call_tracker,
         }
     }
+}
+
+#[derive(Debug, Serialize)]
+struct PreparedAgentRequestCacheFingerprint {
+    version: u8,
+    agent_name: String,
+    provider: ProviderConfigCacheFingerprint,
+    model_name: String,
+    inference: BTreeMap<String, Value>,
+    prompt: String,
+    output_schema: Value,
+    tools: Vec<Value>,
+}
+
+#[derive(Debug, Serialize)]
+struct ProviderConfigCacheFingerprint {
+    driver: String,
+    endpoint: Option<String>,
+    api_key: Option<String>,
 }
 
 impl WorkflowExecutor {
@@ -105,6 +168,36 @@ impl WorkflowExecutor {
                 .await;
         }
 
+        let cache_key = prepared_request.cache_key(agent_execution_context)?;
+
+        if let Some(cache_key) = cache_key.as_ref() {
+            if let Some(cache_store) = &agent_execution_context.cache_options.store {
+                if let Some(cached_execution) = cache_store.get(cache_key)? {
+                    log::debug!("agent `{}` cache hit: hash={}", planned_agent.name, cache_key.agent_hash());
+
+                    planned_agent.validate_output_value(&cached_execution.output)?;
+
+                    if let Some(event_sender) = &agent_execution_context.event_sender {
+                        let _ = event_sender
+                            .send(ExecutorEvent::agent_completed(
+                                planned_agent.name.clone(),
+                                cached_execution.output.clone(),
+                                agent_started_at.elapsed(),
+                                agent_run_context.iteration_index,
+                                true,
+                            ))
+                            .await;
+                    }
+
+                    return Ok(CompletedAgentExecution {
+                        agent_name: planned_agent.name.clone(),
+                        output: cached_execution.output,
+                        context: cached_execution.context,
+                    });
+                }
+            }
+        }
+
         let model_response = model_provider
             .generate(prepared_request.into_model_request(
                 agent_execution_context.event_sender.clone(),
@@ -117,6 +210,16 @@ impl WorkflowExecutor {
 
         planned_agent.validate_output_value(&model_response.output)?;
 
+        if let Some(cache_key) = cache_key {
+            if let Some(cache_store) = &agent_execution_context.cache_options.store {
+                cache_store.put(
+                    cache_key,
+                    CachedAgentExecution::new(model_response.output.clone(), model_response.context.clone()),
+                    agent_execution_context.cache_options.time_to_live,
+                )?;
+            }
+        }
+
         if let Some(event_sender) = &agent_execution_context.event_sender {
             let _ = event_sender
                 .send(ExecutorEvent::agent_completed(
@@ -124,6 +227,7 @@ impl WorkflowExecutor {
                     model_response.output.clone(),
                     agent_started_at.elapsed(),
                     agent_run_context.iteration_index,
+                    false,
                 ))
                 .await;
         }

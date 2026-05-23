@@ -82,6 +82,7 @@ impl WorkflowExecutor {
                 import_context: agent_execution_context.import_context.clone(),
                 tool_call_tracker: tool_call_tracker.clone(),
                 runtime_concurrency_limiter: agent_execution_context.runtime_concurrency_limiter.clone(),
+                cache_options: agent_execution_context.cache_options.clone(),
             };
             let runtime_concurrency_limiter = iteration_execution_context.runtime_concurrency_limiter.clone();
 

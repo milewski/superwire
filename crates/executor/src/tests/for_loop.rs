@@ -259,6 +259,7 @@ async fn for_loop_respects_max_concurrency() {
     request.options = ExecutionOptions {
         include_events: false,
         max_concurrency: 1,
+        use_cache: true,
     };
 
     let output = service
@@ -304,6 +305,7 @@ async fn for_loop_iterations_run_in_parallel_with_configured_limit() {
     request.options = ExecutionOptions {
         include_events: false,
         max_concurrency: 2,
+        use_cache: true,
     };
 
     service
