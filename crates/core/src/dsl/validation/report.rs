@@ -265,6 +265,10 @@ pub enum ValidationIssue {
         agent_name: String,
         found_type: String,
     },
+    InvalidForLoopDestructuringBinding {
+        agent_name: String,
+        binding_name: String,
+    },
     UnknownSchemaReference {
         referenced_schema: String,
         context: ValidationContext,
@@ -339,6 +343,7 @@ impl ValidationIssue {
             Self::MissingOptionalReferenceAccess { .. } => "missing_optional_reference_access",
             Self::InvalidReferencePath { .. } => "invalid_reference_path",
             Self::InvalidForLoopIterableType { .. } => "invalid_for_loop_iterable_type",
+            Self::InvalidForLoopDestructuringBinding { .. } => "invalid_for_loop_destructuring_binding",
             Self::UnknownSchemaReference { .. } => "unknown_schema_reference",
             Self::UnknownToolReference { .. } => "unknown_tool_reference",
             Self::UnknownResourceReference { .. } => "unknown_resource_reference",
@@ -512,6 +517,11 @@ impl ValidationIssue {
             Self::InvalidForLoopIterableType { agent_name, found_type } => {
                 format!("Agent `{agent_name}` for-loop iterable must evaluate to an array, found `{found_type}`.")
             }
+            Self::InvalidForLoopDestructuringBinding { agent_name, binding_name } => {
+                format!(
+                    "Agent `{agent_name}` for-loop cannot destructure field `{binding_name}` because the iterable item type has no such field."
+                )
+            }
             Self::UnknownSchemaReference {
                 referenced_schema,
                 context,
@@ -617,6 +627,10 @@ impl ValidationIssue {
             | Self::InvalidForLoopIterableType {
                 agent_name: _,
                 found_type: _,
+            }
+            | Self::InvalidForLoopDestructuringBinding {
+                agent_name: _,
+                binding_name: _,
             }
             | Self::UnknownSchemaReference {
                 referenced_schema: _,
@@ -971,6 +985,10 @@ impl From<&ValidationIssue> for DiagnosticCode {
                 agent_name: _,
                 found_type: _,
             } => Self::InvalidForLoopIterableType,
+            ValidationIssue::InvalidForLoopDestructuringBinding {
+                agent_name: _,
+                binding_name: _,
+            } => Self::InvalidForLoopDestructuringBinding,
             ValidationIssue::UnknownSchemaReference {
                 referenced_schema: _,
                 context: _,

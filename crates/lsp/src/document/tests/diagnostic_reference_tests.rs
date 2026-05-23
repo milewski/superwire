@@ -145,6 +145,30 @@ fn reports_invalid_for_loop_iterable_type_diagnostic_for_object_reference() {
 }
 
 #[test]
+fn reports_invalid_for_loop_destructuring_binding_for_missing_item_field() {
+    let diagnostics = inline_diagnostics! {
+        dynamic {
+            example: [
+                {
+                    demo: 123
+                    test: 456
+                },
+            ]
+        }
+
+        agent stage_1 for { id } in dynamic.example {
+            instruction: "transcript: {{ id }}"
+            output {
+                summary: string
+            }
+        }
+    };
+
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::InvalidForLoopDestructuringBinding);
+    assert!(!diagnostic_has_code(&diagnostics, DiagnosticCode::UnknownLocalBindingReference));
+}
+
+#[test]
 fn reports_invalid_reference_path_for_for_loop_agent_output_field() {
     let diagnostics = inline_diagnostics! {
         agent random for number in [1, 2, 3] {

@@ -138,6 +138,7 @@ impl From<CoreDiagnosticCode> for DiagnosticCode {
             CoreDiagnosticCode::MissingOptionalReferenceAccess => Self::MissingOptionalReferenceAccess,
             CoreDiagnosticCode::InvalidReferencePath => Self::InvalidReferencePath,
             CoreDiagnosticCode::InvalidForLoopIterableType => Self::InvalidForLoopIterableType,
+            CoreDiagnosticCode::InvalidForLoopDestructuringBinding => Self::InvalidForLoopDestructuringBinding,
             CoreDiagnosticCode::UnknownSchemaReference => Self::UnknownSchemaReference,
             CoreDiagnosticCode::UnknownToolReference => Self::UnknownToolReference,
             CoreDiagnosticCode::UnknownResourceReference => Self::UnknownResourceReference,

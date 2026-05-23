@@ -84,6 +84,8 @@ pub enum DiagnosticCode {
     InvalidReferencePath,
     #[serde(rename = "invalid_for_loop_iterable_type")]
     InvalidForLoopIterableType,
+    #[serde(rename = "invalid_for_loop_destructuring_binding")]
+    InvalidForLoopDestructuringBinding,
     #[serde(rename = "unknown_schema_reference")]
     UnknownSchemaReference,
     #[serde(rename = "unknown_tool_reference")]

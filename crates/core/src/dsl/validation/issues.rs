@@ -59,6 +59,13 @@ impl AgentDeclaration {
         }
     }
 
+    pub(super) fn invalid_for_loop_destructuring_binding_issue(&self, binding_name: &str) -> ValidationIssue {
+        ValidationIssue::InvalidForLoopDestructuringBinding {
+            agent_name: self.name.clone(),
+            binding_name: binding_name.to_owned(),
+        }
+    }
+
     pub(super) fn invalid_tool_binding_issue(&self, tool_name: &str, message: String) -> ValidationIssue {
         ValidationIssue::InvalidToolBinding {
             agent_name: self.name.clone(),

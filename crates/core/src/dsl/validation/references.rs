@@ -1,10 +1,11 @@
 use super::super::ast::{
-    AgentDeclaration, AgentForLoop, AgentProperty, Declaration, Expression, MatchBranch, ObjectField, Reference, ReferenceKeyword,
-    SourceSpan, StringTemplatePart, TypeExpression, TypeExpressionFieldCache, Workflow,
+    AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, Declaration, Expression, MatchBranch, ObjectField, Reference,
+    ReferenceKeyword, SourceSpan, StringTemplatePart, TypeExpression, TypeExpressionFieldCache, Workflow,
 };
 use super::report::{ValidationContext, ValidationReport};
 use super::tools::validate_agent_tool_bindings;
 use crate::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
+use crate::semantic::support::types::WorkflowType;
 use crate::semantic::WorkflowSemanticIndex as ValidationIndex;
 use std::collections::{HashMap, HashSet};
 
@@ -82,8 +83,17 @@ pub(super) fn validate_agent_references(workflow: &Workflow, validation_index: &
                     keyword_reference_validation_state.validate_for_loop_iterable_type(agent_declaration, agent_for_loop);
 
                     if let Some(iterable_item_type) = keyword_reference_validation_state.infer_for_loop_item_type(agent_for_loop) {
-                        for bound_identifier_name in agent_for_loop.bound_identifier_names() {
-                            agent_dynamic_field_types.insert(bound_identifier_name.to_string(), iterable_item_type.clone());
+                        let binding_resolution = agent_for_loop.resolve_binding_types(&iterable_item_type);
+
+                        for invalid_binding_name in binding_resolution.invalid_binding_names {
+                            keyword_reference_validation_state.validation_report.push_issue_with_span(
+                                agent_declaration.invalid_for_loop_destructuring_binding_issue(invalid_binding_name.as_str()),
+                                Some(agent_declaration.span),
+                            );
+                        }
+
+                        for (binding_name, binding_type) in binding_resolution.binding_types {
+                            agent_dynamic_field_types.insert(binding_name, binding_type);
                         }
                     }
                 }
@@ -431,7 +441,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         );
     }
 
-    fn infer_for_loop_item_type(&self, agent_for_loop: &AgentForLoop) -> Option<crate::semantic::support::types::WorkflowType> {
+    fn infer_for_loop_item_type(&self, agent_for_loop: &AgentForLoop) -> Option<WorkflowType> {
         let inferred_iterable_type = infer_expression_type(
             &agent_for_loop.iterable,
             &self.for_loop_type_inference_context,
@@ -440,55 +450,49 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         .ok()?;
 
         match inferred_iterable_type {
-            crate::semantic::support::types::WorkflowType::Array {
+            WorkflowType::Array {
                 item_type,
                 fixed_length: _,
             } => Some(*item_type),
-            crate::semantic::support::types::WorkflowType::Union(union_members) => {
-                union_members.into_iter().find_map(|union_member| match union_member {
-                    crate::semantic::support::types::WorkflowType::Array {
-                        item_type,
-                        fixed_length: _,
-                    } => Some(*item_type),
-                    crate::semantic::support::types::WorkflowType::Any
-                    | crate::semantic::support::types::WorkflowType::String
-                    | crate::semantic::support::types::WorkflowType::Integer
-                    | crate::semantic::support::types::WorkflowType::Float
-                    | crate::semantic::support::types::WorkflowType::Boolean
-                    | crate::semantic::support::types::WorkflowType::Null
-                    | crate::semantic::support::types::WorkflowType::AnyObject
-                    | crate::semantic::support::types::WorkflowType::StringEnum(_)
-                    | crate::semantic::support::types::WorkflowType::Union(_)
-                    | crate::semantic::support::types::WorkflowType::Tuple(_)
-                    | crate::semantic::support::types::WorkflowType::Object(_)
-                    | crate::semantic::support::types::WorkflowType::Variant {
-                        discriminator: _,
-                        cases: _,
-                    } => None,
-                })
-            }
-            crate::semantic::support::types::WorkflowType::Any
-            | crate::semantic::support::types::WorkflowType::String
-            | crate::semantic::support::types::WorkflowType::Integer
-            | crate::semantic::support::types::WorkflowType::Float
-            | crate::semantic::support::types::WorkflowType::Boolean
-            | crate::semantic::support::types::WorkflowType::Null
-            | crate::semantic::support::types::WorkflowType::AnyObject
-            | crate::semantic::support::types::WorkflowType::StringEnum(_)
-            | crate::semantic::support::types::WorkflowType::Tuple(_)
-            | crate::semantic::support::types::WorkflowType::Object(_)
-            | crate::semantic::support::types::WorkflowType::Variant {
+            WorkflowType::Union(union_members) => union_members.into_iter().find_map(|union_member| match union_member {
+                WorkflowType::Array {
+                    item_type,
+                    fixed_length: _,
+                } => Some(*item_type),
+                WorkflowType::Any
+                | WorkflowType::String
+                | WorkflowType::Integer
+                | WorkflowType::Float
+                | WorkflowType::Boolean
+                | WorkflowType::Null
+                | WorkflowType::AnyObject
+                | WorkflowType::StringEnum(_)
+                | WorkflowType::Union(_)
+                | WorkflowType::Tuple(_)
+                | WorkflowType::Object(_)
+                | WorkflowType::Variant {
+                    discriminator: _,
+                    cases: _,
+                } => None,
+            }),
+            WorkflowType::Any
+            | WorkflowType::String
+            | WorkflowType::Integer
+            | WorkflowType::Float
+            | WorkflowType::Boolean
+            | WorkflowType::Null
+            | WorkflowType::AnyObject
+            | WorkflowType::StringEnum(_)
+            | WorkflowType::Tuple(_)
+            | WorkflowType::Object(_)
+            | WorkflowType::Variant {
                 discriminator: _,
                 cases: _,
             } => None,
         }
     }
 
-    fn infer_dynamic_field_types(
-        &self,
-        dynamic_fields: &[&ObjectField],
-        dynamic_field_types: &mut HashMap<String, crate::semantic::support::types::WorkflowType>,
-    ) {
+    fn infer_dynamic_field_types(&self, dynamic_fields: &[&ObjectField], dynamic_field_types: &mut HashMap<String, WorkflowType>) {
         let mut pending_dynamic_fields = dynamic_fields.to_vec();
 
         while !pending_dynamic_fields.is_empty() {
@@ -518,7 +522,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
     fn validate_expression(
         &mut self,
         expression: &Expression,
-        dynamic_field_types: &HashMap<String, crate::semantic::support::types::WorkflowType>,
+        dynamic_field_types: &HashMap<String, WorkflowType>,
         context: ValidationContext,
         secret_reference_policy: SecretReferencePolicy,
     ) {
@@ -602,7 +606,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
     fn validate_mcp_call(
         &mut self,
         mcp_call: &crate::dsl::McpCall,
-        dynamic_field_types: &HashMap<String, crate::semantic::support::types::WorkflowType>,
+        dynamic_field_types: &HashMap<String, WorkflowType>,
         context: ValidationContext,
         secret_reference_policy: SecretReferencePolicy,
     ) {
@@ -716,7 +720,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
     fn validate_local_binding_reference(
         &mut self,
         reference: &Reference,
-        local_binding_types: &HashMap<String, crate::semantic::support::types::WorkflowType>,
+        local_binding_types: &HashMap<String, WorkflowType>,
         context: ValidationContext,
     ) {
         let Some(binding_name) = reference.root_identifier() else {
@@ -791,7 +795,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
     fn validate_dynamic_reference(
         &mut self,
         reference: &Reference,
-        dynamic_field_types: &HashMap<String, crate::semantic::support::types::WorkflowType>,
+        dynamic_field_types: &HashMap<String, WorkflowType>,
         context: ValidationContext,
     ) {
         let referenced_field_name = reference
@@ -943,19 +947,14 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         }
     }
 
-    fn validate_workflow_type_reference_path(
-        &mut self,
-        reference: &Reference,
-        start_type: crate::semantic::support::types::WorkflowType,
-        context: ValidationContext,
-    ) {
+    fn validate_workflow_type_reference_path(&mut self, reference: &Reference, start_type: WorkflowType, context: ValidationContext) {
         self.validate_workflow_type_reference_path_from(reference, start_type, context, 1);
     }
 
     fn validate_workflow_type_reference_path_from(
         &mut self,
         reference: &Reference,
-        start_type: crate::semantic::support::types::WorkflowType,
+        start_type: WorkflowType,
         context: ValidationContext,
         access_start_index: usize,
     ) {
@@ -1005,44 +1004,39 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
     }
 
     fn collect_next_workflow_types_for_field(
-        candidate_type: &crate::semantic::support::types::WorkflowType,
+        candidate_type: &WorkflowType,
         field_name: &str,
-        next_candidate_types: &mut Vec<crate::semantic::support::types::WorkflowType>,
+        next_candidate_types: &mut Vec<WorkflowType>,
     ) {
         match candidate_type {
-            crate::semantic::support::types::WorkflowType::Object(fields) => {
+            WorkflowType::Object(fields) => {
                 if let Some(field_type) = fields.get(field_name) {
                     next_candidate_types.push(field_type.clone());
                 }
             }
-            crate::semantic::support::types::WorkflowType::Union(union_members) => {
+            WorkflowType::Union(union_members) => {
                 for union_member in union_members {
                     Self::collect_next_workflow_types_for_field(union_member, field_name, next_candidate_types);
                 }
             }
-            crate::semantic::support::types::WorkflowType::Variant { discriminator, cases } => {
+            WorkflowType::Variant { discriminator, cases } => {
                 if discriminator == field_name {
-                    next_candidate_types.extend(
-                        cases
-                            .keys()
-                            .cloned()
-                            .map(|case_name| crate::semantic::support::types::WorkflowType::StringEnum(vec![case_name])),
-                    );
+                    next_candidate_types.extend(cases.keys().cloned().map(|case_name| WorkflowType::StringEnum(vec![case_name])));
                 }
             }
-            crate::semantic::support::types::WorkflowType::Any
-            | crate::semantic::support::types::WorkflowType::String
-            | crate::semantic::support::types::WorkflowType::Integer
-            | crate::semantic::support::types::WorkflowType::Float
-            | crate::semantic::support::types::WorkflowType::Boolean
-            | crate::semantic::support::types::WorkflowType::Null
-            | crate::semantic::support::types::WorkflowType::AnyObject
-            | crate::semantic::support::types::WorkflowType::StringEnum(_)
-            | crate::semantic::support::types::WorkflowType::Array {
+            WorkflowType::Any
+            | WorkflowType::String
+            | WorkflowType::Integer
+            | WorkflowType::Float
+            | WorkflowType::Boolean
+            | WorkflowType::Null
+            | WorkflowType::AnyObject
+            | WorkflowType::StringEnum(_)
+            | WorkflowType::Array {
                 item_type: _,
                 fixed_length: _,
             }
-            | crate::semantic::support::types::WorkflowType::Tuple(_) => {}
+            | WorkflowType::Tuple(_) => {}
         }
     }
 
@@ -1074,24 +1068,59 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
     }
 }
 
-fn workflow_type_can_be_null(workflow_type: &crate::semantic::support::types::WorkflowType) -> bool {
+struct ForLoopBindingResolution {
+    binding_types: HashMap<String, WorkflowType>,
+    invalid_binding_names: Vec<String>,
+}
+
+impl AgentForLoop {
+    fn resolve_binding_types(&self, iterable_item_type: &WorkflowType) -> ForLoopBindingResolution {
+        let mut binding_types = HashMap::new();
+        let mut invalid_binding_names = Vec::new();
+
+        match &self.pattern {
+            AgentForLoopPattern::Identifier(identifier) => {
+                binding_types.insert(identifier.clone(), iterable_item_type.clone());
+            }
+            AgentForLoopPattern::ObjectDestructuring(field_names) => {
+                for field_name in field_names {
+                    let Some(field_type) = iterable_item_type.field_type(field_name) else {
+                        invalid_binding_names.push(field_name.clone());
+                        binding_types.insert(field_name.clone(), WorkflowType::Any);
+
+                        continue;
+                    };
+
+                    binding_types.insert(field_name.clone(), field_type);
+                }
+            }
+        }
+
+        ForLoopBindingResolution {
+            binding_types,
+            invalid_binding_names,
+        }
+    }
+}
+
+fn workflow_type_can_be_null(workflow_type: &WorkflowType) -> bool {
     match workflow_type {
-        crate::semantic::support::types::WorkflowType::Null => true,
-        crate::semantic::support::types::WorkflowType::Union(union_members) => union_members.iter().any(workflow_type_can_be_null),
-        crate::semantic::support::types::WorkflowType::Any
-        | crate::semantic::support::types::WorkflowType::String
-        | crate::semantic::support::types::WorkflowType::Integer
-        | crate::semantic::support::types::WorkflowType::Float
-        | crate::semantic::support::types::WorkflowType::Boolean
-        | crate::semantic::support::types::WorkflowType::AnyObject
-        | crate::semantic::support::types::WorkflowType::StringEnum(_)
-        | crate::semantic::support::types::WorkflowType::Array {
+        WorkflowType::Null => true,
+        WorkflowType::Union(union_members) => union_members.iter().any(workflow_type_can_be_null),
+        WorkflowType::Any
+        | WorkflowType::String
+        | WorkflowType::Integer
+        | WorkflowType::Float
+        | WorkflowType::Boolean
+        | WorkflowType::AnyObject
+        | WorkflowType::StringEnum(_)
+        | WorkflowType::Array {
             item_type: _,
             fixed_length: _,
         }
-        | crate::semantic::support::types::WorkflowType::Tuple(_)
-        | crate::semantic::support::types::WorkflowType::Object(_)
-        | crate::semantic::support::types::WorkflowType::Variant {
+        | WorkflowType::Tuple(_)
+        | WorkflowType::Object(_)
+        | WorkflowType::Variant {
             discriminator: _,
             cases: _,
         } => false,

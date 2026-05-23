@@ -1080,6 +1080,41 @@ fn reports_invalid_for_loop_iterable_type_for_object_reference() {
 }
 
 #[test]
+fn reports_invalid_for_loop_destructuring_binding_for_missing_item_field() {
+    let workflow = parse_inline_workflow! {
+        provider openai from openai {}
+
+        model plus from openai {
+            id: "test-model"
+        }
+
+        dynamic {
+            example: [
+                {
+                    demo: 123
+                    test: 456
+                },
+            ]
+        }
+
+        agent stage_1 for { id } in dynamic.example {
+            model: model.plus
+            instruction: "transcript: {{ id }}"
+            output {
+                summary: string
+            }
+        }
+    };
+
+    assert_workflow_issues_contain!(
+        workflow,
+        ValidationIssue::InvalidForLoopDestructuringBinding { agent_name, binding_name }
+            if agent_name == "stage_1" && binding_name == "id"
+    );
+    assert_workflow_issues_do_not_contain!(workflow, ValidationIssue::UnknownLocalBindingReference { .. });
+}
+
+#[test]
 fn allows_for_loop_iterable_type_for_array_reference() {
     let workflow = parse_inline_workflow! {
         agent summarizer {
