@@ -69,6 +69,7 @@ const graphLayoutDefaultNodeWidth = 340;
 const graphLayoutDefaultNodeHeight = 260;
 const defaultGraphViewport: Viewport = { x: 0, y: 0, zoom: 0.85 };
 const WorkflowGraphOpenObjectSchema = { type: 'object', additionalProperties: true };
+const schemaInlineLengthLimit = 58;
 
 const graphNodeTypes = {
   workflowGraph: WorkflowGraphNodeCard,
@@ -2397,15 +2398,15 @@ function schemaLines(schema: unknown, depth: number, config: GraphConfig): strin
   }
 
   if (Array.isArray(schema.anyOf)) {
-    return [`(${schema.anyOf.map((option) => schemaInline(option, config)).join(' | ')})`];
+    return unionSchemaLines(schema.anyOf, depth, config);
   }
 
   if (Array.isArray(schema.oneOf)) {
-    return [`(${schema.oneOf.map((option) => schemaInline(option, config)).join(' | ')})`];
+    return unionSchemaLines(schema.oneOf, depth, config);
   }
 
   if (schema.type === 'array' && Array.isArray(schema.prefixItems)) {
-    return [`(${schema.prefixItems.map((itemSchema) => schemaInline(itemSchema, config)).join(', ')})`];
+    return tupleSchemaLines(schema.prefixItems, depth, config);
   }
 
   if (schema.type === 'array' && isRecord(schema.items)) {
@@ -2427,6 +2428,56 @@ function schemaInline(schema: unknown, config: GraphConfig): string {
   const lines = schemaLines(schema, 0, config);
 
   return lines.join(' ').replaceAll(/\s+/g, ' ');
+}
+
+function unionSchemaLines(memberSchemas: unknown[], depth: number, config: GraphConfig): string[] {
+  const inlineUnion = `(${memberSchemas.map((memberSchema) => schemaInline(memberSchema, config)).join(' | ')})`;
+
+  if (inlineUnion.length <= schemaInlineLengthLimit && memberSchemas.every((memberSchema) => schemaLines(memberSchema, depth, config).length === 1)) {
+    return [inlineUnion];
+  }
+
+  const lines = ['('];
+
+  for (const [memberIndex, memberSchema] of memberSchemas.entries()) {
+    const memberLines = schemaLines(memberSchema, depth + 1, config);
+    const firstLine = memberLines[0] ?? 'unknown';
+    const separator = memberIndex < memberSchemas.length - 1 ? ' |' : '';
+    const formattedMemberLines = [`${indent(depth + 1)}${firstLine}`, ...memberLines.slice(1)];
+    const lastLineIndex = formattedMemberLines.length - 1;
+
+    formattedMemberLines[lastLineIndex] = `${formattedMemberLines[lastLineIndex]}${separator}`;
+    lines.push(...formattedMemberLines);
+  }
+
+  lines.push(`${indent(depth)})`);
+
+  return lines;
+}
+
+function tupleSchemaLines(itemSchemas: unknown[], depth: number, config: GraphConfig): string[] {
+  const inlineTuple = `(${itemSchemas.map((itemSchema) => schemaInline(itemSchema, config)).join(', ')})`;
+
+  if (inlineTuple.length <= schemaInlineLengthLimit && itemSchemas.every((itemSchema) => schemaLines(itemSchema, depth, config).length === 1)) {
+    return [inlineTuple];
+  }
+
+  const lines = ['('];
+
+  for (const [itemIndex, itemSchema] of itemSchemas.entries()) {
+    const itemLines = schemaLines(itemSchema, depth + 1, config);
+    const firstLine = itemLines[0] ?? 'unknown';
+    const separator = itemIndex < itemSchemas.length - 1 ? ',' : '';
+    const formattedItemLines = [`${indent(depth + 1)}${firstLine}`, ...itemLines.slice(1)];
+    const lastLineIndex = formattedItemLines.length - 1;
+
+    formattedItemLines[lastLineIndex] = `${formattedItemLines[lastLineIndex]}${separator}`;
+    lines.push(...formattedItemLines);
+  }
+
+  lines.push(`${indent(depth)})`);
+
+  return lines;
 }
 
 function variantSchemaLines(schema: Record<string, unknown>, depth: number, config: GraphConfig): string[] | null {
@@ -2474,8 +2525,25 @@ function arraySchemaLines(arraySchema: Record<string, unknown>, itemSchema: Reco
   if (!isObjectSchema(itemSchema)) {
     const fixedLength = fixedArrayLength(arraySchema);
     const itemType = schemaInline(itemSchema, config);
+    const itemLines = schemaLines(itemSchema, depth + 1, config);
+    const canInline = itemLines.length === 1 && itemType.length <= schemaInlineLengthLimit;
 
-    return [fixedLength === null ? `[${itemType}]` : `[${itemType}; ${fixedLength}]`];
+    if (canInline) {
+      return [fixedLength === null ? `[${itemType}]` : `[${itemType}; ${fixedLength}]`];
+    }
+
+    const lines = ['['];
+    const firstLine = itemLines[0] ?? 'unknown';
+
+    lines.push(`${indent(depth + 1)}${firstLine}`);
+
+    for (const remainingLine of itemLines.slice(1)) {
+      lines.push(remainingLine);
+    }
+
+    lines.push(fixedLength === null ? `${indent(depth)}]` : `${indent(depth)}; ${fixedLength}]`);
+
+    return lines;
   }
 
   if (isRecord(itemSchema.properties)) {

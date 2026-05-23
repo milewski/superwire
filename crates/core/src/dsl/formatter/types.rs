@@ -44,6 +44,26 @@ impl TypeExpression {
             Self::StringEnum(enum_value) => formatter.output.push_str(&render_plain_string_literal(enum_value)),
             Self::StringEnumReference(reference) => reference.push_to_formatter(formatter),
             Self::Array { item_type, fixed_length } => {
+                if item_type.should_break_inside_array() {
+                    formatter.output.push('[');
+                    formatter.push_newline();
+                    formatter.indentation_depth += 1;
+                    formatter.push_indent();
+                    item_type.push_to_formatter(formatter);
+
+                    if let Some(array_length) = fixed_length {
+                        formatter.output.push_str("; ");
+                        formatter.output.push_str(&array_length.to_string());
+                    }
+
+                    formatter.push_newline();
+                    formatter.indentation_depth -= 1;
+                    formatter.push_indent();
+                    formatter.output.push(']');
+
+                    return;
+                }
+
                 formatter.output.push('[');
                 item_type.push_to_formatter(formatter);
 
@@ -188,5 +208,22 @@ impl TypeExpression {
         }
 
         formatter.output.push_str(" }");
+    }
+
+    fn should_break_inside_array(&self) -> bool {
+        match self {
+            Self::Object(_) | Self::Variant { discriminator: _, cases: _ } => true,
+            Self::Array { item_type, fixed_length: _ } => item_type.should_break_inside_array(),
+            Self::Tuple(tuple_items) | Self::Union(tuple_items) => tuple_items.iter().any(Self::should_break_inside_array),
+            Self::String
+            | Self::Number
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::AnyObject
+            | Self::SchemaReference(_)
+            | Self::StringEnum(_)
+            | Self::StringEnumReference(_) => false,
+        }
     }
 }
