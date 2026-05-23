@@ -14,9 +14,9 @@ pub use ast::{
     McpPromptImportDeclaration, McpResourceImportDeclaration, McpServerDeclaration, McpServerPropertyName, McpToolBatchImportDeclaration,
     McpToolBatchImportItem, McpToolSource, ModelAssetKind, ModelCallArgumentName, ModelDeclaration, ModelDeclarationPropertyName,
     ModelUsage, ModelUsagePropertyName, NamedArgument, NullFallbackExpression, ObjectField, OutputDeclaration, ProviderDeclaration,
-    Reference, ReferenceAccess, ReferenceKeyword, ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan,
-    StringTemplate, StringTemplatePart, ToolCall, ToolCallKeyword, ToolDeclaration, ToolDeclarationIter, ToolPropertyName, ToolSource,
-    TypeExpression, TypeExpressionFieldCache, TypedField, VariantCase, VariantProjectionExpression, Workflow,
+    Reference, ReferenceAccess, ReferenceAccessKind, ReferenceKeyword, ReferenceRoot, SchemaDeclaration, SecretsDeclaration,
+    SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall, ToolCallKeyword, ToolDeclaration, ToolDeclarationIter,
+    ToolPropertyName, ToolSource, TypeExpression, TypeExpressionFieldCache, TypedField, VariantCase, VariantProjectionExpression, Workflow,
 };
 pub use formatter::{format_workflow_source, DslFormatError};
 pub use parser::{parse_workflow, DslParseError};

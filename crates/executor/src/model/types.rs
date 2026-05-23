@@ -76,6 +76,33 @@ impl ModelAssetValueField {
 }
 
 impl ModelAsset {
+    #[must_use]
+    pub fn all_from_value(value: &Value) -> Option<Vec<Self>> {
+        if let Some(asset) = Self::from_value(value) {
+            return Some(vec![asset]);
+        }
+
+        let asset_values = value.as_array()?;
+        let mut assets = Vec::with_capacity(asset_values.len());
+
+        for asset_value in asset_values {
+            assets.push(Self::from_value(asset_value)?);
+        }
+
+        Some(assets)
+    }
+
+    #[must_use]
+    pub fn non_empty_all_from_value(value: &Value) -> Option<Vec<Self>> {
+        let assets = Self::all_from_value(value)?;
+
+        if assets.is_empty() {
+            return None;
+        }
+
+        Some(assets)
+    }
+
     pub fn from_value(value: &Value) -> Option<Self> {
         if value.get(ModelAssetValueField::Marker.as_str()).and_then(Value::as_bool) != Some(true) {
             return None;

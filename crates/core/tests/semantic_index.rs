@@ -475,36 +475,18 @@ fn workflow_semantic_index_exposes_core_source_span_lookup_for_references() {
     let input_reference = Reference {
         root: ReferenceRoot::Keyword(ReferenceKeyword::Input),
         accesses: vec![
-            ReferenceAccess {
-                field: "profile".to_string(),
-                optional: false,
-            },
-            ReferenceAccess {
-                field: "details".to_string(),
-                optional: false,
-            },
-            ReferenceAccess {
-                field: "title".to_string(),
-                optional: false,
-            },
+            ReferenceAccess::required("profile"),
+            ReferenceAccess::required("details"),
+            ReferenceAccess::required("title"),
         ],
         span: agent_declaration.span,
     };
     let tool_reference = Reference {
         root: ReferenceRoot::Keyword(ReferenceKeyword::Tool),
         accesses: vec![
-            ReferenceAccess {
-                field: "web_search".to_string(),
-                optional: false,
-            },
-            ReferenceAccess {
-                field: "result".to_string(),
-                optional: false,
-            },
-            ReferenceAccess {
-                field: "summary".to_string(),
-                optional: false,
-            },
+            ReferenceAccess::required("web_search"),
+            ReferenceAccess::required("result"),
+            ReferenceAccess::required("summary"),
         ],
         span: agent_declaration.span,
     };

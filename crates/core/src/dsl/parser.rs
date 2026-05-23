@@ -283,8 +283,8 @@ mod tests {
     use crate::dsl::macros::parse_inline_workflow;
     use crate::dsl::{
         AgentExpressionPropertyName, AgentForLoopPattern, AgentProperty, AssetPropertyName, Declaration, DslParseError, Expression,
-        McpCallOperation, McpImportKind, McpServerPropertyName, ReferenceKeyword, ReferenceRoot, StringTemplatePart, ToolSource,
-        TypeExpression,
+        McpCallOperation, McpImportKind, McpServerPropertyName, ReferenceAccess, ReferenceAccessKind, ReferenceKeyword, ReferenceRoot,
+        StringTemplatePart, ToolSource, TypeExpression,
     };
     use crate::workflow_source;
     use std::fs;
@@ -390,9 +390,9 @@ mod tests {
                 assert_eq!(reference.root, ReferenceRoot::Keyword(ReferenceKeyword::Agent));
                 assert_eq!(reference.accesses.len(), 2);
                 assert_eq!(reference.accesses[0].field, "findings");
-                assert!(!reference.accesses[0].optional);
+                assert!(!reference.accesses[0].is_optional());
                 assert_eq!(reference.accesses[1].field, "items");
-                assert!(!reference.accesses[1].optional);
+                assert!(!reference.accesses[1].is_optional());
             }
             _ => panic!("loop iterable should be a reference"),
         }
@@ -535,11 +535,65 @@ mod tests {
 
             for (reference_access, expected_access) in reference.accesses.iter().zip(reference_parse_case.accesses) {
                 assert_eq!(reference_access.field, expected_access.field);
-                assert_eq!(reference_access.optional, expected_access.optional);
+                assert_eq!(reference_access.is_optional(), expected_access.optional);
             }
 
             assert_eq!(reference.render_path(), reference_parse_case.rendered_path);
         }
+    }
+
+    #[test]
+    fn parses_array_pluck_reference_accesses() {
+        let workflow = parse_inline_workflow! {
+            input {
+                answers: [{
+                    url: string
+                }]
+            }
+
+            output {
+                urls: input.answers.*.url
+                non_null_urls: input.answers.**.url
+                strict_urls: input.answers.***.url
+            }
+        };
+        let output_declaration = workflow.find_output().expect("workflow should include output declaration");
+        let output_field = output_declaration
+            .fields
+            .iter()
+            .find(|object_field| object_field.name == "urls")
+            .expect("urls field should exist");
+        let Expression::Reference(reference) = &output_field.value else {
+            panic!("urls output should be a reference");
+        };
+
+        assert_eq!(reference.render_path(), "input.answers.*.url");
+        assert_eq!(reference.accesses[0].kind, ReferenceAccessKind::Required);
+        assert_eq!(reference.accesses[1].kind, ReferenceAccessKind::ArrayPluck);
+
+        let non_null_output_field = output_declaration
+            .fields
+            .iter()
+            .find(|object_field| object_field.name == "non_null_urls")
+            .expect("non_null_urls field should exist");
+        let Expression::Reference(non_null_reference) = &non_null_output_field.value else {
+            panic!("non_null_urls output should be a reference");
+        };
+
+        assert_eq!(non_null_reference.render_path(), "input.answers.**.url");
+        assert_eq!(non_null_reference.accesses[1].kind, ReferenceAccessKind::NonNullArrayPluck);
+
+        let strict_output_field = output_declaration
+            .fields
+            .iter()
+            .find(|object_field| object_field.name == "strict_urls")
+            .expect("strict_urls field should exist");
+        let Expression::Reference(strict_reference) = &strict_output_field.value else {
+            panic!("strict_urls output should be a reference");
+        };
+
+        assert_eq!(strict_reference.render_path(), "input.answers.***.url");
+        assert_eq!(strict_reference.accesses[1].kind, ReferenceAccessKind::StrictArrayPluck);
     }
 
     #[test]
@@ -1230,7 +1284,7 @@ mod tests {
 
         match &nullable_object_string_field.value {
             Expression::Reference(reference) => {
-                assert!(reference.accesses.iter().any(|reference_access| reference_access.optional));
+                assert!(reference.accesses.iter().any(ReferenceAccess::is_optional));
             }
             _ => panic!("nullable_object_string should be a reference expression"),
         }

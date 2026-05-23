@@ -990,9 +990,12 @@ mod tests {
             root: ReferenceRoot::Keyword(reference_keyword),
             accesses: accesses
                 .into_iter()
-                .map(|(field_name, optional)| ReferenceAccess {
-                    field: field_name.to_string(),
-                    optional,
+                .map(|(field_name, optional)| {
+                    if optional {
+                        return ReferenceAccess::optional(field_name);
+                    }
+
+                    ReferenceAccess::required(field_name)
                 })
                 .collect(),
             span: test_source_span(),

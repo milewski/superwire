@@ -1,4 +1,4 @@
-use crate::dsl::{Reference, TypeExpression, TypedField};
+use crate::dsl::{Reference, ReferenceAccess, TypeExpression, TypedField};
 use crate::semantic::WorkflowSemanticError;
 use jsonschema::ValidationError;
 use schemars::{JsonSchema, Schema};
@@ -124,6 +124,158 @@ impl WorkflowType {
             }
             | Self::Tuple(_) => None,
         }
+    }
+
+    #[must_use]
+    pub fn field_type_for_reference_access(&self, reference_access: &ReferenceAccess) -> Option<Self> {
+        if !reference_access.is_array_pluck() {
+            return self.field_type(reference_access.field.as_str());
+        }
+
+        self.array_pluck_field_type(reference_access)
+    }
+
+    #[must_use]
+    pub fn array_pluck_field_type(&self, reference_access: &ReferenceAccess) -> Option<Self> {
+        match self {
+            Self::Array {
+                item_type,
+                fixed_length: _,
+            } => {
+                let mut plucked_field_types = Vec::new();
+                let mut includes_null = false;
+
+                item_type.collect_array_pluck_field_types(reference_access.field.as_str(), &mut plucked_field_types, &mut includes_null);
+
+                let mut flattened_field_types = plucked_field_types
+                    .into_iter()
+                    .flat_map(Self::flatten_plucked_array_types)
+                    .collect::<Vec<_>>();
+
+                if reference_access.requires_strict_array_pluck_values() {
+                    if includes_null || flattened_field_types.iter().any(WorkflowType::can_be_null) {
+                        return None;
+                    }
+
+                    return Self::strict_array_pluck_item_type(flattened_field_types).map(|item_type| Self::Array {
+                        item_type: Box::new(item_type),
+                        fixed_length: None,
+                    });
+                }
+
+                if reference_access.filters_null_array_pluck_values() {
+                    flattened_field_types = flattened_field_types
+                        .into_iter()
+                        .map(|field_type| field_type.without_null())
+                        .filter(|field_type| !matches!(field_type, Self::Null))
+                        .collect();
+                } else if includes_null {
+                    flattened_field_types.push(Self::Null);
+                }
+
+                Some(Self::Array {
+                    item_type: Box::new(Self::array_pluck_item_type(flattened_field_types)),
+                    fixed_length: None,
+                })
+            }
+            Self::Union(members) => {
+                let field_types = members
+                    .iter()
+                    .filter(|member| !matches!(member, Self::Null))
+                    .filter_map(|member| member.array_pluck_field_type(reference_access))
+                    .collect::<Vec<_>>();
+
+                if field_types.is_empty() {
+                    return None;
+                }
+
+                Some(normalize_union_members(field_types))
+            }
+            Self::Any
+            | Self::String
+            | Self::Integer
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::AnyObject
+            | Self::StringEnum(_)
+            | Self::Tuple(_)
+            | Self::Object(_)
+            | Self::Variant {
+                discriminator: _,
+                cases: _,
+            } => None,
+        }
+    }
+
+    fn collect_array_pluck_field_types(&self, field_name: &str, field_types: &mut Vec<Self>, includes_null: &mut bool) {
+        match self {
+            Self::Object(fields) => {
+                if let Some(field_type) = fields.get(field_name) {
+                    field_types.push(field_type.clone());
+                } else {
+                    *includes_null = true;
+                }
+            }
+            Self::Variant { discriminator, cases } => {
+                if discriminator == field_name {
+                    field_types.push(Self::StringEnum(cases.keys().cloned().collect()));
+                } else {
+                    *includes_null = true;
+                }
+            }
+            Self::Union(members) => {
+                for member in members {
+                    member.collect_array_pluck_field_types(field_name, field_types, includes_null);
+                }
+            }
+            Self::Any | Self::AnyObject => {
+                field_types.push(Self::Any);
+            }
+            Self::String
+            | Self::Integer
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::StringEnum(_)
+            | Self::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | Self::Tuple(_) => {
+                *includes_null = true;
+            }
+        }
+    }
+
+    fn flatten_plucked_array_types(field_type: Self) -> Vec<Self> {
+        match field_type {
+            Self::Array {
+                item_type,
+                fixed_length: _,
+            } => vec![*item_type],
+            Self::Union(members) => members.into_iter().flat_map(Self::flatten_plucked_array_types).collect(),
+            _ => vec![field_type],
+        }
+    }
+
+    #[must_use]
+    fn array_pluck_item_type(field_types: Vec<Self>) -> Self {
+        if field_types.is_empty() {
+            return Self::Null;
+        }
+
+        normalize_union_members(field_types)
+    }
+
+    fn strict_array_pluck_item_type(field_types: Vec<Self>) -> Option<Self> {
+        let item_type = Self::array_pluck_item_type(field_types).normalize();
+
+        if let Self::Union(_) = item_type {
+            return None;
+        }
+
+        Some(item_type)
     }
 
     #[must_use]

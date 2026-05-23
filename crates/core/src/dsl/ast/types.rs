@@ -1,4 +1,4 @@
-use super::{DeclarationKeyword, Reference, SourceSpan, Workflow};
+use super::{DeclarationKeyword, Reference, ReferenceAccess, SourceSpan, Workflow};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::hash::BuildHasher;
@@ -619,6 +619,253 @@ impl TypeExpression {
                 fixed_length: _,
             }
             | Self::Tuple(_) => {}
+        }
+    }
+
+    pub fn collect_field_types_for_reference_access_with_cache<SchemaTypeLookup>(
+        &self,
+        reference_access: &ReferenceAccess,
+        schema_type_lookup: &mut SchemaTypeLookup,
+        field_types: &mut Vec<Self>,
+        field_cache: &mut TypeExpressionFieldCache,
+    ) where
+        SchemaTypeLookup: FnMut(&str) -> Option<Self>,
+    {
+        if !reference_access.is_array_pluck() {
+            self.collect_field_types_for_access_with_cache(reference_access.field.as_str(), schema_type_lookup, field_types, field_cache);
+
+            return;
+        }
+
+        match self {
+            Self::Array {
+                item_type,
+                fixed_length: _,
+            } => {
+                let mut plucked_field_types = Vec::new();
+                let mut includes_null = false;
+
+                item_type.collect_array_pluck_field_types_with_cache(
+                    reference_access.field.as_str(),
+                    schema_type_lookup,
+                    &mut plucked_field_types,
+                    &mut includes_null,
+                    field_cache,
+                );
+
+                let mut flattened_field_types = plucked_field_types
+                    .into_iter()
+                    .flat_map(Self::flatten_plucked_array_types)
+                    .collect::<Vec<_>>();
+
+                if reference_access.requires_strict_array_pluck_values() {
+                    if includes_null || flattened_field_types.iter().any(Self::can_be_null) {
+                        return;
+                    }
+
+                    if let Some(item_type) = Self::strict_array_pluck_item_type(flattened_field_types) {
+                        field_types.push(Self::Array {
+                            item_type: Box::new(item_type),
+                            fixed_length: None,
+                        });
+                    }
+
+                    return;
+                }
+
+                if reference_access.filters_null_array_pluck_values() {
+                    flattened_field_types = flattened_field_types
+                        .into_iter()
+                        .map(Self::without_null)
+                        .filter(|field_type| !matches!(field_type, Self::Null))
+                        .collect();
+                } else if includes_null {
+                    flattened_field_types.push(Self::Null);
+                }
+
+                field_types.push(Self::Array {
+                    item_type: Box::new(Self::array_pluck_item_type(flattened_field_types)),
+                    fixed_length: None,
+                });
+            }
+            Self::SchemaReference(schema_name) => {
+                if let Some(schema_type) = schema_type_lookup(schema_name) {
+                    schema_type.collect_field_types_for_reference_access_with_cache(
+                        reference_access,
+                        schema_type_lookup,
+                        field_types,
+                        field_cache,
+                    );
+                }
+            }
+            Self::Union(type_expressions) => {
+                for type_expression in type_expressions {
+                    type_expression.collect_field_types_for_reference_access_with_cache(
+                        reference_access,
+                        schema_type_lookup,
+                        field_types,
+                        field_cache,
+                    );
+                }
+            }
+            Self::String
+            | Self::Number
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::AnyObject
+            | Self::StringEnum(_)
+            | Self::StringEnumReference(_)
+            | Self::Tuple(_)
+            | Self::Object(_)
+            | Self::Variant {
+                discriminator: _,
+                cases: _,
+            } => {}
+        }
+    }
+
+    fn collect_array_pluck_field_types_with_cache<SchemaTypeLookup>(
+        &self,
+        field_name: &str,
+        schema_type_lookup: &mut SchemaTypeLookup,
+        field_types: &mut Vec<Self>,
+        includes_null: &mut bool,
+        field_cache: &mut TypeExpressionFieldCache,
+    ) where
+        SchemaTypeLookup: FnMut(&str) -> Option<Self>,
+    {
+        match self {
+            Self::Object(typed_fields) => {
+                if let Some(typed_field) = field_cache.typed_field(typed_fields, field_name) {
+                    field_types.push(typed_field.field_type.clone());
+                } else {
+                    *includes_null = true;
+                }
+            }
+            Self::SchemaReference(schema_name) => {
+                if let Some(schema_type) = schema_type_lookup(schema_name) {
+                    schema_type.collect_array_pluck_field_types_with_cache(
+                        field_name,
+                        schema_type_lookup,
+                        field_types,
+                        includes_null,
+                        field_cache,
+                    );
+                }
+            }
+            Self::Variant { discriminator, cases } => {
+                if discriminator == field_name {
+                    field_types.extend(cases.iter().map(|variant_case| Self::StringEnum(variant_case.name.clone())));
+                } else {
+                    *includes_null = true;
+                }
+            }
+            Self::Union(type_expressions) => {
+                for type_expression in type_expressions {
+                    type_expression.collect_array_pluck_field_types_with_cache(
+                        field_name,
+                        schema_type_lookup,
+                        field_types,
+                        includes_null,
+                        field_cache,
+                    );
+                }
+            }
+            Self::AnyObject => {
+                field_types.push(Self::AnyObject);
+            }
+            Self::String
+            | Self::Number
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::StringEnum(_)
+            | Self::StringEnumReference(_)
+            | Self::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | Self::Tuple(_) => {
+                *includes_null = true;
+            }
+        }
+    }
+
+    fn flatten_plucked_array_types(field_type: Self) -> Vec<Self> {
+        match field_type {
+            Self::Array {
+                item_type,
+                fixed_length: _,
+            } => vec![*item_type],
+            Self::Union(type_expressions) => type_expressions.into_iter().flat_map(Self::flatten_plucked_array_types).collect(),
+            _ => vec![field_type],
+        }
+    }
+
+    #[must_use]
+    fn array_pluck_item_type(field_types: Vec<Self>) -> Self {
+        if field_types.is_empty() {
+            return Self::Null;
+        }
+
+        Self::Union(field_types).normalize()
+    }
+
+    fn strict_array_pluck_item_type(field_types: Vec<Self>) -> Option<Self> {
+        let item_type = Self::array_pluck_item_type(field_types);
+
+        if matches!(item_type, Self::Union(_)) {
+            return None;
+        }
+
+        Some(item_type)
+    }
+
+    #[must_use]
+    fn without_null(self) -> Self {
+        match self {
+            Self::Union(type_expressions) => {
+                let non_null_types = type_expressions
+                    .into_iter()
+                    .filter(|type_expression| !matches!(type_expression, Self::Null))
+                    .collect::<Vec<_>>();
+
+                Self::array_pluck_item_type(non_null_types)
+            }
+            Self::Null => Self::Null,
+            _ => self,
+        }
+    }
+
+    #[must_use]
+    fn normalize(self) -> Self {
+        match self {
+            Self::Union(type_expressions) => {
+                let mut normalized_types = Vec::new();
+
+                for type_expression in type_expressions {
+                    match type_expression.normalize() {
+                        Self::Union(nested_type_expressions) => normalized_types.extend(nested_type_expressions),
+                        normalized_type => normalized_types.push(normalized_type),
+                    }
+                }
+
+                let mut deduplicated_types = Vec::new();
+
+                for normalized_type in normalized_types {
+                    if !deduplicated_types.contains(&normalized_type) {
+                        deduplicated_types.push(normalized_type);
+                    }
+                }
+
+                if deduplicated_types.len() == 1 {
+                    return deduplicated_types.into_iter().next().expect("single type expression should exist");
+                }
+
+                Self::Union(deduplicated_types)
+            }
+            _ => self,
         }
     }
 

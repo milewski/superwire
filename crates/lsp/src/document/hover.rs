@@ -38,6 +38,7 @@ impl SemanticIndex {
         if !reference_completion_path.pending_prefix.is_empty() {
             resolved_accesses.push(reference_completion_path.pending_prefix.clone());
         }
+        let resolved_reference_accesses = reference_completion_path.resolved_reference_accesses_with_pending();
 
         if reference_completion_path.is_schema_root() {
             let schema_name = resolved_accesses.first()?;
@@ -57,12 +58,12 @@ impl SemanticIndex {
         match reference_completion_path.root_keyword() {
             Some(ReferenceKeyword::Dynamic) => Some(format!("**{hovered_symbol}**\n\nDynamic reference.")),
             Some(ReferenceKeyword::Input) => {
-                let field_type = self.resolve_singleton_reference_type(&self.input_fields, resolved_accesses.as_slice())?;
+                let field_type = self.resolve_singleton_reference_type(&self.input_fields, resolved_reference_accesses.as_slice())?;
 
                 Some(format!("**{}**\n\nType: `{}`", hovered_symbol, field_type.render_type()))
             }
             Some(ReferenceKeyword::Secrets) => {
-                let field_type = self.resolve_singleton_reference_type(&self.secrets_fields, resolved_accesses.as_slice())?;
+                let field_type = self.resolve_singleton_reference_type(&self.secrets_fields, resolved_reference_accesses.as_slice())?;
 
                 Some(format!("**{}**\n\nType: `{}`", hovered_symbol, field_type.render_type()))
             }
@@ -81,7 +82,7 @@ impl SemanticIndex {
 
                 let candidate_types = self
                     .tooling_snapshot
-                    .resolve_access_path_types(vec![agent_output_type.clone()], &resolved_accesses[1..]);
+                    .resolve_reference_access_path_types(vec![agent_output_type.clone()], &resolved_reference_accesses[1..]);
                 let final_type = candidate_types.first()?;
 
                 Some(format!("**{}**\n\nType: `{}`", hovered_symbol, final_type.render_type()))

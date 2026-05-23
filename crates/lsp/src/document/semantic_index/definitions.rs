@@ -222,13 +222,7 @@ impl SemanticIndex {
         let selected_access_count = selected_accesses.len();
         let reference = Reference {
             root: ReferenceRoot::Keyword(reference_root_keyword),
-            accesses: selected_accesses
-                .into_iter()
-                .map(|field_name| ReferenceAccess {
-                    field: field_name,
-                    optional: false,
-                })
-                .collect(),
+            accesses: selected_accesses.into_iter().map(ReferenceAccess::required).collect(),
             span: SourceSpan::generated(),
         };
 

@@ -151,13 +151,47 @@ impl AssetValueField {
 impl Asset {
     pub fn evaluate(&self, evaluation_context: &EvaluationContext, context: &str) -> Result<Value, WorkflowSemanticError> {
         let source_value = self.source.evaluate(evaluation_context, context)?;
-        let Some(source) = source_value.as_str() else {
-            return Err(WorkflowSemanticError::ExpressionEvaluation {
-                context: context.to_string(),
-                message: format!("asset source must resolve to a string, found {}", value_kind_name(&source_value)),
-            });
-        };
 
+        if let Some(source) = source_value.as_str() {
+            return self.evaluate_source(source, evaluation_context, context);
+        }
+
+        if let Some(source_values) = source_value.as_array() {
+            let mut asset_values = Vec::with_capacity(source_values.len());
+
+            for source_value in source_values {
+                let Some(source) = source_value.as_str() else {
+                    return Err(WorkflowSemanticError::ExpressionEvaluation {
+                        context: context.to_string(),
+                        message: format!("asset source array must contain strings, found {}", value_kind_name(source_value)),
+                    });
+                };
+
+                asset_values.push(self.evaluate_source(source, evaluation_context, context)?);
+            }
+
+            return Ok(Value::Array(asset_values));
+        }
+
+        Err(WorkflowSemanticError::ExpressionEvaluation {
+            context: context.to_string(),
+            message: format!(
+                "asset source must resolve to a string or array of strings, found {}",
+                value_kind_name(&source_value)
+            ),
+        })
+    }
+
+    fn evaluate_source(&self, source: &str, evaluation_context: &EvaluationContext, context: &str) -> Result<Value, WorkflowSemanticError> {
+        let mut asset_object = self.base_asset_object(source);
+
+        self.apply_options(&mut asset_object, evaluation_context, context)?;
+        self.apply_inferred_fields(&mut asset_object, source, context)?;
+
+        Ok(Value::Object(asset_object))
+    }
+
+    fn base_asset_object(&self, source: &str) -> Map<String, Value> {
         let mut asset_object = Map::new();
         asset_object.insert(AssetValueField::Marker.as_str().to_string(), Value::Bool(true));
 
@@ -176,53 +210,83 @@ impl Asset {
             asset_object.insert(AssetValueField::Url.as_str().to_string(), Value::String(source.to_string()));
         }
 
+        asset_object
+    }
+
+    fn apply_options(
+        &self,
+        asset_object: &mut Map<String, Value>,
+        evaluation_context: &EvaluationContext,
+        context: &str,
+    ) -> Result<(), WorkflowSemanticError> {
         for option in &self.options {
             let option_value = option.value.evaluate(evaluation_context, context)?;
 
-            match AssetPropertyName::from_identifier(option.name.as_str()) {
-                Some(AssetPropertyName::Type) => {
-                    let Some(kind_name) = option_value.as_str() else {
-                        return Err(WorkflowSemanticError::ExpressionEvaluation {
-                            context: context.to_string(),
-                            message: format!(
-                                "asset `type` option must resolve to a string, found {}",
-                                value_kind_name(&option_value)
-                            ),
-                        });
-                    };
-                    let Some(asset_kind) = ModelAssetKind::from_identifier(kind_name) else {
-                        return Err(WorkflowSemanticError::ExpressionEvaluation {
-                            context: context.to_string(),
-                            message: format!("unsupported asset type `{kind_name}`"),
-                        });
-                    };
+            self.apply_option(asset_object, option.name.as_str(), option_value, context)?;
+        }
 
-                    asset_object.insert(
-                        AssetValueField::Kind.as_str().to_string(),
-                        Value::String(asset_kind.as_str().to_string()),
-                    );
-                }
-                Some(AssetPropertyName::MediaType) => {
-                    asset_object.insert(AssetValueField::MediaType.as_str().to_string(), option_value);
-                }
-                Some(AssetPropertyName::Title) => {
-                    asset_object.insert(AssetValueField::Title.as_str().to_string(), option_value);
-                }
-                Some(AssetPropertyName::Context) => {
-                    asset_object.insert(AssetValueField::Context.as_str().to_string(), option_value);
-                }
-                Some(AssetPropertyName::Citations) => {
-                    asset_object.insert(AssetValueField::Citations.as_str().to_string(), option_value);
-                }
-                None => {
+        Ok(())
+    }
+
+    fn apply_option(
+        &self,
+        asset_object: &mut Map<String, Value>,
+        option_name: &str,
+        option_value: Value,
+        context: &str,
+    ) -> Result<(), WorkflowSemanticError> {
+        match AssetPropertyName::from_identifier(option_name) {
+            Some(AssetPropertyName::Type) => {
+                let Some(kind_name) = option_value.as_str() else {
                     return Err(WorkflowSemanticError::ExpressionEvaluation {
                         context: context.to_string(),
-                        message: format!("unknown asset option `{}`", option.name),
+                        message: format!(
+                            "asset `type` option must resolve to a string, found {}",
+                            value_kind_name(&option_value)
+                        ),
                     });
-                }
+                };
+                let Some(asset_kind) = ModelAssetKind::from_identifier(kind_name) else {
+                    return Err(WorkflowSemanticError::ExpressionEvaluation {
+                        context: context.to_string(),
+                        message: format!("unsupported asset type `{kind_name}`"),
+                    });
+                };
+
+                asset_object.insert(
+                    AssetValueField::Kind.as_str().to_string(),
+                    Value::String(asset_kind.as_str().to_string()),
+                );
+            }
+            Some(AssetPropertyName::MediaType) => {
+                asset_object.insert(AssetValueField::MediaType.as_str().to_string(), option_value);
+            }
+            Some(AssetPropertyName::Title) => {
+                asset_object.insert(AssetValueField::Title.as_str().to_string(), option_value);
+            }
+            Some(AssetPropertyName::Context) => {
+                asset_object.insert(AssetValueField::Context.as_str().to_string(), option_value);
+            }
+            Some(AssetPropertyName::Citations) => {
+                asset_object.insert(AssetValueField::Citations.as_str().to_string(), option_value);
+            }
+            None => {
+                return Err(WorkflowSemanticError::ExpressionEvaluation {
+                    context: context.to_string(),
+                    message: format!("unknown asset option `{option_name}`"),
+                });
             }
         }
 
+        Ok(())
+    }
+
+    fn apply_inferred_fields(
+        &self,
+        asset_object: &mut Map<String, Value>,
+        source: &str,
+        context: &str,
+    ) -> Result<(), WorkflowSemanticError> {
         if !asset_object.contains_key(AssetValueField::Kind.as_str()) {
             let asset_kind = asset_object
                 .get(AssetValueField::MediaType.as_str())
@@ -249,7 +313,7 @@ impl Asset {
             }
         }
 
-        Ok(Value::Object(asset_object))
+        Ok(())
     }
 
     fn split_data_source(source: &str) -> Option<(&str, &str)> {
@@ -298,8 +362,14 @@ impl Reference {
         let (mut current_value, access_start_index) = self.resolve_root_value(evaluation_context, context)?;
 
         for reference_access in self.accesses_from(access_start_index) {
-            if current_value.is_null() && reference_access.optional {
+            if current_value.is_null() && reference_access.is_optional() {
                 return Ok(Value::Null);
+            }
+
+            if reference_access.is_array_pluck() {
+                current_value = reference_access.evaluate_array_pluck(current_value, self, context)?;
+
+                continue;
             }
 
             let Some(object_fields) = current_value.as_object() else {
@@ -314,7 +384,7 @@ impl Reference {
             };
 
             let Some(next_value) = object_fields.get(&reference_access.field) else {
-                if reference_access.optional {
+                if reference_access.is_optional() {
                     return Ok(Value::Null);
                 }
 
@@ -442,6 +512,128 @@ impl Reference {
     }
 }
 
+impl crate::dsl::ReferenceAccess {
+    fn evaluate_array_pluck(&self, current_value: Value, reference: &Reference, context: &str) -> Result<Value, WorkflowSemanticError> {
+        let Some(array_values) = current_value.as_array() else {
+            return Err(WorkflowSemanticError::ExpressionEvaluation {
+                context: context.to_string(),
+                message: format!(
+                    "reference path `{}` cannot use `{}` on non-array value before field `{}`",
+                    reference.render_path(),
+                    self.operator(),
+                    self.field
+                ),
+            });
+        };
+
+        let mut plucked_values = Vec::new();
+        let mut strict_value_kind = None::<ArrayPluckValueKind>;
+
+        for array_value in array_values {
+            let Some(object_fields) = array_value.as_object() else {
+                self.push_array_pluck_value(Value::Null, &mut plucked_values, &mut strict_value_kind, reference, context)?;
+
+                continue;
+            };
+
+            let Some(plucked_value) = object_fields.get(&self.field) else {
+                self.push_array_pluck_value(Value::Null, &mut plucked_values, &mut strict_value_kind, reference, context)?;
+
+                continue;
+            };
+
+            if let Some(nested_values) = plucked_value.as_array() {
+                for nested_value in nested_values {
+                    self.push_array_pluck_value(
+                        nested_value.clone(),
+                        &mut plucked_values,
+                        &mut strict_value_kind,
+                        reference,
+                        context,
+                    )?;
+                }
+            } else {
+                self.push_array_pluck_value(
+                    plucked_value.clone(),
+                    &mut plucked_values,
+                    &mut strict_value_kind,
+                    reference,
+                    context,
+                )?;
+            }
+        }
+
+        Ok(Value::Array(plucked_values))
+    }
+
+    fn push_array_pluck_value(
+        &self,
+        plucked_value: Value,
+        plucked_values: &mut Vec<Value>,
+        strict_value_kind: &mut Option<ArrayPluckValueKind>,
+        reference: &Reference,
+        context: &str,
+    ) -> Result<(), WorkflowSemanticError> {
+        if self.filters_null_array_pluck_values() && plucked_value.is_null() {
+            return Ok(());
+        }
+
+        if self.requires_strict_array_pluck_values() {
+            if plucked_value.is_null() {
+                return Err(WorkflowSemanticError::ExpressionEvaluation {
+                    context: context.to_string(),
+                    message: format!(
+                        "reference path `{}` cannot use `.***.` on null array pluck value",
+                        reference.render_path()
+                    ),
+                });
+            }
+
+            let plucked_value_kind = ArrayPluckValueKind::from_value(&plucked_value);
+
+            if let Some(expected_value_kind) = strict_value_kind {
+                if *expected_value_kind != plucked_value_kind {
+                    return Err(WorkflowSemanticError::ExpressionEvaluation {
+                        context: context.to_string(),
+                        message: format!(
+                            "reference path `{}` cannot use `.***.` on mixed array pluck value types",
+                            reference.render_path()
+                        ),
+                    });
+                }
+            } else {
+                *strict_value_kind = Some(plucked_value_kind);
+            }
+        }
+
+        plucked_values.push(plucked_value);
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArrayPluckValueKind {
+    String,
+    Number,
+    Boolean,
+    Array,
+    Object,
+}
+
+impl ArrayPluckValueKind {
+    fn from_value(value: &Value) -> Self {
+        match value {
+            Value::String(_) => Self::String,
+            Value::Number(_) => Self::Number,
+            Value::Bool(_) => Self::Boolean,
+            Value::Array(_) => Self::Array,
+            Value::Object(_) => Self::Object,
+            Value::Null => unreachable!("null array pluck values are rejected before kind checks"),
+        }
+    }
+}
+
 fn render_template_value(value: &Value) -> String {
     if value.is_superwire_asset() {
         return String::new();
@@ -460,6 +652,11 @@ trait ValueAssetExt {
 
 impl ValueAssetExt for Value {
     fn is_superwire_asset(&self) -> bool {
-        self.get(AssetValueField::Marker.as_str()).and_then(Value::as_bool) == Some(true)
+        if self.get(AssetValueField::Marker.as_str()).and_then(Value::as_bool) == Some(true) {
+            return true;
+        }
+
+        self.as_array()
+            .is_some_and(|values| !values.is_empty() && values.iter().all(Self::is_superwire_asset))
     }
 }

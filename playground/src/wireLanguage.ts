@@ -105,7 +105,7 @@ const wireStreamLanguage = StreamLanguage.define({
       return 'punctuation';
     }
 
-    if (stream.match(/\?\.|\?\?|\./)) {
+    if (stream.match(/\.\*{1,3}\.|\?\.|\?\?|\./)) {
       return 'operator';
     }
 

@@ -1,0 +1,54 @@
+provider openai from openai {
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+}
+
+model qwen_plus from openai {
+    id: "model-a"
+    assets: ["video"]
+}
+
+input {
+    video_recording_answers: {
+        answers: [{
+            url: string
+        }]
+    }
+}
+
+dynamic {
+    videos: asset input.video_recording_answers.answers.*.url {
+        type: "video"
+    }
+}
+
+agent video_summarizer for video_url in input.video_recording_answers.answers.*.url {
+    model: model.qwen_plus
+
+    dynamic {
+        video: asset video_url {
+            type: "video"
+        }
+    }
+
+    instruction: "Summarize this video: {{ dynamic.video }}"
+
+    output {
+        url: video_url
+        summary: string
+    }
+}
+
+agent collection_analyzer {
+    model: model.qwen_plus
+    instruction: "Summarize all videos together: {{ dynamic.videos }}"
+
+    output {
+        summary: string
+    }
+}
+
+output {
+    summaries: agent.video_summarizer
+    collection: agent.collection_analyzer
+}

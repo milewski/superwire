@@ -14,6 +14,24 @@ schema.shared.status
 model.fast
 ```
 
+## Array pluck
+
+Use `.*.` to read a field from every item in an array.
+
+```wire
+input.attachments.*.video_url
+```
+
+This turns an array into an array of field values. Missing fields, non-object items, and null values become `null`. If a plucked field is itself an array, the result is flattened one level.
+
+Use `.**.` to drop null plucked values, or `.***.` to require all plucked values to be non-null and the same runtime type.
+
+```wire
+agent video_summarizer for video_url in dynamic.video_recording_answers.answers.*.url {
+    instruction: "Summarize {{ video_url }}"
+}
+```
+
 ## Model usage
 
 Agents reference named model profiles.

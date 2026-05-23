@@ -192,3 +192,148 @@ async fn rejects_asset_kind_not_declared_by_model_profile() {
 
     assert!(error.to_string().contains("does not declare support"));
 }
+
+#[tokio::test]
+async fn renders_array_plucked_video_assets_into_model_request() {
+    let workflow = workflow_source! {
+        provider openai from openai {}
+
+        model video_model from openai {
+            id: "qwen-plus"
+            assets: ["video"]
+        }
+
+        input {
+            attachments: [{
+                video_url: string
+            }]
+        }
+
+        agent analyzer {
+            model: model.video_model
+            dynamic {
+                videos: asset input.attachments.*.video_url {
+                    type: "video"
+                }
+            }
+            instruction: "Summarize these videos: {{ dynamic.videos }}"
+            output {
+                result: string
+            }
+        }
+
+        output {
+            result: agent.analyzer.result
+        }
+    };
+    let model_provider = TrackingModelProvider::new(vec![json!({ "result": "done" })]);
+    let service = ExecutorService::new(model_provider.clone());
+
+    service
+        .execute(request_with_input(
+            workflow,
+            json!({
+                "attachments": [
+                    { "video_url": "https://example.com/first.mp4" },
+                    { "video_url": "https://example.com/second.mp4" }
+                ]
+            }),
+        ))
+        .await
+        .expect("workflow with array-plucked video assets should execute");
+
+    let recorded_requests = model_provider
+        .recorded_requests
+        .lock()
+        .expect("recorded requests lock should not be poisoned");
+    let request = recorded_requests.first().expect("model request should be recorded");
+
+    assert_eq!(request.prompt, "Summarize these videos: ");
+    assert_eq!(request.prompt_content.len(), 3);
+    assert!(matches!(
+        &request.prompt_content[1],
+        ModelPromptContent::Asset(asset)
+            if asset.kind == ModelAssetKind::Video
+                && matches!(&asset.source, ModelAssetSource::Url(url) if url == "https://example.com/first.mp4")
+    ));
+    assert!(matches!(
+        &request.prompt_content[2],
+        ModelPromptContent::Asset(asset)
+            if asset.kind == ModelAssetKind::Video
+                && matches!(&asset.source, ModelAssetSource::Url(url) if url == "https://example.com/second.mp4")
+    ));
+}
+
+#[tokio::test]
+async fn renders_empty_non_asset_array_reference_as_text() {
+    let workflow = workflow_source! {
+        provider openai from openai {}
+
+        model text_model from openai {
+            id: "gpt-text"
+        }
+
+        input {
+            notes: [string]
+        }
+
+        agent analyzer {
+            model: model.text_model
+            instruction: "Notes: {{ input.notes }}"
+            output {
+                result: string
+            }
+        }
+
+        output {
+            result: agent.analyzer.result
+        }
+    };
+    let model_provider = TrackingModelProvider::new(vec![json!({ "result": "done" })]);
+    let service = ExecutorService::new(model_provider.clone());
+
+    service
+        .execute(request_with_input(workflow, json!({ "notes": [] })))
+        .await
+        .expect("workflow with empty string array prompt reference should execute");
+
+    let recorded_requests = model_provider
+        .recorded_requests
+        .lock()
+        .expect("recorded requests lock should not be poisoned");
+    let request = recorded_requests.first().expect("model request should be recorded");
+
+    assert_eq!(request.prompt, "Notes: []");
+    assert!(matches!(&request.prompt_content[0], ModelPromptContent::Text(text) if text == "Notes: []"));
+}
+
+#[tokio::test]
+async fn rejects_array_pluck_on_non_array_reference() {
+    let workflow = workflow_source! {
+        input {
+            attachment: {
+                video_url: string
+            }
+        }
+
+        output {
+            urls: input.attachment.*.video_url
+        }
+    };
+    let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
+
+    let error = service
+        .execute(request_with_input(
+            workflow,
+            json!({ "attachment": { "video_url": "https://example.com/first.mp4" } }),
+        ))
+        .await
+        .expect_err("array pluck on object should fail");
+
+    let error_message = error.to_string();
+
+    assert!(
+        error_message.contains("invalid_reference_path"),
+        "expected invalid reference path error, got {error_message}"
+    );
+}

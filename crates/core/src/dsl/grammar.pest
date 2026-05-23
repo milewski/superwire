@@ -199,7 +199,7 @@ call_argument = { named_argument | expression }
 named_argument = { identifier ~ ":" ~ expression }
 
 reference = { identifier ~ (reference_operator ~ identifier)* }
-reference_operator = { "?." | "." }
+reference_operator = { ".***." | ".**." | ".*." | "?." | "." }
 
 boolean_literal = { "true" | "false" }
 null_literal = { "null" }

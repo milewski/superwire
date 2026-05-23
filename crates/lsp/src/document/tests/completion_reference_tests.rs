@@ -44,6 +44,75 @@ fn suggests_agent_names_after_output_agent_root_separator() {
 }
 
 #[test]
+fn suggests_array_item_fields_after_array_pluck_operator() {
+    let completion_suggestions = inline_completion_suggestions! {
+        input {
+            answers: [{
+                url: string
+                title: string
+            }]
+        }
+
+        output {
+            urls: input.answers.*.<cursor>
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "url", "title");
+}
+
+#[test]
+fn suggests_array_item_fields_after_strict_array_pluck_operators() {
+    let non_null_completion_suggestions = inline_completion_suggestions! {
+        input {
+            answers: [{
+                url: string
+                title: string
+            }]
+        }
+
+        output {
+            urls: input.answers.**.<cursor>
+        }
+    };
+    let strict_completion_suggestions = inline_completion_suggestions! {
+        input {
+            answers: [{
+                url: string
+                title: string
+            }]
+        }
+
+        output {
+            urls: input.answers.***.<cursor>
+        }
+    };
+
+    assert_completion_contains!(&non_null_completion_suggestions, "url", "title");
+    assert_completion_contains!(&strict_completion_suggestions, "url", "title");
+}
+
+#[test]
+fn suggests_array_item_fields_after_array_pluck_operator_in_for_loop_iterable() {
+    let completion_suggestions = inline_completion_suggestions! {
+        input {
+            video_recording_answers: {
+                answers: [{
+                    url: string
+                    transcript: string
+                }]
+            }
+        }
+
+        agent video_summarizer for answer in input.video_recording_answers.answers.*.<cursor> {
+            instruction: "Summarize {{ answer }}"
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "url", "transcript");
+}
+
+#[test]
 fn suppresses_invalid_reference_roots_in_output_expression_context() {
     let completion_suggestions = inline_completion_suggestions! {
         output {

@@ -1,5 +1,7 @@
 use super::fixtures;
+use super::support::{request, service};
 use serde_json::json;
+use superwire_core::workflow_source;
 
 #[tokio::test]
 async fn string_interpolation_in_prompt() {
@@ -147,4 +149,132 @@ async fn optional_chaining_with_null_value() {
     )
     .await;
     assert_eq!(output, json!({ "label": "test", "score": null, "tags": null }));
+}
+
+#[tokio::test]
+async fn array_pluck_allows_nested_null_values() {
+    let workflow = workflow_source! {
+        dynamic {
+            data: [
+                {
+                    elements: [{ example: 1 }]
+                },
+                {
+                    elements: [{ example: null }]
+                },
+            ]
+        }
+
+        output {
+            analyzer: dynamic.data.*.elements.*.example
+        }
+    };
+
+    let output = service(Vec::new())
+        .execute(request(workflow))
+        .await
+        .expect("array pluck with nested null value should execute")
+        .output;
+
+    assert_eq!(output, json!({ "analyzer": [1, null] }));
+}
+
+#[tokio::test]
+async fn array_pluck_filters_null_values_in_non_null_mode() {
+    let workflow = workflow_source! {
+        dynamic {
+            data: [
+                {
+                    elements: [
+                        { example: 1 },
+                        { example: null },
+                        { other: true },
+                        { example: "two" },
+                        { example: { anything: 123 } },
+                    ]
+                },
+                null,
+            ]
+        }
+
+        output {
+            analyzer: dynamic.data.*.elements.**.example
+        }
+    };
+
+    let output = service(Vec::new())
+        .execute(request(workflow))
+        .await
+        .expect("non-null array pluck should filter null values")
+        .output;
+
+    assert_eq!(
+        output,
+        json!({
+            "analyzer": [
+                1,
+                "two",
+                { "anything": 123 }
+            ]
+        })
+    );
+}
+
+#[tokio::test]
+async fn strict_array_pluck_accepts_matching_non_null_values() {
+    let workflow = workflow_source! {
+        dynamic {
+            data: [
+                {
+                    elements: [
+                        { example: 1 },
+                        { example: 2 },
+                    ]
+                }
+            ]
+        }
+
+        output {
+            analyzer: dynamic.data.*.elements.***.example
+        }
+    };
+
+    let output = service(Vec::new())
+        .execute(request(workflow))
+        .await
+        .expect("strict array pluck should accept matching non-null values")
+        .output;
+
+    assert_eq!(output, json!({ "analyzer": [1, 2] }));
+}
+
+#[tokio::test]
+async fn strict_array_pluck_rejects_mixed_values() {
+    let workflow = workflow_source! {
+        dynamic {
+            data: [
+                {
+                    elements: [
+                        { example: 1 },
+                        { example: "two" },
+                    ]
+                }
+            ]
+        }
+
+        output {
+            analyzer: dynamic.data.*.elements.***.example
+        }
+    };
+
+    let error = service(Vec::new())
+        .execute(request(workflow))
+        .await
+        .expect_err("strict array pluck should reject mixed values");
+    let error_message = error.to_string();
+
+    assert!(
+        error_message.contains("invalid_reference_path") || error_message.contains("mixed array pluck value types"),
+        "expected strict array pluck error, got {error_message}"
+    );
 }

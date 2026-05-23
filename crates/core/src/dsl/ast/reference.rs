@@ -147,7 +147,7 @@ impl Reference {
             return None;
         };
 
-        if reference_access.optional {
+        if reference_access.is_optional() {
             return None;
         }
 
@@ -176,14 +176,7 @@ impl Reference {
         };
 
         for reference_access in &self.accesses {
-            if reference_access.optional {
-                rendered_reference.push_str("?.");
-                rendered_reference.push_str(reference_access.field.as_str());
-
-                continue;
-            }
-
-            rendered_reference.push('.');
+            rendered_reference.push_str(reference_access.operator());
             rendered_reference.push_str(reference_access.field.as_str());
         }
 
@@ -271,7 +264,113 @@ impl ReferenceRoot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReferenceAccess {
     pub field: String,
-    pub optional: bool,
+    pub kind: ReferenceAccessKind,
+}
+
+impl ReferenceAccess {
+    #[must_use]
+    pub fn required(field: impl Into<String>) -> Self {
+        Self {
+            field: field.into(),
+            kind: ReferenceAccessKind::Required,
+        }
+    }
+
+    #[must_use]
+    pub fn optional(field: impl Into<String>) -> Self {
+        Self {
+            field: field.into(),
+            kind: ReferenceAccessKind::Optional,
+        }
+    }
+
+    #[must_use]
+    pub fn array_pluck(field: impl Into<String>) -> Self {
+        Self {
+            field: field.into(),
+            kind: ReferenceAccessKind::ArrayPluck,
+        }
+    }
+
+    #[must_use]
+    pub fn non_null_array_pluck(field: impl Into<String>) -> Self {
+        Self {
+            field: field.into(),
+            kind: ReferenceAccessKind::NonNullArrayPluck,
+        }
+    }
+
+    #[must_use]
+    pub fn strict_array_pluck(field: impl Into<String>) -> Self {
+        Self {
+            field: field.into(),
+            kind: ReferenceAccessKind::StrictArrayPluck,
+        }
+    }
+
+    #[must_use]
+    pub fn is_optional(&self) -> bool {
+        self.kind == ReferenceAccessKind::Optional
+    }
+
+    #[must_use]
+    pub fn is_array_pluck(&self) -> bool {
+        self.kind.is_array_pluck()
+    }
+
+    #[must_use]
+    pub fn filters_null_array_pluck_values(&self) -> bool {
+        self.kind == ReferenceAccessKind::NonNullArrayPluck
+    }
+
+    #[must_use]
+    pub fn requires_strict_array_pluck_values(&self) -> bool {
+        self.kind == ReferenceAccessKind::StrictArrayPluck
+    }
+
+    #[must_use]
+    pub fn operator(&self) -> &'static str {
+        self.kind.operator()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReferenceAccessKind {
+    Required,
+    Optional,
+    ArrayPluck,
+    NonNullArrayPluck,
+    StrictArrayPluck,
+}
+
+impl ReferenceAccessKind {
+    #[must_use]
+    pub fn from_operator(operator: &str) -> Option<Self> {
+        match operator {
+            "." => Some(Self::Required),
+            "?." => Some(Self::Optional),
+            ".*." => Some(Self::ArrayPluck),
+            ".**." => Some(Self::NonNullArrayPluck),
+            ".***." => Some(Self::StrictArrayPluck),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn is_array_pluck(self) -> bool {
+        matches!(self, Self::ArrayPluck | Self::NonNullArrayPluck | Self::StrictArrayPluck)
+    }
+
+    #[must_use]
+    pub fn operator(self) -> &'static str {
+        match self {
+            Self::Required => ".",
+            Self::Optional => "?.",
+            Self::ArrayPluck => ".*.",
+            Self::NonNullArrayPluck => ".**.",
+            Self::StrictArrayPluck => ".***.",
+        }
+    }
 }
 
 #[cfg(test)]
@@ -329,9 +428,12 @@ mod tests {
             root: ReferenceRoot::Keyword(reference_keyword),
             accesses: accesses
                 .into_iter()
-                .map(|(field_name, optional)| ReferenceAccess {
-                    field: field_name.to_string(),
-                    optional,
+                .map(|(field_name, optional)| {
+                    if optional {
+                        return ReferenceAccess::optional(field_name);
+                    }
+
+                    ReferenceAccess::required(field_name)
                 })
                 .collect(),
             span: test_source_span(),

@@ -890,7 +890,8 @@ impl SemanticIndex {
         dynamic_fields: &BTreeMap<String, TypeExpression>,
     ) -> Option<TypeExpression> {
         let reference_keyword = reference.root_keyword()?;
-        let reference_accesses = reference
+        let reference_accesses = reference.accesses.clone();
+        let reference_access_fields = reference
             .accesses
             .iter()
             .map(|reference_access| reference_access.field.clone())
@@ -901,7 +902,7 @@ impl SemanticIndex {
             ReferenceKeyword::Input => self.resolve_singleton_reference_type(&self.input_fields, &reference_accesses),
             ReferenceKeyword::Secrets => self.resolve_singleton_reference_type(&self.secrets_fields, &reference_accesses),
             ReferenceKeyword::Agent => {
-                let agent_name = reference_accesses.first()?;
+                let agent_name = reference_access_fields.first()?;
                 let agent_output_type = self.agents.get(agent_name)?.output_type.clone()?;
 
                 if reference_accesses.len() == 1 {
@@ -910,7 +911,7 @@ impl SemanticIndex {
 
                 let candidate_types = self
                     .tooling_snapshot
-                    .resolve_access_path_types(vec![agent_output_type], &reference_accesses[1..]);
+                    .resolve_reference_access_path_types(vec![agent_output_type], &reference_accesses[1..]);
 
                 candidate_types.first().cloned()
             }

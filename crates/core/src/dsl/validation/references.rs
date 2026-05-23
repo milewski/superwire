@@ -1,6 +1,6 @@
 use super::super::ast::{
     AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, Declaration, Expression, MatchBranch, ObjectField, Reference,
-    ReferenceKeyword, SourceSpan, StringTemplatePart, TypeExpression, TypeExpressionFieldCache, Workflow,
+    ReferenceAccess, ReferenceKeyword, SourceSpan, StringTemplatePart, TypeExpression, TypeExpressionFieldCache, Workflow,
 };
 use super::report::{ValidationContext, ValidationReport};
 use super::tools::validate_agent_tool_bindings;
@@ -988,7 +988,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         let mut field_cache = TypeExpressionFieldCache::new();
 
         for reference_access in reference.projection_accesses() {
-            if candidate_types.iter().any(TypeExpression::can_be_null) && !reference_access.optional {
+            if candidate_types.iter().any(TypeExpression::can_be_null) && !reference_access.is_optional() {
                 self.push_missing_optional_reference_access(reference, reference_access.field.as_str(), context.clone());
 
                 return;
@@ -997,15 +997,15 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             let mut next_candidate_types = Vec::new();
 
             for candidate_type in &candidate_types {
-                candidate_type.collect_field_types_for_access_with_cache(
-                    reference_access.field.as_str(),
+                candidate_type.collect_field_types_for_reference_access_with_cache(
+                    reference_access,
                     &mut |schema_name| self.validation_index.schema_type_expression(schema_name, SourceSpan::generated()),
                     &mut next_candidate_types,
                     &mut field_cache,
                 );
             }
 
-            if reference_access.optional {
+            if reference_access.is_optional() {
                 next_candidate_types.push(TypeExpression::Null);
             }
 
@@ -1039,7 +1039,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         let mut candidate_types = vec![start_type];
 
         for reference_access in reference.accesses_from(access_start_index) {
-            if candidate_types.iter().any(workflow_type_can_be_null) && !reference_access.optional {
+            if candidate_types.iter().any(workflow_type_can_be_null) && !reference_access.is_optional() {
                 self.push_missing_optional_reference_access(reference, reference_access.field.as_str(), context.clone());
 
                 return;
@@ -1048,10 +1048,10 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             let mut next_candidate_types = Vec::new();
 
             for candidate_type in &candidate_types {
-                Self::collect_next_workflow_types_for_field(candidate_type, reference_access.field.as_str(), &mut next_candidate_types);
+                Self::collect_next_workflow_types_for_reference_access(candidate_type, reference_access, &mut next_candidate_types);
             }
 
-            if reference_access.optional {
+            if reference_access.is_optional() {
                 next_candidate_types.push(crate::semantic::support::types::WorkflowType::Null);
             }
 
@@ -1081,24 +1081,32 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         }
     }
 
-    fn collect_next_workflow_types_for_field(
+    fn collect_next_workflow_types_for_reference_access(
         candidate_type: &WorkflowType,
-        field_name: &str,
+        reference_access: &ReferenceAccess,
         next_candidate_types: &mut Vec<WorkflowType>,
     ) {
+        if reference_access.is_array_pluck() {
+            if let Some(field_type) = candidate_type.array_pluck_field_type(reference_access) {
+                next_candidate_types.push(field_type);
+            }
+
+            return;
+        }
+
         match candidate_type {
             WorkflowType::Object(fields) => {
-                if let Some(field_type) = fields.get(field_name) {
+                if let Some(field_type) = fields.get(&reference_access.field) {
                     next_candidate_types.push(field_type.clone());
                 }
             }
             WorkflowType::Union(union_members) => {
                 for union_member in union_members {
-                    Self::collect_next_workflow_types_for_field(union_member, field_name, next_candidate_types);
+                    Self::collect_next_workflow_types_for_reference_access(union_member, reference_access, next_candidate_types);
                 }
             }
             WorkflowType::Variant { discriminator, cases } => {
-                if discriminator == field_name {
+                if discriminator == &reference_access.field {
                     next_candidate_types.extend(cases.keys().cloned().map(|case_name| WorkflowType::StringEnum(vec![case_name])));
                 }
             }

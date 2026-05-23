@@ -1,7 +1,7 @@
 use super::{source_span_from_pair, AstVisitor};
 use crate::dsl::ast::{
     Asset, CallArgument, Expression, FunctionCall, MatchBranch, MatchExpression, NamedArgument, NullFallbackExpression, ObjectField,
-    Reference, ReferenceAccess, ReferenceRoot, StringTemplate, StringTemplatePart, VariantProjectionExpression,
+    Reference, ReferenceAccess, ReferenceAccessKind, ReferenceRoot, StringTemplate, StringTemplatePart, VariantProjectionExpression,
 };
 use crate::dsl::parser::{DslParseError, Rule};
 use pest::iterators::Pair;
@@ -290,15 +290,12 @@ impl AstVisitor {
         while let Some(reference_operator_pair) = inner_pairs.next() {
             let next_field_name = self.next_identifier(&mut inner_pairs, "reference field", "reference")?;
 
-            let optional = match reference_operator_pair.as_str() {
-                "." => false,
-                "?." => true,
-                _ => unreachable!("reference operator should be either . or ?."),
-            };
+            let reference_access_kind = ReferenceAccessKind::from_operator(reference_operator_pair.as_str())
+                .expect("reference operator should be a known operator");
 
             accesses.push(ReferenceAccess {
                 field: next_field_name,
-                optional,
+                kind: reference_access_kind,
             });
         }
 

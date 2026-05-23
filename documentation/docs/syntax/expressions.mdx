@@ -24,6 +24,15 @@ agent.extract.summary
 dynamic.project_context
 ```
 
+Use `.*.` to pluck a field from each item in an array. The result is an array of the selected values.
+
+```wire
+input.attachments.*.video_url
+dynamic.video_recording_answers.answers.*.url
+```
+
+For example, if `attachments` is `[{ video_url: "a.mp4" }, { video_url: "b.mp4" }]`, then `input.attachments.*.video_url` evaluates to `["a.mp4", "b.mp4"]`. Missing fields, non-object items, and null values become `null`. Use `.**.` to filter those null values out, or `.***.` to reject null and mixed-type plucked values. These operators are only valid on arrays.
+
 ## Arrays and objects
 
 ```wire
@@ -54,7 +63,7 @@ Dynamic fields may contain literals, object values, resource reads, prompt rende
 
 ## Assets
 
-Use `asset` to attach a model-supported asset to an instruction. The source can be a URL, a `data:*;base64,...` value, or a runtime string expression.
+Use `asset` to attach model-supported assets to an instruction. The source can be a URL, a `data:*;base64,...` value, a runtime string expression, or an array of strings.
 
 ```wire
 agent analyzer {
@@ -76,6 +85,9 @@ dynamic {
     video: asset "https://example.com/demo.mp4" {
         type: "video"
         media_type: "video/mp4"
+    }
+    videos: asset input.attachments.*.video_url {
+        type: "video"
     }
 }
 ```

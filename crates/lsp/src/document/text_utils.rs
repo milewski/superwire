@@ -23,7 +23,7 @@ pub fn trailing_reference_token(line_prefix: &str) -> Option<&str> {
     let mut start_index = line_prefix.len();
 
     for (character_index, character) in line_prefix.char_indices().rev() {
-        if character.is_ascii_alphanumeric() || character == '_' || character == '.' || character == '?' {
+        if character.is_ascii_alphanumeric() || character == '_' || character == '.' || character == '?' || character == '*' {
             start_index = character_index;
             continue;
         }
@@ -91,7 +91,7 @@ pub fn is_inside_multiline_string_literal(source_text: &str, cursor_offset: usiz
 }
 
 pub fn is_symbol_character(character: char) -> bool {
-    character.is_ascii_alphanumeric() || character == '_' || character == '.' || character == '?'
+    character.is_ascii_alphanumeric() || character == '_' || character == '.' || character == '?' || character == '*'
 }
 
 pub fn split_for_clause_binding(source_text: &str) -> Option<(&str, &str)> {

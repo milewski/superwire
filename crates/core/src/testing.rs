@@ -786,13 +786,7 @@ impl SemanticFixture {
     }
 
     fn reference_accesses(access_fields: impl IntoIterator<Item = impl Into<String>>) -> Vec<ReferenceAccess> {
-        access_fields
-            .into_iter()
-            .map(|field_name| ReferenceAccess {
-                field: field_name.into(),
-                optional: false,
-            })
-            .collect()
+        access_fields.into_iter().map(ReferenceAccess::required).collect()
     }
 }
 

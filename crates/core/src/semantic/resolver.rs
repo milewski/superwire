@@ -508,7 +508,7 @@ impl Reference {
         let mut candidate_types = vec![root_type.clone()];
 
         for reference_access in self.accesses_from(access_start_index) {
-            if candidate_types.iter().any(WorkflowType::can_be_null) && !reference_access.optional {
+            if candidate_types.iter().any(WorkflowType::can_be_null) && !reference_access.is_optional() {
                 return Err(ReferenceResolutionError::MissingOptionalAccess {
                     root,
                     field_name: reference_access.field.clone(),
@@ -518,12 +518,12 @@ impl Reference {
             let mut next_candidate_types = Vec::new();
 
             for candidate_type in &candidate_types {
-                if let Some(field_type) = candidate_type.without_null().field_type(&reference_access.field) {
+                if let Some(field_type) = candidate_type.without_null().field_type_for_reference_access(reference_access) {
                     next_candidate_types.push(field_type);
                 }
             }
 
-            if reference_access.optional {
+            if reference_access.is_optional() {
                 next_candidate_types.push(WorkflowType::Null);
             }
 
@@ -817,9 +817,12 @@ mod tests {
             root,
             accesses: accesses
                 .into_iter()
-                .map(|(field_name, optional)| ReferenceAccess {
-                    field: field_name.to_string(),
-                    optional,
+                .map(|(field_name, optional)| {
+                    if optional {
+                        return ReferenceAccess::optional(field_name);
+                    }
+
+                    ReferenceAccess::required(field_name)
                 })
                 .collect(),
             span: crate::dsl::SourceSpan::generated(),

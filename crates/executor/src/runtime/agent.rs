@@ -153,10 +153,10 @@ impl RenderedPrompt {
         rendered_prompt
     }
 
-    fn asset(asset: ModelAsset) -> Self {
+    fn assets(assets: Vec<ModelAsset>) -> Self {
         Self {
             text: String::new(),
-            content: vec![ModelPromptContent::Asset(asset)],
+            content: assets.into_iter().map(ModelPromptContent::Asset).collect(),
         }
     }
 
@@ -431,19 +431,19 @@ impl WorkflowExecutor {
             }
             Expression::Asset(_) => {
                 let value = self.evaluate_runtime_expression(expression, tool_call_execution_context, context)?;
-                let Some(asset) = ModelAsset::from_value(&value) else {
+                let Some(assets) = ModelAsset::all_from_value(&value) else {
                     return Err(ExecutorError::Other {
-                        message: format!("asset expression for {context} did not produce an asset value"),
+                        message: format!("asset expression for {context} did not produce asset values"),
                     });
                 };
 
-                Ok(RenderedPrompt::asset(asset))
+                Ok(RenderedPrompt::assets(assets))
             }
             Expression::Reference(_) => {
                 let value = self.evaluate_runtime_expression(expression, tool_call_execution_context, context)?;
 
-                if let Some(asset) = ModelAsset::from_value(&value) {
-                    return Ok(RenderedPrompt::asset(asset));
+                if let Some(assets) = ModelAsset::non_empty_all_from_value(&value) {
+                    return Ok(RenderedPrompt::assets(assets));
                 }
 
                 Ok(RenderedPrompt::text(normalize_prompt(&value)))

@@ -1,6 +1,6 @@
 use crate::dsl::{
-    parse_workflow, Declaration, DeclarationKeyword, ImportKeyword, SingletonDeclarationKind, SourcePosition, SourceSpan, ToolSource,
-    TypeExpression, TypeExpressionFieldCache, TypedField, Workflow,
+    parse_workflow, Declaration, DeclarationKeyword, ImportKeyword, ReferenceAccess, SingletonDeclarationKind, SourcePosition, SourceSpan,
+    ToolSource, TypeExpression, TypeExpressionFieldCache, TypedField, Workflow,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -450,15 +450,26 @@ impl SemanticToolingSnapshot {
 
     #[must_use]
     pub fn resolve_access_path_types(&self, start_types: Vec<TypeExpression>, access_path_segments: &[String]) -> Vec<TypeExpression> {
+        let reference_accesses = access_path_segments.iter().map(ReferenceAccess::required).collect::<Vec<_>>();
+
+        self.resolve_reference_access_path_types(start_types, reference_accesses.as_slice())
+    }
+
+    #[must_use]
+    pub fn resolve_reference_access_path_types(
+        &self,
+        start_types: Vec<TypeExpression>,
+        reference_accesses: &[ReferenceAccess],
+    ) -> Vec<TypeExpression> {
         let mut candidate_types = start_types;
         let mut field_cache = TypeExpressionFieldCache::new();
 
-        for access_path_segment in access_path_segments {
+        for reference_access in reference_accesses {
             let mut next_candidate_types = Vec::<TypeExpression>::new();
 
             for candidate_type in &candidate_types {
-                candidate_type.collect_field_types_for_access_with_cache(
-                    access_path_segment,
+                candidate_type.collect_field_types_for_reference_access_with_cache(
+                    reference_access,
                     &mut |schema_name| self.schema_object_type(schema_name),
                     &mut next_candidate_types,
                     &mut field_cache,

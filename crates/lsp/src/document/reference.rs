@@ -1,10 +1,10 @@
 use std::collections::{BTreeMap, HashSet};
 
-use superwire_core::dsl::{DeclarationKeyword, ReferenceKeyword, SourceSpan, TypeExpression, TypedField};
-use superwire_core::mcp::McpServerLock;
-use superwire_core::semantic::ToolingReferencePath;
-
 use lsp_types::{CompletionItemKind, Position};
+use superwire_core::dsl::{
+    DeclarationKeyword, ReferenceAccess, ReferenceAccessKind, ReferenceKeyword, SourceSpan, TypeExpression, TypedField,
+};
+use superwire_core::mcp::McpServerLock;
 
 use super::position::source_span_contains_position;
 use super::semantic_index::{FieldMetadata, SemanticIndex};
@@ -16,8 +16,10 @@ pub struct ReferenceCompletionPath {
     root: String,
     pub complete_accesses: Vec<String>,
     complete_accesses_are_optional: Vec<bool>,
+    complete_access_kinds: Vec<ReferenceAccessKind>,
     pub pending_prefix: String,
     pub pending_access_is_optional: bool,
+    pending_access_kind: ReferenceAccessKind,
 }
 
 impl ReferenceCompletionPath {
@@ -44,13 +46,16 @@ impl ReferenceCompletionPath {
                 root,
                 complete_accesses: Vec::new(),
                 complete_accesses_are_optional: Vec::new(),
+                complete_access_kinds: Vec::new(),
                 pending_prefix: String::new(),
                 pending_access_is_optional: false,
+                pending_access_kind: ReferenceAccessKind::Required,
             });
         }
 
         let mut complete_accesses = Vec::<String>::new();
         let mut complete_accesses_are_optional = Vec::<bool>::new();
+        let mut complete_access_kinds = Vec::<ReferenceAccessKind>::new();
 
         if parsed_token.has_trailing_separator {
             for parsed_access in &parsed_token.accesses {
@@ -59,15 +64,18 @@ impl ReferenceCompletionPath {
                 }
 
                 complete_accesses.push(parsed_access.name.clone());
-                complete_accesses_are_optional.push(parsed_access.is_optional);
+                complete_accesses_are_optional.push(parsed_access.kind == ReferenceAccessKind::Optional);
+                complete_access_kinds.push(parsed_access.kind);
             }
 
             return Some(Self {
                 root,
                 complete_accesses,
                 complete_accesses_are_optional,
+                complete_access_kinds,
                 pending_prefix: String::new(),
-                pending_access_is_optional: parsed_token.trailing_separator_is_optional,
+                pending_access_is_optional: parsed_token.trailing_separator_kind == ReferenceAccessKind::Optional,
+                pending_access_kind: parsed_token.trailing_separator_kind,
             });
         }
 
@@ -77,7 +85,8 @@ impl ReferenceCompletionPath {
             }
 
             complete_accesses.push(parsed_access.name.clone());
-            complete_accesses_are_optional.push(parsed_access.is_optional);
+            complete_accesses_are_optional.push(parsed_access.kind == ReferenceAccessKind::Optional);
+            complete_access_kinds.push(parsed_access.kind);
         }
 
         let pending_access = parsed_token.accesses.last()?;
@@ -91,8 +100,10 @@ impl ReferenceCompletionPath {
             root,
             complete_accesses,
             complete_accesses_are_optional,
+            complete_access_kinds,
             pending_prefix,
-            pending_access_is_optional: pending_access.is_optional,
+            pending_access_is_optional: pending_access.kind == ReferenceAccessKind::Optional,
+            pending_access_kind: pending_access.kind,
         })
     }
 
@@ -106,6 +117,40 @@ impl ReferenceCompletionPath {
 
     fn complete_access_is_optional(&self, access_index: usize) -> bool {
         self.complete_accesses_are_optional.get(access_index).copied().unwrap_or(false)
+    }
+
+    fn complete_access_kind(&self, access_index: usize) -> ReferenceAccessKind {
+        self.complete_access_kinds
+            .get(access_index)
+            .copied()
+            .unwrap_or(ReferenceAccessKind::Required)
+    }
+
+    pub(in crate::document) fn resolved_reference_accesses_with_pending(&self) -> Vec<ReferenceAccess> {
+        let mut reference_accesses = self.complete_reference_accesses_from(0);
+
+        if !self.pending_prefix.is_empty() {
+            let pending_access = ReferenceAccess {
+                field: self.pending_prefix.clone(),
+                kind: self.pending_access_kind,
+            };
+
+            reference_accesses.push(pending_access);
+        }
+
+        reference_accesses
+    }
+
+    fn complete_reference_accesses_from(&self, access_start_index: usize) -> Vec<ReferenceAccess> {
+        self.complete_accesses
+            .iter()
+            .enumerate()
+            .skip(access_start_index)
+            .map(|(access_index, field_name)| ReferenceAccess {
+                field: field_name.clone(),
+                kind: self.complete_access_kind(access_index),
+            })
+            .collect()
     }
 
     pub fn segment_index_at_cursor(reference_token: &str, cursor_character_offset: usize) -> Option<usize> {
@@ -188,7 +233,7 @@ struct ParsedReferenceToken {
     root: String,
     accesses: Vec<ParsedReferenceAccess>,
     has_trailing_separator: bool,
-    trailing_separator_is_optional: bool,
+    trailing_separator_kind: ReferenceAccessKind,
 }
 
 impl ParsedReferenceToken {
@@ -199,31 +244,21 @@ impl ParsedReferenceToken {
         let mut accesses = Vec::new();
 
         while character_index < token_characters.len() {
-            let is_optional = token_characters.get(character_index) == Some(&'?');
-
-            if is_optional {
-                character_index += 1;
-            }
-
-            if token_characters.get(character_index) != Some(&'.') {
-                return None;
-            }
-
-            character_index += 1;
+            let access_kind = Self::read_access_kind(&token_characters, &mut character_index)?;
 
             if character_index == token_characters.len() {
                 return Some(Self {
                     root,
                     accesses,
                     has_trailing_separator: true,
-                    trailing_separator_is_optional: is_optional,
+                    trailing_separator_kind: access_kind,
                 });
             }
 
             let access_name = Self::read_identifier(&token_characters, &mut character_index)?;
             accesses.push(ParsedReferenceAccess {
                 name: access_name,
-                is_optional,
+                kind: access_kind,
             });
         }
 
@@ -231,8 +266,48 @@ impl ParsedReferenceToken {
             root,
             accesses,
             has_trailing_separator: false,
-            trailing_separator_is_optional: false,
+            trailing_separator_kind: ReferenceAccessKind::Required,
         })
+    }
+
+    fn read_access_kind(token_characters: &[char], character_index: &mut usize) -> Option<ReferenceAccessKind> {
+        if token_characters.get(*character_index) == Some(&'?') {
+            *character_index += 1;
+
+            if token_characters.get(*character_index) != Some(&'.') {
+                return None;
+            }
+
+            *character_index += 1;
+
+            return Some(ReferenceAccessKind::Optional);
+        }
+
+        if token_characters.get(*character_index) != Some(&'.') {
+            return None;
+        }
+
+        let mut operator_length = 1_usize;
+
+        while token_characters.get(*character_index + operator_length) == Some(&'*') {
+            operator_length += 1;
+        }
+
+        if operator_length > 1 {
+            if token_characters.get(*character_index + operator_length) != Some(&'.') {
+                return None;
+            }
+
+            let operator_end_index = *character_index + operator_length;
+            let operator = token_characters[*character_index..=operator_end_index].iter().collect::<String>();
+            *character_index += operator_length + 1;
+
+            return ReferenceAccessKind::from_operator(operator.as_str());
+        }
+
+        *character_index += 1;
+
+        Some(ReferenceAccessKind::Required)
     }
 
     fn read_identifier(token_characters: &[char], character_index: &mut usize) -> Option<String> {
@@ -253,7 +328,7 @@ impl ParsedReferenceToken {
 #[derive(Debug, Clone)]
 struct ParsedReferenceAccess {
     name: String,
-    is_optional: bool,
+    kind: ReferenceAccessKind,
 }
 
 fn is_identifier_character(character: char) -> bool {
@@ -616,17 +691,19 @@ impl SemanticIndex {
         let candidate_types = if reference_completion_path.complete_accesses.is_empty() {
             for_loop_binding_types
         } else {
+            let reference_accesses = reference_completion_path.complete_reference_accesses_from(0);
+
             self.tooling_snapshot
-                .resolve_access_path_types(for_loop_binding_types, &reference_completion_path.complete_accesses)
+                .resolve_reference_access_path_types(for_loop_binding_types, reference_accesses.as_slice())
         };
 
         if self.requires_optional_access_for_field_completion(candidate_types.as_slice(), reference_completion_path) {
             return Some(Vec::new());
         }
 
-        Some(self.field_suggestions_from_types(
+        Some(self.field_suggestions_for_reference_path(
             candidate_types.as_slice(),
-            &reference_completion_path.pending_prefix,
+            reference_completion_path,
             reference_completion_constraint,
         ))
     }
@@ -634,10 +711,10 @@ impl SemanticIndex {
     pub fn resolve_singleton_reference_type(
         &self,
         root_fields: &BTreeMap<String, TypeExpression>,
-        resolved_accesses: &[String],
+        resolved_accesses: &[ReferenceAccess],
     ) -> Option<TypeExpression> {
         let first_field_name = resolved_accesses.first()?;
-        let root_field_type = root_fields.get(first_field_name)?.clone();
+        let root_field_type = root_fields.get(&first_field_name.field)?.clone();
 
         if resolved_accesses.len() == 1 {
             return Some(root_field_type);
@@ -645,7 +722,7 @@ impl SemanticIndex {
 
         let candidate_types = self
             .tooling_snapshot
-            .resolve_access_path_types(vec![root_field_type], &resolved_accesses[1..]);
+            .resolve_reference_access_path_types(vec![root_field_type], &resolved_accesses[1..]);
 
         candidate_types.first().cloned()
     }
@@ -686,16 +763,21 @@ impl SemanticIndex {
         let Some(root_field_type) = root_fields.get(first_field_name).cloned() else {
             return Vec::new();
         };
+        let reference_accesses = reference_completion_path.complete_reference_accesses_from(1);
 
         let candidate_types = self
             .tooling_snapshot
-            .resolve_access_path_types(vec![root_field_type], &complete_accesses[1..]);
+            .resolve_reference_access_path_types(vec![root_field_type], reference_accesses.as_slice());
 
         if self.requires_optional_access_for_field_completion(candidate_types.as_slice(), reference_completion_path) {
             return Vec::new();
         }
 
-        self.field_suggestions_from_types(candidate_types.as_slice(), pending_prefix, reference_completion_constraint)
+        self.field_suggestions_for_reference_path(
+            candidate_types.as_slice(),
+            reference_completion_path,
+            reference_completion_constraint,
+        )
     }
 
     fn agent_reference_suggestions(
@@ -746,6 +828,7 @@ impl SemanticIndex {
         };
 
         let remaining_accesses = &reference_completion_path.complete_accesses[1..];
+        let remaining_reference_accesses = reference_completion_path.complete_reference_accesses_from(1);
 
         if self.has_unsafe_nullable_access(agent_output_type.clone(), remaining_accesses, reference_completion_path, 1) {
             return Vec::new();
@@ -753,15 +836,15 @@ impl SemanticIndex {
 
         let candidate_types = self
             .tooling_snapshot
-            .resolve_access_path_types(vec![agent_output_type], remaining_accesses);
+            .resolve_reference_access_path_types(vec![agent_output_type], remaining_reference_accesses.as_slice());
 
         if self.requires_optional_access_for_field_completion(candidate_types.as_slice(), reference_completion_path) {
             return Vec::new();
         }
 
-        self.field_suggestions_from_types(
+        self.field_suggestions_for_reference_path(
             candidate_types.as_slice(),
-            &reference_completion_path.pending_prefix,
+            reference_completion_path,
             reference_completion_constraint,
         )
     }
@@ -798,21 +881,22 @@ impl SemanticIndex {
             return Vec::new();
         };
 
-        if self.has_unsafe_nullable_access(schema_type, remaining_accesses.as_slice(), reference_completion_path, 1) {
+        if self.has_unsafe_nullable_access(schema_type.clone(), remaining_accesses.as_slice(), reference_completion_path, 1) {
             return Vec::new();
         }
 
+        let remaining_reference_accesses = reference_completion_path.complete_reference_accesses_from(1);
         let candidate_types = self
             .tooling_snapshot
-            .resolve_reference_path_types(&ToolingReferencePath::schema(schema_name.clone(), remaining_accesses));
+            .resolve_reference_access_path_types(vec![schema_type], remaining_reference_accesses.as_slice());
 
         if self.requires_optional_access_for_field_completion(candidate_types.as_slice(), reference_completion_path) {
             return Vec::new();
         }
 
-        self.field_suggestions_from_types(
+        self.field_suggestions_for_reference_path(
             candidate_types.as_slice(),
-            &reference_completion_path.pending_prefix,
+            reference_completion_path,
             ReferenceCompletionConstraint::None,
         )
     }
@@ -837,8 +921,9 @@ impl SemanticIndex {
         access_offset: usize,
     ) -> bool {
         let mut candidate_types = vec![root_type];
+        let reference_accesses = reference_completion_path.complete_reference_accesses_from(access_offset);
 
-        for (access_path_index, access_path_segment) in access_path_segments.iter().enumerate() {
+        for (access_path_index, reference_access) in reference_accesses.iter().take(access_path_segments.len()).enumerate() {
             let access_index = access_offset + access_path_index;
 
             if candidate_types.iter().any(TypeExpression::can_be_null)
@@ -849,7 +934,7 @@ impl SemanticIndex {
 
             candidate_types = self
                 .tooling_snapshot
-                .resolve_access_path_types(candidate_types, std::slice::from_ref(access_path_segment));
+                .resolve_reference_access_path_types(candidate_types, std::slice::from_ref(reference_access));
 
             if candidate_types.is_empty() {
                 return false;
@@ -905,6 +990,72 @@ impl SemanticIndex {
                 insert_text: field_name,
             })
             .collect()
+    }
+
+    fn field_suggestions_for_reference_path(
+        &self,
+        candidate_types: &[TypeExpression],
+        reference_completion_path: &ReferenceCompletionPath,
+        reference_completion_constraint: ReferenceCompletionConstraint,
+    ) -> Vec<CompletionSuggestion> {
+        if !reference_completion_path.pending_access_kind.is_array_pluck() {
+            return self.field_suggestions_from_types(
+                candidate_types,
+                &reference_completion_path.pending_prefix,
+                reference_completion_constraint,
+            );
+        }
+
+        let array_item_types = self.array_item_types(candidate_types);
+
+        self.field_suggestions_from_types(
+            array_item_types.as_slice(),
+            &reference_completion_path.pending_prefix,
+            reference_completion_constraint,
+        )
+    }
+
+    fn array_item_types(&self, candidate_types: &[TypeExpression]) -> Vec<TypeExpression> {
+        let mut array_item_types = Vec::new();
+
+        for candidate_type in candidate_types {
+            self.collect_array_item_types(candidate_type, &mut array_item_types);
+        }
+
+        array_item_types
+    }
+
+    fn collect_array_item_types(&self, candidate_type: &TypeExpression, array_item_types: &mut Vec<TypeExpression>) {
+        match candidate_type {
+            TypeExpression::Array {
+                item_type,
+                fixed_length: _,
+            } => array_item_types.push((**item_type).clone()),
+            TypeExpression::SchemaReference(schema_name) => {
+                if let Some(schema_type) = self.schema_object_type(schema_name) {
+                    self.collect_array_item_types(&schema_type, array_item_types);
+                }
+            }
+            TypeExpression::Union(union_members) => {
+                for union_member in union_members {
+                    self.collect_array_item_types(union_member, array_item_types);
+                }
+            }
+            TypeExpression::String
+            | TypeExpression::Number
+            | TypeExpression::Float
+            | TypeExpression::Boolean
+            | TypeExpression::Null
+            | TypeExpression::AnyObject
+            | TypeExpression::StringEnum(_)
+            | TypeExpression::StringEnumReference(_)
+            | TypeExpression::Tuple(_)
+            | TypeExpression::Object(_)
+            | TypeExpression::Variant {
+                discriminator: _,
+                cases: _,
+            } => {}
+        }
     }
 
     fn available_fields_for_types(&self, candidate_types: &[TypeExpression]) -> BTreeMap<String, FieldMetadata> {

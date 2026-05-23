@@ -223,16 +223,30 @@ impl TypeExpression {
 impl Asset {
     fn infer_type(&self, type_inference_context: &TypeInferenceContext, context: &str) -> Result<WorkflowType, WorkflowSemanticError> {
         let source_type = self.source.infer_type(type_inference_context, context)?;
+        let is_array_source = matches!(
+            &source_type,
+            WorkflowType::Array {
+                item_type,
+                fixed_length: _,
+            } if ensure_type_matches(&WorkflowType::String, item_type)
+        );
 
-        if !ensure_type_matches(&WorkflowType::String, &source_type) {
+        if !ensure_type_matches(&WorkflowType::String, &source_type) && !is_array_source {
             return Err(WorkflowSemanticError::ExpressionEvaluation {
                 context: context.to_string(),
-                message: format!("asset source expects string, found {source_type}"),
+                message: format!("asset source expects string or array of strings, found {source_type}"),
             });
         }
 
         for option in &self.options {
             let _ = option.value.infer_type(type_inference_context, context)?;
+        }
+
+        if is_array_source {
+            return Ok(WorkflowType::Array {
+                item_type: Box::new(WorkflowType::AnyObject),
+                fixed_length: None,
+            });
         }
 
         Ok(WorkflowType::AnyObject)
@@ -602,7 +616,7 @@ impl Reference {
         for reference_access in self.accesses_from(access_start_index) {
             let mut next_candidate_types = Vec::new();
 
-            if candidate_types.iter().any(WorkflowType::can_be_null) && !reference_access.optional {
+            if candidate_types.iter().any(WorkflowType::can_be_null) && !reference_access.is_optional() {
                 return Err(WorkflowSemanticError::ExpressionEvaluation {
                     context: context.to_string(),
                     message: format!("cannot access `{}` through a nullable value; use `?.`", reference_access.field),
@@ -610,12 +624,12 @@ impl Reference {
             }
 
             for candidate_type in &candidate_types {
-                if let Some(field_type) = candidate_type.without_null().field_type(&reference_access.field) {
+                if let Some(field_type) = candidate_type.without_null().field_type_for_reference_access(reference_access) {
                     next_candidate_types.push(field_type);
                 }
             }
 
-            if reference_access.optional {
+            if reference_access.is_optional() {
                 next_candidate_types.push(WorkflowType::Null);
             }
 
@@ -836,10 +850,7 @@ mod tests {
     fn tool_reference(tool_name: &str) -> Reference {
         Reference {
             root: ReferenceRoot::Keyword(ReferenceKeyword::Tool),
-            accesses: vec![crate::dsl::ReferenceAccess {
-                field: tool_name.to_string(),
-                optional: false,
-            }],
+            accesses: vec![crate::dsl::ReferenceAccess::required(tool_name)],
             span: source_span(),
         }
     }

@@ -29,7 +29,7 @@ pub use mcp::{
     McpPromptBatchImportDeclaration, McpPromptBatchImportItem, McpPromptImportDeclaration, McpResourceBatchImportDeclaration,
     McpResourceBatchImportItem, McpResourceImportDeclaration, McpToolBatchImportDeclaration, McpToolBatchImportItem, McpToolSource,
 };
-pub use reference::{Reference, ReferenceAccess, ReferenceRoot};
+pub use reference::{Reference, ReferenceAccess, ReferenceAccessKind, ReferenceRoot};
 pub use span::{SourcePosition, SourceSpan};
 pub use tool::{ToolDeclaration, ToolSource};
 pub use types::{TypeExpression, TypeExpressionFieldCache, TypedField, VariantCase};
