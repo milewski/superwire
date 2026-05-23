@@ -1,6 +1,7 @@
 mod fixtures;
 mod support;
 
+mod assets;
 mod cache;
 mod dynamic;
 mod execution;

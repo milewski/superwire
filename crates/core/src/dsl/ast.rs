@@ -15,13 +15,14 @@ pub use declaration::{
     SchemaDeclaration, SecretsDeclaration, ToolDeclarationIter,
 };
 pub use expression::{
-    CallArgument, Expression, FunctionCall, MatchBranch, MatchExpression, McpCall, McpCallOperation, NamedArgument, NullFallbackExpression,
-    ObjectField, StringTemplate, StringTemplatePart, ToolCall, VariantProjectionExpression,
+    Asset, CallArgument, Expression, FunctionCall, MatchBranch, MatchExpression, McpCall, McpCallOperation, NamedArgument,
+    NullFallbackExpression, ObjectField, StringTemplate, StringTemplatePart, ToolCall, VariantProjectionExpression,
 };
 pub use keywords::{
-    AgentExpressionPropertyName, BuiltinFunctionArgumentName, BuiltinFunctionName, DeclarationKeyword, ForClauseKeyword, ImportKeyword,
-    McpImportPropertyName, McpServerPropertyName, McpToolBatchImportPropertyName, ModelCallArgumentName, ModelDeclarationPropertyName,
-    ModelUsagePropertyName, ReferenceKeyword, ToolCallKeyword, ToolCallPropertyName, ToolPropertyName,
+    AgentExpressionPropertyName, AssetPropertyName, BuiltinFunctionArgumentName, BuiltinFunctionName, DeclarationKeyword,
+    ExpressionKeyword, ForClauseKeyword, ImportKeyword, McpImportPropertyName, McpServerPropertyName, McpToolBatchImportPropertyName,
+    ModelAssetKind, ModelCallArgumentName, ModelDeclarationPropertyName, ModelUsagePropertyName, ReferenceKeyword, ToolCallKeyword,
+    ToolCallPropertyName, ToolPropertyName,
 };
 pub use mcp::{
     McpBatchImportDeclaration, McpImportBindingEvaluationKind, McpImportBindings, McpImportKind, McpImportSource,

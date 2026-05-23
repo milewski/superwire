@@ -1,7 +1,7 @@
 use super::{source_span_from_pair, AstVisitor};
 use crate::dsl::ast::{
-    CallArgument, Expression, FunctionCall, MatchBranch, MatchExpression, NamedArgument, NullFallbackExpression, ObjectField, Reference,
-    ReferenceAccess, ReferenceRoot, StringTemplate, StringTemplatePart, VariantProjectionExpression,
+    Asset, CallArgument, Expression, FunctionCall, MatchBranch, MatchExpression, NamedArgument, NullFallbackExpression, ObjectField,
+    Reference, ReferenceAccess, ReferenceRoot, StringTemplate, StringTemplatePart, VariantProjectionExpression,
 };
 use crate::dsl::parser::{DslParseError, Rule};
 use pest::iterators::Pair;
@@ -14,6 +14,7 @@ impl AstVisitor {
             Rule::variant_projection_expression => Ok(Expression::VariantProjection(
                 self.visit_variant_projection_expression(expression_pair)?,
             )),
+            Rule::asset_expression => Ok(Expression::Asset(self.visit_asset_expression(expression_pair)?)),
             Rule::function_call => Ok(Expression::FunctionCall(self.visit_function_call(expression_pair)?)),
             Rule::tool_call_expression => Ok(Expression::ToolCall(self.visit_tool_call_expression(expression_pair)?)),
             Rule::mcp_call_expression => Ok(Expression::McpCall(self.visit_mcp_call_expression(expression_pair)?)),
@@ -67,6 +68,34 @@ impl AstVisitor {
             field_path,
             span,
         })
+    }
+
+    pub(super) fn visit_asset_expression(&self, asset_pair: Pair<'_, Rule>) -> Result<Asset, DslParseError> {
+        let span = source_span_from_pair(&asset_pair);
+        let mut inner_pairs = asset_pair.into_inner();
+        let source_pair = self.next_pair(&mut inner_pairs, "asset source", "asset expression")?;
+        let source = self.visit_expression(source_pair)?;
+        let options = if let Some(asset_block_pair) = inner_pairs.next() {
+            self.visit_asset_block(asset_block_pair)?
+        } else {
+            Vec::new()
+        };
+
+        Ok(Asset {
+            source: Box::new(source),
+            options,
+            span,
+        })
+    }
+
+    pub(super) fn visit_asset_block(&self, asset_block_pair: Pair<'_, Rule>) -> Result<Vec<ObjectField>, DslParseError> {
+        let mut options = Vec::new();
+
+        for asset_property_pair in asset_block_pair.into_inner() {
+            options.push(self.visit_object_field(asset_property_pair)?);
+        }
+
+        Ok(options)
     }
 
     pub(super) fn visit_match_expression(&self, match_expression_pair: Pair<'_, Rule>) -> Result<MatchExpression, DslParseError> {
@@ -222,6 +251,7 @@ impl AstVisitor {
             Rule::fallback_expression
             | Rule::match_expression
             | Rule::variant_projection_expression
+            | Rule::asset_expression
             | Rule::function_call
             | Rule::mcp_call_expression
             | Rule::tool_call_expression

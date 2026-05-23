@@ -315,6 +315,7 @@ impl WorkflowExecutor {
             | Expression::NullLiteral
             | Expression::Reference(_)
             | Expression::FunctionCall(_)
+            | Expression::Asset(_)
             | Expression::VariantProjection(_)
             | Expression::Match(_) => Ok(evaluate_expression(
                 expression,

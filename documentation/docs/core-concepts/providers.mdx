@@ -40,6 +40,17 @@ model fast from llm {
 
 The `id` is the provider-specific model identifier sent to the configured provider.
 
+Models that accept non-text inputs should declare those supported asset kinds:
+
+```wire
+model vision from llm {
+    id: "qwen-plus"
+    assets: ["image", "video"]
+}
+```
+
+The supported asset kinds are `image`, `video`, and `document`. Superwire validates `asset` usage against this list before sending a model request.
+
 Agents reference model profiles through the `model` namespace:
 
 ```wire

@@ -52,6 +52,46 @@ dynamic {
 
 Dynamic fields may contain literals, object values, resource reads, prompt renders, agent outputs, tool calls, and other supported runtime expressions.
 
+## Assets
+
+Use `asset` to attach a model-supported asset to an instruction. The source can be a URL, a `data:*;base64,...` value, or a runtime string expression.
+
+```wire
+agent analyzer {
+    model: model.vision
+
+    instruction: "What is in this image? {{ asset input.image_url }}"
+
+    output {
+        result: string
+    }
+}
+```
+
+Assets can also be stored in `dynamic` blocks and referenced later.
+
+```wire
+dynamic {
+    image: asset "https://example.com/image.png"
+    video: asset "https://example.com/demo.mp4" {
+        type: "video"
+        media_type: "video/mp4"
+    }
+}
+```
+
+Supported asset options are:
+
+| Option | Purpose |
+| --- | --- |
+| `type` | Explicit asset kind: `image`, `video`, or `document`. |
+| `media_type` | Explicit MIME type such as `image/png`, `video/mp4`, or `application/pdf`. |
+| `title` | Optional title for document-like assets. |
+| `context` | Optional context for document-like assets. |
+| `citations` | Enables or disables provider citations when supported. |
+
+Model profiles must declare the asset kinds they support with `assets`.
+
 ## Tool calls
 
 Use `bindings {}` to assign runtime values to the tool input schema.

@@ -553,6 +553,7 @@ fn replace_text_skips_semantic_snapshot_rebuild_when_document_is_unchanged() {
     assert!(!document_state.replace_text(source, None));
 }
 
+mod completion_asset_tests;
 mod completion_matrix_tests;
 mod completion_mcp_tests;
 mod completion_model_tests;

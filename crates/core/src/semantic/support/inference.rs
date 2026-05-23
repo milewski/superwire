@@ -85,6 +85,7 @@ impl InferenceSetting {
             Expression::NumberLiteral(number_literal) => self.accepts_number_literal(number_literal),
             Expression::Reference(_)
             | Expression::FunctionCall(_)
+            | Expression::Asset(_)
             | Expression::NullFallback(_)
             | Expression::VariantProjection(_)
             | Expression::Match(_) => true,

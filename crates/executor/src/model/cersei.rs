@@ -1,11 +1,16 @@
 use crate::event::{ExecutorEvent, McpCallEventDetails};
 use crate::model::provider::ModelProvider;
 use crate::model::response::normalize_mcp_tool_result;
-use crate::model::types::{FinalizeCallKind, ModelRequest, ModelResponse, ModelSchemaCache, ModelToolDefinition, ModelToolSource};
+use crate::model::types::{
+    FinalizeCallKind, ModelAsset, ModelAssetSource, ModelPromptContent, ModelRequest, ModelResponse, ModelSchemaCache, ModelToolDefinition,
+    ModelToolSource,
+};
 use crate::runtime::ExecutorError;
 use async_trait::async_trait;
 use cersei_provider::{Anthropic, CompletionRequest, Gemini, OpenAi, Provider};
-use cersei_types::{ContentBlock, Message, MessageContent, ToolDefinition, ToolResultContent};
+use cersei_types::{
+    CitationsConfig, ContentBlock, DocumentSource, ImageSource, Message, MessageContent, ToolDefinition, ToolResultContent,
+};
 use jsonschema::ValidationError;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
@@ -26,7 +31,7 @@ impl ModelProvider for CerseiModelProvider {
         let mut schema_cache = ModelSchemaCache::new();
         let request_context = request.cersei_request_context(&mut schema_cache)?;
         let mut last_error = None;
-        let mut messages = vec![Message::user(request.prompt.clone())];
+        let mut messages = vec![request.cersei_user_message()];
 
         log::info!(
             "starting Cersei generation: agent={}, provider={}, model={}, tools={}",
@@ -126,6 +131,80 @@ impl CerseiRequestContext {
         }
 
         completion_request
+    }
+}
+
+impl ModelRequest {
+    fn cersei_user_message(&self) -> Message {
+        if self.prompt_content.is_empty() {
+            return Message::user(self.prompt.clone());
+        }
+
+        Message::user_blocks(self.cersei_content_blocks())
+    }
+
+    fn cersei_content_blocks(&self) -> Vec<ContentBlock> {
+        let mut content_blocks = Vec::new();
+
+        for prompt_content in &self.prompt_content {
+            match prompt_content {
+                ModelPromptContent::Text(text) => {
+                    if !text.is_empty() {
+                        content_blocks.push(ContentBlock::Text { text: text.clone() });
+                    }
+                }
+                ModelPromptContent::Asset(asset) => {
+                    content_blocks.push(asset.cersei_content_block());
+                }
+            }
+        }
+
+        content_blocks
+    }
+}
+
+impl ModelAsset {
+    fn cersei_content_block(&self) -> ContentBlock {
+        match self.kind {
+            superwire_core::dsl::ModelAssetKind::Image => ContentBlock::Image {
+                source: self.cersei_image_source(),
+            },
+            superwire_core::dsl::ModelAssetKind::Document | superwire_core::dsl::ModelAssetKind::Video => ContentBlock::Document {
+                source: self.cersei_document_source(),
+                title: self.title.clone(),
+                context: self.context.clone(),
+                citations: self.citations.map(|enabled| CitationsConfig { enabled }),
+            },
+        }
+    }
+
+    fn cersei_image_source(&self) -> ImageSource {
+        let (source_type, data, url) = self.cersei_source_parts();
+
+        ImageSource {
+            source_type,
+            media_type: self.media_type.clone(),
+            data,
+            url,
+        }
+    }
+
+    fn cersei_document_source(&self) -> DocumentSource {
+        let (source_type, data, url) = self.cersei_source_parts();
+
+        DocumentSource {
+            source_type,
+            media_type: self.media_type.clone(),
+            data,
+            url,
+        }
+    }
+
+    fn cersei_source_parts(&self) -> (String, Option<String>, Option<String>) {
+        match &self.source {
+            ModelAssetSource::Url(url) => ("url".to_string(), None, Some(url.clone())),
+            ModelAssetSource::Base64(data) => ("base64".to_string(), Some(data.clone()), None),
+        }
     }
 }
 

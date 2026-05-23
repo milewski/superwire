@@ -1,6 +1,8 @@
 use super::{AgentExecutionContext, CompletedAgentExecution, ExecutorError, ToolCallExecutionContext, WorkflowExecutor};
 use crate::event::ExecutorEvent;
-use crate::model::{ModelProvider, ModelRequest, ModelSchema, ModelSchemaCache, ModelToolDefinition, ToolCallTracker};
+use crate::model::{
+    ModelAsset, ModelPromptContent, ModelProvider, ModelRequest, ModelSchema, ModelSchemaCache, ModelToolDefinition, ToolCallTracker,
+};
 use crate::runtime::cache::{hash_serializable_value, AgentCacheKey, CachedAgentExecution};
 use crate::runtime::mcp::normalize_prompt;
 use crate::runtime::schema::{AgentOutputInjections, PlannedAgentSchemaExt};
@@ -9,7 +11,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
-use superwire_core::dsl::{AgentExpressionPropertyName, AgentProperty};
+use superwire_core::dsl::{AgentExpressionPropertyName, AgentProperty, Expression, ModelAssetKind};
 use superwire_core::mcp::McpClientPool;
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
 use superwire_core::semantic::support::provider::ProviderConfig;
@@ -30,6 +32,8 @@ struct PreparedAgentRequest {
     model_name: String,
     inference: HashMap<String, Value>,
     prompt: String,
+    prompt_content: Vec<ModelPromptContent>,
+    supported_asset_kinds: Vec<ModelAssetKind>,
     output_schema: ModelSchema,
     output_injections: AgentOutputInjections,
     tool_definitions: Vec<ModelToolDefinition>,
@@ -75,6 +79,16 @@ impl PreparedAgentRequest {
             model_name: self.model_name.clone(),
             inference,
             prompt: self.prompt.clone(),
+            prompt_content: self
+                .prompt_content
+                .iter()
+                .map(ModelPromptContent::fingerprint_value)
+                .collect::<Vec<_>>(),
+            supported_asset_kinds: self
+                .supported_asset_kinds
+                .iter()
+                .map(|asset_kind| asset_kind.as_str())
+                .collect::<Vec<_>>(),
             output_schema,
             output_injections,
             tools,
@@ -93,6 +107,7 @@ impl PreparedAgentRequest {
             model_name: self.model_name,
             inference: self.inference,
             prompt: self.prompt,
+            prompt_content: self.prompt_content,
             output_schema: self.output_schema,
             tools: self.tool_definitions,
             event_sender,
@@ -110,6 +125,8 @@ struct PreparedAgentRequestCacheFingerprint {
     model_name: String,
     inference: BTreeMap<String, Value>,
     prompt: String,
+    prompt_content: Vec<Value>,
+    supported_asset_kinds: Vec<&'static str>,
     output_schema: Value,
     output_injections: Value,
     tools: Vec<Value>,
@@ -120,6 +137,76 @@ struct ProviderConfigCacheFingerprint {
     driver: String,
     endpoint: Option<String>,
     api_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct RenderedPrompt {
+    text: String,
+    content: Vec<ModelPromptContent>,
+}
+
+impl RenderedPrompt {
+    fn text(text: String) -> Self {
+        let mut rendered_prompt = Self::default();
+        rendered_prompt.push_text(text);
+
+        rendered_prompt
+    }
+
+    fn asset(asset: ModelAsset) -> Self {
+        Self {
+            text: String::new(),
+            content: vec![ModelPromptContent::Asset(asset)],
+        }
+    }
+
+    fn push_text(&mut self, text: String) {
+        self.text.push_str(&text);
+
+        if text.is_empty() {
+            return;
+        }
+
+        match self.content.last_mut() {
+            Some(ModelPromptContent::Text(existing_text)) => existing_text.push_str(&text),
+            Some(ModelPromptContent::Asset(_)) | None => self.content.push(ModelPromptContent::text(text)),
+        }
+    }
+
+    fn extend(&mut self, rendered_prompt: Self) {
+        self.text.push_str(&rendered_prompt.text);
+
+        for prompt_content in rendered_prompt.content {
+            match (self.content.last_mut(), prompt_content) {
+                (Some(ModelPromptContent::Text(existing_text)), ModelPromptContent::Text(text)) => {
+                    existing_text.push_str(&text);
+                }
+                (_, prompt_content) => self.content.push(prompt_content),
+            }
+        }
+    }
+
+    fn asset_kinds(&self) -> Vec<ModelAssetKind> {
+        self.content
+            .iter()
+            .filter_map(|prompt_content| match prompt_content {
+                ModelPromptContent::Asset(asset) => Some(asset.kind),
+                ModelPromptContent::Text(_) => None,
+            })
+            .collect()
+    }
+
+    fn into_prompt_content(self, import_context: &str) -> Vec<ModelPromptContent> {
+        if import_context.is_empty() {
+            return self.content;
+        }
+
+        let mut content = Vec::new();
+        content.push(ModelPromptContent::text(format!("{import_context}\n\n")));
+        content.extend(self.content);
+
+        content
+    }
 }
 
 impl WorkflowExecutor {
@@ -263,6 +350,13 @@ impl WorkflowExecutor {
         let provider_config = provider_template.resolve(&planned_agent.provider_name, evaluation_context)?;
         let model_name = planned_agent.evaluate_model_name(evaluation_context)?;
         let inference = self.evaluate_inference_fields(planned_agent, evaluation_context)?;
+        let model_declaration = self
+            .workflow
+            .find_model(&planned_agent.model_name)
+            .ok_or_else(|| ExecutorError::Other {
+                message: format!("model profile `{}` is not declared", planned_agent.model_name),
+            })?;
+        let supported_asset_kinds = model_declaration.supported_asset_kinds()?;
         let instruction_expression = planned_agent
             .declaration
             .required_expression_property(AgentExpressionPropertyName::Instruction)
@@ -274,17 +368,19 @@ impl WorkflowExecutor {
 
         let tool_call_execution_context =
             ToolCallExecutionContext::new(evaluation_context, None, &agent_execution_context.tool_call_tracker);
-        let agent_instruction_value = self.evaluate_runtime_expression(
+        let rendered_instruction = self.evaluate_prompt_expression(
             instruction_expression,
             tool_call_execution_context,
             &format!("instruction for agent `{}`", planned_agent.name),
         )?;
-        let agent_instruction = normalize_prompt(&agent_instruction_value);
+        self.validate_model_asset_support(planned_agent, &supported_asset_kinds, &rendered_instruction)?;
+        let agent_instruction = rendered_instruction.text.clone();
         let prompt = if agent_execution_context.import_context.is_empty() {
-            agent_instruction
+            agent_instruction.clone()
         } else {
             format!("{}\n\n{agent_instruction}", agent_execution_context.import_context)
         };
+        let prompt_content = rendered_instruction.into_prompt_content(agent_execution_context.import_context.as_str());
         let mut tool_definitions = self.resolve_agent_use_definitions(planned_agent, evaluation_context)?;
         let output_schema = planned_agent.push_finalize_tool_definition(&mut tool_definitions);
         let output_injections = planned_agent.output_injections(evaluation_context)?;
@@ -299,11 +395,89 @@ impl WorkflowExecutor {
             model_name,
             inference,
             prompt,
+            prompt_content,
+            supported_asset_kinds,
             output_schema,
             output_injections,
             tool_definitions,
             tool_names,
         })
+    }
+
+    fn evaluate_prompt_expression(
+        &self,
+        expression: &Expression,
+        tool_call_execution_context: ToolCallExecutionContext<'_>,
+        context: &str,
+    ) -> Result<RenderedPrompt, ExecutorError> {
+        match expression {
+            Expression::StringTemplate(string_template) => {
+                let mut rendered_prompt = RenderedPrompt::default();
+
+                for string_template_part in &string_template.parts {
+                    match string_template_part {
+                        superwire_core::dsl::StringTemplatePart::Text(template_text) => {
+                            rendered_prompt.push_text(template_text.clone());
+                        }
+                        superwire_core::dsl::StringTemplatePart::Interpolation(interpolation_expression) => {
+                            let interpolation_prompt =
+                                self.evaluate_prompt_expression(interpolation_expression, tool_call_execution_context, context)?;
+                            rendered_prompt.extend(interpolation_prompt);
+                        }
+                    }
+                }
+
+                Ok(rendered_prompt)
+            }
+            Expression::Asset(_) => {
+                let value = self.evaluate_runtime_expression(expression, tool_call_execution_context, context)?;
+                let Some(asset) = ModelAsset::from_value(&value) else {
+                    return Err(ExecutorError::Other {
+                        message: format!("asset expression for {context} did not produce an asset value"),
+                    });
+                };
+
+                Ok(RenderedPrompt::asset(asset))
+            }
+            Expression::Reference(_) => {
+                let value = self.evaluate_runtime_expression(expression, tool_call_execution_context, context)?;
+
+                if let Some(asset) = ModelAsset::from_value(&value) {
+                    return Ok(RenderedPrompt::asset(asset));
+                }
+
+                Ok(RenderedPrompt::text(normalize_prompt(&value)))
+            }
+            _ => {
+                let value = self.evaluate_runtime_expression(expression, tool_call_execution_context, context)?;
+
+                Ok(RenderedPrompt::text(normalize_prompt(&value)))
+            }
+        }
+    }
+
+    fn validate_model_asset_support(
+        &self,
+        planned_agent: &PlannedAgent,
+        supported_asset_kinds: &[ModelAssetKind],
+        rendered_instruction: &RenderedPrompt,
+    ) -> Result<(), ExecutorError> {
+        for asset_kind in rendered_instruction.asset_kinds() {
+            if supported_asset_kinds.contains(&asset_kind) {
+                continue;
+            }
+
+            return Err(ExecutorError::Other {
+                message: format!(
+                    "agent `{}` includes a {} asset, but model `{}` does not declare support for it with `assets`",
+                    planned_agent.name,
+                    asset_kind.as_str(),
+                    planned_agent.model_name
+                ),
+            });
+        }
+
+        Ok(())
     }
 
     fn execute_agent_dynamic_blocks(

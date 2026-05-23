@@ -1,5 +1,6 @@
 use super::super::ast::{
-    AgentProperty, Declaration, Expression, MatchBranch, ObjectField, SourceSpan, StringTemplatePart, TypeExpression, TypedField, Workflow,
+    AgentProperty, Asset, Declaration, Expression, MatchBranch, ObjectField, SourceSpan, StringTemplatePart, TypeExpression, TypedField,
+    Workflow,
 };
 use super::report::{ValidationContext, ValidationReport};
 use std::collections::HashSet;
@@ -505,6 +506,9 @@ impl Expression {
                         .report_duplicate_object_fields(context.clone(), duplicate_span, validation_report);
                 }
             }
+            Self::Asset(asset) => {
+                asset.report_duplicate_object_fields(context, duplicate_span, validation_report);
+            }
             Self::ToolCall(tool_call) => {
                 report_duplicate_object_field_names(
                     tool_call.input_fields.as_slice(),
@@ -593,6 +597,25 @@ impl Expression {
             | Self::NullLiteral
             | Self::VariantProjection(_)
             | Self::Reference(_) => {}
+        }
+    }
+}
+
+impl Asset {
+    fn report_duplicate_object_fields(
+        &self,
+        context: ValidationContext,
+        duplicate_span: Option<SourceSpan>,
+        validation_report: &mut ValidationReport,
+    ) {
+        report_duplicate_object_field_names(self.options.as_slice(), context.clone(), duplicate_span, validation_report);
+        self.source
+            .report_duplicate_object_fields(context.clone(), duplicate_span, validation_report);
+
+        for option in &self.options {
+            option
+                .value
+                .report_duplicate_object_fields(context.clone(), duplicate_span, validation_report);
         }
     }
 }

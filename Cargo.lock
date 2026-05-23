@@ -293,7 +293,6 @@ dependencies = [
 [[package]]
 name = "cersei-provider"
 version = "0.1.9"
-source = "git+https://github.com/pacifio/cersei#ab37ead06aaa72419e9bae757ac886fc68091877"
 dependencies = [
  "async-trait",
  "base64",
@@ -312,7 +311,7 @@ dependencies = [
 [[package]]
 name = "cersei-types"
 version = "0.1.9"
-source = "git+https://github.com/pacifio/cersei#ab37ead06aaa72419e9bae757ac886fc68091877"
+source = "git+https://github.com/pacifio/cersei?rev=ab37ead06aaa72419e9bae757ac886fc68091877#ab37ead06aaa72419e9bae757ac886fc68091877"
 dependencies = [
  "anyhow",
  "chrono",

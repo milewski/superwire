@@ -11,9 +11,9 @@ use super::super::completion_context::{
 use super::super::position::byte_offset_for_position;
 use super::super::reference::ReferenceCompletionPath;
 use super::super::scope::{
-    agent_property_scope_suggestions, completion_scope_at_offset, inference_setting_scope_suggestions, mcp_prompt_import_scope_suggestions,
-    mcp_server_property_scope_suggestions, mcp_tool_batch_import_scope_suggestions, model_property_scope_suggestions,
-    model_usage_property_scope_suggestions, CompletionScope,
+    agent_property_scope_suggestions, asset_option_scope_suggestions, completion_scope_at_offset, inference_setting_scope_suggestions,
+    mcp_prompt_import_scope_suggestions, mcp_server_property_scope_suggestions, mcp_tool_batch_import_scope_suggestions,
+    model_property_scope_suggestions, model_usage_property_scope_suggestions, CompletionScope,
 };
 use super::super::semantic_index::SemanticIndex;
 use super::super::text_utils::{
@@ -279,6 +279,10 @@ impl DocumentState {
             return Some(Vec::new());
         }
 
+        if completion_scope == CompletionScope::AssetOptions && !inside_interpolation_expression {
+            return self.property_scope_suggestions(semantic_index, completion_scope, line_prefix, position);
+        }
+
         if let Some(property_suggestions) = self.scoped_property_suggestions_after_completed_value(
             semantic_index,
             line_prefix,
@@ -437,6 +441,7 @@ impl DocumentState {
                 | CompletionScope::McpToolBatchImport
                 | CompletionScope::McpPromptImport
                 | CompletionScope::InferenceSettings
+                | CompletionScope::AssetOptions
         ) {
             return false;
         }
@@ -570,6 +575,7 @@ impl DocumentState {
             CompletionScope::ModelUsageProperties => Some(model_usage_property_scope_suggestions(line_prefix)),
             CompletionScope::McpServerProperties => Some(mcp_server_property_scope_suggestions(line_prefix)),
             CompletionScope::InferenceSettings => Some(inference_setting_scope_suggestions(line_prefix)),
+            CompletionScope::AssetOptions => Some(asset_option_scope_suggestions(line_prefix)),
             CompletionScope::AgentProperties => Some(agent_property_scope_suggestions(line_prefix)),
             CompletionScope::ToolProperties => Some(self.tool_property_suggestions(semantic_index, line_prefix, position)),
             CompletionScope::McpToolBatchImport => {

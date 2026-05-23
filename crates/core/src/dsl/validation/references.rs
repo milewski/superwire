@@ -552,6 +552,13 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                     );
                 }
             }
+            Expression::Asset(asset) => {
+                self.validate_expression(&asset.source, dynamic_field_types, context.clone(), secret_reference_policy);
+
+                for option in &asset.options {
+                    self.validate_expression(&option.value, dynamic_field_types, context.clone(), secret_reference_policy);
+                }
+            }
             Expression::ToolCall(tool_call) => {
                 self.validate_reference(&tool_call.callee, dynamic_field_types, context.clone(), secret_reference_policy);
 

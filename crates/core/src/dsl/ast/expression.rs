@@ -1,6 +1,6 @@
 use super::{
-    BuiltinFunctionArgumentName, BuiltinFunctionName, ModelCallArgumentName, Reference, ReferenceKeyword, SourceSpan, TypeExpression,
-    TypedField,
+    AssetPropertyName, BuiltinFunctionArgumentName, BuiltinFunctionName, ModelCallArgumentName, Reference, ReferenceKeyword, SourceSpan,
+    TypeExpression, TypedField,
 };
 use std::collections::HashSet;
 use std::hash::BuildHasher;
@@ -14,6 +14,7 @@ pub enum Expression {
     NullLiteral,
     Reference(Reference),
     FunctionCall(FunctionCall),
+    Asset(Asset),
     ToolCall(ToolCall),
     McpCall(McpCall),
     NullFallback(NullFallbackExpression),
@@ -21,6 +22,22 @@ pub enum Expression {
     Match(MatchExpression),
     ArrayLiteral(Vec<Expression>),
     ObjectLiteral(Vec<ObjectField>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Asset {
+    pub source: Box<Expression>,
+    pub options: Vec<ObjectField>,
+    pub span: SourceSpan,
+}
+
+impl Asset {
+    #[must_use]
+    pub fn option(&self, option_name: AssetPropertyName) -> Option<&ObjectField> {
+        self.options
+            .iter()
+            .find(|option| AssetPropertyName::from_identifier(option.name.as_str()) == Some(option_name))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,6 +93,7 @@ impl Expression {
             Self::Reference(reference) => Some(reference),
             Self::ToolCall(tool_call) => Some(&tool_call.callee),
             Self::FunctionCall(_)
+            | Self::Asset(_)
             | Self::McpCall(_)
             | Self::NullFallback(_)
             | Self::VariantProjection(_)
@@ -102,7 +120,8 @@ impl Expression {
             Self::Reference(reference) => reference,
             Self::FunctionCall(function_call) => &function_call.callee,
             Self::ToolCall(tool_call) => &tool_call.callee,
-            Self::McpCall(_)
+            Self::Asset(_)
+            | Self::McpCall(_)
             | Self::NullFallback(_)
             | Self::VariantProjection(_)
             | Self::Match(_)
@@ -133,6 +152,7 @@ impl Expression {
             Self::ToolCall(tool_call) => tool_call.agent_tool_binding_fields(),
             Self::Reference(_)
             | Self::FunctionCall(_)
+            | Self::Asset(_)
             | Self::McpCall(_)
             | Self::NullFallback(_)
             | Self::VariantProjection(_)
@@ -153,6 +173,7 @@ impl Expression {
             Self::ToolCall(tool_call) => tool_call.max_calls,
             Self::Reference(_)
             | Self::FunctionCall(_)
+            | Self::Asset(_)
             | Self::McpCall(_)
             | Self::NullFallback(_)
             | Self::VariantProjection(_)
@@ -210,6 +231,13 @@ impl Expression {
 
                 for call_argument in &function_call.arguments {
                     call_argument.expression().collect_tool_references(tool_references);
+                }
+            }
+            Self::Asset(asset) => {
+                asset.source.collect_tool_references(tool_references);
+
+                for option in &asset.options {
+                    option.value.collect_tool_references(tool_references);
                 }
             }
             Self::McpCall(mcp_call) => {
@@ -279,6 +307,7 @@ impl Expression {
                         .iter()
                         .any(|call_argument| call_argument.expression().references_secret())
             }
+            Self::Asset(asset) => asset.source.references_secret() || asset.options.iter().any(|option| option.value.references_secret()),
             Self::ToolCall(tool_call) => {
                 tool_call.callee.is_secret_reference()
                     || tool_call
@@ -345,6 +374,13 @@ impl Expression {
                     call_argument.expression().collect_tool_calls(tool_calls);
                 }
             }
+            Self::Asset(asset) => {
+                asset.source.collect_tool_calls(tool_calls);
+
+                for option in &asset.options {
+                    option.value.collect_tool_calls(tool_calls);
+                }
+            }
             Self::McpCall(mcp_call) => {
                 for parameter_field in &mcp_call.parameter_fields {
                     parameter_field.value.collect_tool_calls(tool_calls);
@@ -392,6 +428,13 @@ impl Expression {
 
                 for call_argument in &function_call.arguments {
                     call_argument.expression().collect_agent_dependencies(agent_dependencies);
+                }
+            }
+            Self::Asset(asset) => {
+                asset.source.collect_agent_dependencies(agent_dependencies);
+
+                for option in &asset.options {
+                    option.value.collect_agent_dependencies(agent_dependencies);
                 }
             }
             Self::ToolCall(tool_call) => {
@@ -469,6 +512,13 @@ impl Expression {
 
                 for call_argument in &function_call.arguments {
                     call_argument.expression().collect_runtime_dependencies(runtime_dependencies);
+                }
+            }
+            Self::Asset(asset) => {
+                asset.source.collect_runtime_dependencies(runtime_dependencies);
+
+                for option in &asset.options {
+                    option.value.collect_runtime_dependencies(runtime_dependencies);
                 }
             }
             Self::ToolCall(tool_call) => {
@@ -560,6 +610,7 @@ impl Expression {
             | Self::BooleanLiteral(_)
             | Self::NullLiteral
             | Self::FunctionCall(_)
+            | Self::Asset(_)
             | Self::ToolCall(_)
             | Self::McpCall(_)
             | Self::NullFallback(_)
@@ -578,6 +629,13 @@ impl Expression {
 
                 for call_argument in &function_call.arguments {
                     call_argument.expression().collect_dynamic_dependencies(referenced_dynamic_fields);
+                }
+            }
+            Self::Asset(asset) => {
+                asset.source.collect_dynamic_dependencies(referenced_dynamic_fields);
+
+                for option in &asset.options {
+                    option.value.collect_dynamic_dependencies(referenced_dynamic_fields);
                 }
             }
             Self::ToolCall(tool_call) => {

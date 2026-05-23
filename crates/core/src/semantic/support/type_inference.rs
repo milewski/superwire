@@ -1,5 +1,6 @@
 use crate::dsl::{
-    Expression, MatchBranch, MatchExpression, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart, ToolCall, TypeExpression,
+    Asset, Expression, MatchBranch, MatchExpression, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart, ToolCall,
+    TypeExpression,
 };
 use crate::semantic::support::types::{ensure_type_matches, workflow_type_from_dsl, WorkflowType};
 use crate::semantic::WorkflowSemanticError;
@@ -54,6 +55,7 @@ impl Expression {
                     expression.infer_type(type_inference_context, context)
                 })
             }
+            Self::Asset(asset) => asset.infer_type(type_inference_context, context),
             Self::ToolCall(tool_call) => tool_call.infer_type(type_inference_context, context),
             Self::McpCall(mcp_call) => {
                 for parameter_field in &mcp_call.parameter_fields {
@@ -215,6 +217,25 @@ impl TypeExpression {
             | Self::StringEnum(_)
             | Self::StringEnumReference(_) => workflow_type_from_dsl(self, named_schema_types),
         }
+    }
+}
+
+impl Asset {
+    fn infer_type(&self, type_inference_context: &TypeInferenceContext, context: &str) -> Result<WorkflowType, WorkflowSemanticError> {
+        let source_type = self.source.infer_type(type_inference_context, context)?;
+
+        if !ensure_type_matches(&WorkflowType::String, &source_type) {
+            return Err(WorkflowSemanticError::ExpressionEvaluation {
+                context: context.to_string(),
+                message: format!("asset source expects string, found {source_type}"),
+            });
+        }
+
+        for option in &self.options {
+            let _ = option.value.infer_type(type_inference_context, context)?;
+        }
+
+        Ok(WorkflowType::AnyObject)
     }
 }
 

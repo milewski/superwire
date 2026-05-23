@@ -2,6 +2,7 @@ use crate::event::ExecutorEvent;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
+use superwire_core::dsl::ModelAssetKind;
 use superwire_core::mcp::McpClientPool;
 use superwire_core::semantic::support::provider::ProviderConfig;
 use superwire_core::semantic::support::types::{WorkflowSchemaCache, WorkflowType};
@@ -14,11 +15,135 @@ pub struct ModelRequest {
     pub model_name: String,
     pub inference: HashMap<String, Value>,
     pub prompt: String,
+    pub prompt_content: Vec<ModelPromptContent>,
     pub output_schema: ModelSchema,
     pub tools: Vec<ModelToolDefinition>,
     pub event_sender: Option<mpsc::Sender<ExecutorEvent>>,
     pub mcp_pool: McpClientPool,
     pub tool_call_tracker: ToolCallTracker,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModelPromptContent {
+    Text(String),
+    Asset(ModelAsset),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelAsset {
+    pub kind: ModelAssetKind,
+    pub source: ModelAssetSource,
+    pub media_type: Option<String>,
+    pub title: Option<String>,
+    pub context: Option<String>,
+    pub citations: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModelAssetSource {
+    Url(String),
+    Base64(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelAssetValueField {
+    Marker,
+    Kind,
+    SourceType,
+    Url,
+    Data,
+    MediaType,
+    Title,
+    Context,
+    Citations,
+}
+
+impl ModelAssetValueField {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Marker => "__superwire_asset",
+            Self::Kind => "kind",
+            Self::SourceType => "source_type",
+            Self::Url => "url",
+            Self::Data => "data",
+            Self::MediaType => "media_type",
+            Self::Title => "title",
+            Self::Context => "context",
+            Self::Citations => "citations",
+        }
+    }
+}
+
+impl ModelAsset {
+    pub fn from_value(value: &Value) -> Option<Self> {
+        if value.get(ModelAssetValueField::Marker.as_str()).and_then(Value::as_bool) != Some(true) {
+            return None;
+        }
+
+        let kind = value
+            .get(ModelAssetValueField::Kind.as_str())
+            .and_then(Value::as_str)
+            .and_then(ModelAssetKind::from_identifier)?;
+        let source = match value.get(ModelAssetValueField::SourceType.as_str()).and_then(Value::as_str) {
+            Some("base64") => ModelAssetSource::Base64(value.get(ModelAssetValueField::Data.as_str()).and_then(Value::as_str)?.to_string()),
+            Some("url") => ModelAssetSource::Url(value.get(ModelAssetValueField::Url.as_str()).and_then(Value::as_str)?.to_string()),
+            _ => return None,
+        };
+
+        Some(Self {
+            kind,
+            source,
+            media_type: value
+                .get(ModelAssetValueField::MediaType.as_str())
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            title: value
+                .get(ModelAssetValueField::Title.as_str())
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            context: value
+                .get(ModelAssetValueField::Context.as_str())
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            citations: value.get(ModelAssetValueField::Citations.as_str()).and_then(Value::as_bool),
+        })
+    }
+
+    #[must_use]
+    pub fn fingerprint_value(&self) -> Value {
+        serde_json::json!({
+            "kind": self.kind.as_str(),
+            "source": match &self.source {
+                ModelAssetSource::Url(url) => serde_json::json!({ "type": "url", "url": url }),
+                ModelAssetSource::Base64(data) => serde_json::json!({ "type": "base64", "data": data }),
+            },
+            "media_type": self.media_type,
+            "title": self.title,
+            "context": self.context,
+            "citations": self.citations,
+        })
+    }
+}
+
+impl ModelPromptContent {
+    #[must_use]
+    pub fn text(text: impl Into<String>) -> Self {
+        Self::Text(text.into())
+    }
+
+    #[must_use]
+    pub fn fingerprint_value(&self) -> Value {
+        match self {
+            Self::Text(text) => serde_json::json!({ "type": "text", "text": text }),
+            Self::Asset(asset) => {
+                let mut value = asset.fingerprint_value();
+                value["type"] = Value::String("asset".to_string());
+
+                value
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

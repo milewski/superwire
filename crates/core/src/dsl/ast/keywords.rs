@@ -97,15 +97,38 @@ impl ImportKeyword {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ExpressionKeyword {
+    Asset,
+}
+
+impl ExpressionKeyword {
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        match identifier {
+            "asset" => Some(Self::Asset),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Asset => "asset",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ModelDeclarationPropertyName {
     Id,
     Inference,
+    Assets,
 }
 
 impl ModelDeclarationPropertyName {
     #[must_use]
-    pub fn all() -> [Self; 2] {
-        [Self::Id, Self::Inference]
+    pub fn all() -> [Self; 3] {
+        [Self::Id, Self::Inference, Self::Assets]
     }
 
     #[must_use]
@@ -118,6 +141,7 @@ impl ModelDeclarationPropertyName {
         match self {
             Self::Id => "id",
             Self::Inference => "inference",
+            Self::Assets => "assets",
         }
     }
 
@@ -129,6 +153,180 @@ impl ModelDeclarationPropertyName {
                 .inference
                 .expect("model structure should include inference")
                 .definition(),
+            Self::Assets => structure::Model::new()
+                .assets
+                .expect("model structure should include assets")
+                .definition(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ModelAssetKind {
+    Image,
+    Document,
+    Video,
+}
+
+impl ModelAssetKind {
+    #[must_use]
+    pub fn all() -> [Self; 3] {
+        [Self::Image, Self::Document, Self::Video]
+    }
+
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        Self::all().into_iter().find(|asset_kind| asset_kind.as_str() == identifier)
+    }
+
+    #[must_use]
+    pub fn from_media_type(media_type: &str) -> Option<Self> {
+        if media_type.starts_with("image/") {
+            return Some(Self::Image);
+        }
+
+        if media_type.starts_with("video/") {
+            return Some(Self::Video);
+        }
+
+        Some(Self::Document)
+    }
+
+    #[must_use]
+    pub fn from_source(source: &str) -> Option<Self> {
+        let normalized_source = source.split('?').next().unwrap_or(source).to_ascii_lowercase();
+
+        if let Some(media_type) = source
+            .strip_prefix("data:")
+            .and_then(|data_source| data_source.split_once(';').map(|(media_type, _)| media_type))
+        {
+            return Self::from_media_type(media_type);
+        }
+
+        if [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".heic"]
+            .iter()
+            .any(|extension| normalized_source.ends_with(extension))
+        {
+            return Some(Self::Image);
+        }
+
+        if [".mp4", ".mpeg", ".mov", ".webm", ".avi", ".mkv"]
+            .iter()
+            .any(|extension| normalized_source.ends_with(extension))
+        {
+            return Some(Self::Video);
+        }
+
+        if [".pdf", ".txt", ".md", ".csv", ".json", ".xml", ".html", ".doc", ".docx"]
+            .iter()
+            .any(|extension| normalized_source.ends_with(extension))
+        {
+            return Some(Self::Document);
+        }
+
+        None
+    }
+
+    #[must_use]
+    pub fn media_type_from_source(source: &str) -> Option<&'static str> {
+        let normalized_source = source.split('?').next().unwrap_or(source).to_ascii_lowercase();
+
+        if let Some(media_type) = source
+            .strip_prefix("data:")
+            .and_then(|data_source| data_source.split_once(';').map(|(media_type, _)| media_type))
+        {
+            return Some(match media_type {
+                "image/png" => "image/png",
+                "image/jpeg" => "image/jpeg",
+                "image/gif" => "image/gif",
+                "image/webp" => "image/webp",
+                "image/bmp" => "image/bmp",
+                "image/tiff" => "image/tiff",
+                "image/heic" => "image/heic",
+                "video/mp4" => "video/mp4",
+                "video/mpeg" => "video/mpeg",
+                "video/quicktime" => "video/quicktime",
+                "video/webm" => "video/webm",
+                "video/x-msvideo" => "video/x-msvideo",
+                "video/x-matroska" => "video/x-matroska",
+                "application/pdf" => "application/pdf",
+                "text/plain" => "text/plain",
+                "text/markdown" => "text/markdown",
+                "text/csv" => "text/csv",
+                "application/json" => "application/json",
+                "application/xml" => "application/xml",
+                "text/html" => "text/html",
+                _ => return None,
+            });
+        }
+
+        match normalized_source.rsplit_once('.').map(|(_, extension)| extension) {
+            Some("png") => Some("image/png"),
+            Some("jpg" | "jpeg") => Some("image/jpeg"),
+            Some("gif") => Some("image/gif"),
+            Some("webp") => Some("image/webp"),
+            Some("bmp") => Some("image/bmp"),
+            Some("tiff") => Some("image/tiff"),
+            Some("heic") => Some("image/heic"),
+            Some("mp4") => Some("video/mp4"),
+            Some("mpeg") => Some("video/mpeg"),
+            Some("mov") => Some("video/quicktime"),
+            Some("webm") => Some("video/webm"),
+            Some("avi") => Some("video/x-msvideo"),
+            Some("mkv") => Some("video/x-matroska"),
+            Some("pdf") => Some("application/pdf"),
+            Some("txt") => Some("text/plain"),
+            Some("md") => Some("text/markdown"),
+            Some("csv") => Some("text/csv"),
+            Some("json") => Some("application/json"),
+            Some("xml") => Some("application/xml"),
+            Some("html") => Some("text/html"),
+            Some("doc") => Some("application/msword"),
+            Some("docx") => Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Image => "image",
+            Self::Document => "document",
+            Self::Video => "video",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AssetPropertyName {
+    Type,
+    MediaType,
+    Title,
+    Context,
+    Citations,
+}
+
+impl AssetPropertyName {
+    #[must_use]
+    pub fn all() -> [Self; 5] {
+        [Self::Type, Self::MediaType, Self::Title, Self::Context, Self::Citations]
+    }
+
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        Self::all()
+            .into_iter()
+            .find(|asset_property_name| asset_property_name.as_str() == identifier)
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Type => "type",
+            Self::MediaType => "media_type",
+            Self::Title => "title",
+            Self::Context => "context",
+            Self::Citations => "citations",
         }
     }
 }

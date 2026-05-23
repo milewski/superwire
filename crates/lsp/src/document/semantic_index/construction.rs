@@ -837,6 +837,7 @@ impl SemanticIndex {
             Expression::NullLiteral => Some(TypeExpression::Null),
             Expression::Reference(reference) => self.reference_expression_type(reference, dynamic_fields),
             Expression::FunctionCall(_) => None,
+            Expression::Asset(_) => Some(TypeExpression::AnyObject),
             Expression::McpCall(_) => Some(TypeExpression::String),
             Expression::NullFallback(null_fallback) => self.expression_type_with_dynamic_scope(&null_fallback.value, dynamic_fields),
             Expression::VariantProjection(_) | Expression::Match(_) => None,

@@ -1,4 +1,6 @@
-use crate::dsl::ast::{CallArgument, Expression, FunctionCall, MatchBranch, ObjectField, Reference, StringTemplate, StringTemplatePart};
+use crate::dsl::ast::{
+    Asset, CallArgument, Expression, FunctionCall, MatchBranch, ObjectField, Reference, StringTemplate, StringTemplatePart,
+};
 
 use super::wrapping::{
     escape_multiline_string_text, escape_quoted_string_text, render_expression_string_literal, render_object_field_name,
@@ -90,6 +92,7 @@ impl Expression {
             Self::NullLiteral => formatter.output.push_str("null"),
             Self::Reference(reference) => reference.push_to_formatter(formatter),
             Self::FunctionCall(function_call) => function_call.push_to_formatter(formatter),
+            Self::Asset(asset) => asset.push_to_formatter(formatter),
             Self::ToolCall(tool_call) => tool_call.push_to_formatter(formatter),
             Self::McpCall(mcp_call) => mcp_call.push_to_formatter(formatter),
             Self::NullFallback(null_fallback) => {
@@ -295,6 +298,7 @@ impl Expression {
             | Self::NullLiteral
             | Self::Reference(_)
             | Self::FunctionCall(_)
+            | Self::Asset(_)
             | Self::ToolCall(_)
             | Self::McpCall(_)
             | Self::NullFallback(_)
@@ -347,6 +351,29 @@ impl Expression {
             object_field.name,
             formatter.inline_expression(&object_field.value)
         ))
+    }
+}
+
+impl Asset {
+    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        formatter.output.push_str("asset ");
+        self.source.push_to_formatter(formatter, ExpressionFormat::Inline);
+
+        if self.options.is_empty() {
+            return;
+        }
+
+        formatter.output.push_str(" {");
+        formatter.push_newline();
+        formatter.indentation_depth += 1;
+
+        for option in &self.options {
+            option.push_to_formatter(formatter);
+        }
+
+        formatter.indentation_depth -= 1;
+        formatter.push_indent();
+        formatter.output.push('}');
     }
 }
 
@@ -539,6 +566,7 @@ impl Expression {
             | Self::NullLiteral
             | Self::Reference(_)
             | Self::FunctionCall(_)
+            | Self::Asset(_)
             | Self::ToolCall(_)
             | Self::McpCall(_)
             | Self::NullFallback(_)

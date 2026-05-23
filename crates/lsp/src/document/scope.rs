@@ -1,7 +1,8 @@
 use lsp_types::CompletionItemKind;
 use superwire_core::dsl::{
-    structure, DeclarationKeyword, ForClauseKeyword, ImportKeyword, McpImportPropertyName, McpServerPropertyName,
-    ModelDeclarationPropertyName, ModelUsagePropertyName, ReferenceKeyword, SingletonDeclarationKind, ToolPropertyName,
+    structure, AssetPropertyName, DeclarationKeyword, ExpressionKeyword, ForClauseKeyword, ImportKeyword, McpImportPropertyName,
+    McpServerPropertyName, ModelDeclarationPropertyName, ModelUsagePropertyName, ReferenceKeyword, SingletonDeclarationKind,
+    ToolPropertyName,
 };
 use superwire_core::semantic::InferenceSetting;
 
@@ -20,6 +21,7 @@ pub enum CompletionScope {
     McpToolBatchImport,
     McpPromptImport,
     InferenceSettings,
+    AssetOptions,
     TypedDeclarations,
     DynamicValues,
 }
@@ -36,6 +38,7 @@ enum ScopeBlock {
     McpToolBatchImport,
     McpPromptImport,
     Inference,
+    AssetOptions,
     TypedDeclaration,
     Dynamic,
 }
@@ -91,6 +94,7 @@ pub fn completion_scope_at_offset(source_text: &str, cursor_offset: usize) -> Co
         Some(ScopeBlock::McpToolBatchImport) => CompletionScope::McpToolBatchImport,
         Some(ScopeBlock::McpPromptImport) => CompletionScope::McpPromptImport,
         Some(ScopeBlock::TypedDeclaration) => CompletionScope::TypedDeclarations,
+        Some(ScopeBlock::AssetOptions) => CompletionScope::AssetOptions,
         Some(ScopeBlock::Dynamic) => CompletionScope::DynamicValues,
         Some(ScopeBlock::Other) | None => CompletionScope::General,
     }
@@ -101,6 +105,8 @@ struct ScopeScannerTokenState {
     current_identifier: String,
     recent_identifiers: Vec<String>,
     pending_property: Option<String>,
+    pending_asset_options_block: bool,
+    pending_dynamic_block: bool,
 }
 
 impl ScopeScannerTokenState {
@@ -124,6 +130,10 @@ impl ScopeScannerTokenState {
     }
 
     fn block_for_open_brace(&self, parent_block: Option<ScopeBlock>) -> ScopeBlock {
+        if let Some(pending_block) = self.pending_block_for_open_brace() {
+            return pending_block;
+        }
+
         let Some(last_identifier) = self.recent_identifiers.last() else {
             return ScopeBlock::Other;
         };
@@ -159,6 +169,10 @@ impl ScopeScannerTokenState {
 
         if let Some(agent_property_block) = self.agent_property_block_for_open_brace(parent_block, last_identifier) {
             return agent_property_block;
+        }
+
+        if self.is_asset_options_open_brace() {
+            return ScopeBlock::AssetOptions;
         }
 
         if last_identifier == SingletonDeclarationKind::Input.as_str() || last_identifier == SingletonDeclarationKind::Secrets.as_str() {
@@ -232,6 +246,18 @@ impl ScopeScannerTokenState {
         }
 
         ScopeBlock::Other
+    }
+
+    fn pending_block_for_open_brace(&self) -> Option<ScopeBlock> {
+        if self.pending_dynamic_block {
+            return Some(ScopeBlock::Dynamic);
+        }
+
+        if self.pending_asset_options_block {
+            return Some(ScopeBlock::AssetOptions);
+        }
+
+        None
     }
 
     fn inference_block_for_open_brace(parent_block: Option<ScopeBlock>, last_identifier: &str) -> Option<ScopeBlock> {
@@ -373,13 +399,31 @@ impl ScopeScannerTokenState {
         false
     }
 
+    fn is_asset_options_open_brace(&self) -> bool {
+        self.recent_identifiers
+            .iter()
+            .any(|identifier| ExpressionKeyword::from_identifier(identifier) == Some(ExpressionKeyword::Asset))
+    }
+
     fn clear_after_brace(&mut self) {
         self.pending_property = None;
+        self.pending_asset_options_block = false;
+        self.pending_dynamic_block = false;
         self.recent_identifiers.clear();
         self.current_identifier.clear();
     }
 
     fn clear_after_statement(&mut self) {
+        if self.is_asset_options_open_brace() {
+            self.pending_asset_options_block = true;
+        } else if !self.recent_identifiers.is_empty() {
+            self.pending_asset_options_block = false;
+        }
+
+        self.pending_dynamic_block = self
+            .recent_identifiers
+            .last()
+            .is_some_and(|identifier| DeclarationKeyword::from_identifier(identifier) == Some(DeclarationKeyword::Dynamic));
         self.pending_property = None;
         self.recent_identifiers.clear();
         self.current_identifier.clear();
@@ -516,10 +560,54 @@ pub fn inference_setting_scope_suggestions(line_prefix: &str) -> Vec<CompletionS
         .collect()
 }
 
+pub fn asset_option_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
+    let option_prefix = trailing_identifier(line_prefix).unwrap_or_default();
+
+    AssetPropertyName::all()
+        .into_iter()
+        .filter(|asset_property_name| asset_property_name.as_str().starts_with(option_prefix))
+        .map(|asset_property_name| CompletionSuggestion {
+            label: asset_property_name.as_str().to_string(),
+            kind: CompletionItemKind::PROPERTY,
+            detail: asset_property_name.completion_detail().to_string(),
+            documentation: asset_property_name.completion_documentation().to_string(),
+            insert_text: asset_property_name.as_str().to_string(),
+        })
+        .collect()
+}
+
 pub fn tool_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
     let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
 
     property_definition_suggestions(property_prefix, &structure::Tool::new().properties())
+}
+
+trait AssetPropertyCompletionDoc {
+    fn completion_detail(self) -> &'static str;
+
+    fn completion_documentation(self) -> &'static str;
+}
+
+impl AssetPropertyCompletionDoc for AssetPropertyName {
+    fn completion_detail(self) -> &'static str {
+        match self {
+            Self::Type => "Asset kind",
+            Self::MediaType => "Asset MIME type",
+            Self::Title => "Document title",
+            Self::Context => "Document context",
+            Self::Citations => "Citation toggle",
+        }
+    }
+
+    fn completion_documentation(self) -> &'static str {
+        match self {
+            Self::Type => "Explicit asset kind: `image`, `video`, or `document`.",
+            Self::MediaType => "Explicit MIME type such as `image/png`, `video/mp4`, or `application/pdf`.",
+            Self::Title => "Optional title sent with document-like assets.",
+            Self::Context => "Optional context sent with document-like assets.",
+            Self::Citations => "Enable or disable provider citations for document-like assets.",
+        }
+    }
 }
 
 fn property_definition_suggestions(

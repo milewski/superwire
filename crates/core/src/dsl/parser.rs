@@ -282,8 +282,9 @@ mod tests {
     use super::parse_workflow;
     use crate::dsl::macros::parse_inline_workflow;
     use crate::dsl::{
-        AgentExpressionPropertyName, AgentForLoopPattern, AgentProperty, Declaration, DslParseError, Expression, McpCallOperation,
-        McpImportKind, McpServerPropertyName, ReferenceKeyword, ReferenceRoot, StringTemplatePart, ToolSource, TypeExpression,
+        AgentExpressionPropertyName, AgentForLoopPattern, AgentProperty, AssetPropertyName, Declaration, DslParseError, Expression,
+        McpCallOperation, McpImportKind, McpServerPropertyName, ReferenceKeyword, ReferenceRoot, StringTemplatePart, ToolSource,
+        TypeExpression,
     };
     use crate::workflow_source;
     use std::fs;
@@ -1474,6 +1475,62 @@ mod tests {
             &prompt_template.parts[4],
             StringTemplatePart::Text(text) if text == " C"
         ));
+    }
+
+    #[test]
+    fn parses_asset_expression_with_options_in_instruction_template() {
+        let workflow = parse_inline_workflow! {
+            provider openai from openai {}
+
+            model vision from openai {
+                id: "gpt-vision"
+                assets: ["image", "video", "document"]
+            }
+
+            input {
+                image_url: string
+            }
+
+            agent analyzer {
+                model: model.vision
+                dynamic {
+                    frame: asset "https://example.com/frame.png" {
+                        media_type: "image/png"
+                        title: "Frame"
+                    }
+                }
+                instruction: "Analyze this: {{ asset input.image_url }}"
+                output {
+                    result: string
+                }
+            }
+
+            output {
+                result: agent.analyzer.result
+            }
+        };
+
+        let analyzer = workflow.find_agent("analyzer").expect("analyzer agent should parse");
+        let instruction = analyzer
+            .required_expression_property(AgentExpressionPropertyName::Instruction)
+            .expect("instruction should be present");
+        let Expression::StringTemplate(string_template) = instruction else {
+            panic!("instruction should parse as string template");
+        };
+        let StringTemplatePart::Interpolation(Expression::Asset(asset)) = &string_template.parts[1] else {
+            panic!("interpolation should parse as asset expression");
+        };
+
+        assert!(matches!(*asset.source, Expression::Reference(ref reference) if reference.first_access_field() == Some("image_url")));
+
+        let dynamic_block = analyzer.dynamic_blocks().next().expect("dynamic block should parse");
+        let Expression::Asset(dynamic_asset) = &dynamic_block.fields[0].value else {
+            panic!("dynamic field should parse as asset expression");
+        };
+
+        assert!(matches!(*dynamic_asset.source, Expression::StringLiteral(ref source) if source == "https://example.com/frame.png"));
+        assert!(dynamic_asset.option(AssetPropertyName::MediaType).is_some());
+        assert!(dynamic_asset.option(AssetPropertyName::Title).is_some());
     }
 
     #[test]

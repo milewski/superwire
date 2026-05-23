@@ -1,5 +1,7 @@
-use crate::dsl::{Expression, MatchBranch, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart};
-use crate::semantic::support::types::parse_number_literal;
+use crate::dsl::{
+    Asset, AssetPropertyName, Expression, MatchBranch, ModelAssetKind, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart,
+};
+use crate::semantic::support::types::{parse_number_literal, value_kind_name};
 use crate::semantic::WorkflowSemanticError;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -52,6 +54,7 @@ impl Expression {
                     expression.evaluate(evaluation_context, context)
                 })
             }
+            Self::Asset(asset) => asset.evaluate(evaluation_context, context),
             Self::ToolCall(_) => Err(WorkflowSemanticError::UnsupportedFeature {
                 feature: "deterministic tool calls must be executed by the workflow runtime".to_string(),
             }),
@@ -113,6 +116,147 @@ impl Expression {
                 Ok(Value::Object(evaluated_fields))
             }
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AssetValueField {
+    Marker,
+    Kind,
+    SourceType,
+    Url,
+    Data,
+    MediaType,
+    Title,
+    Context,
+    Citations,
+}
+
+impl AssetValueField {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Marker => "__superwire_asset",
+            Self::Kind => "kind",
+            Self::SourceType => "source_type",
+            Self::Url => "url",
+            Self::Data => "data",
+            Self::MediaType => "media_type",
+            Self::Title => "title",
+            Self::Context => "context",
+            Self::Citations => "citations",
+        }
+    }
+}
+
+impl Asset {
+    pub fn evaluate(&self, evaluation_context: &EvaluationContext, context: &str) -> Result<Value, WorkflowSemanticError> {
+        let source_value = self.source.evaluate(evaluation_context, context)?;
+        let Some(source) = source_value.as_str() else {
+            return Err(WorkflowSemanticError::ExpressionEvaluation {
+                context: context.to_string(),
+                message: format!("asset source must resolve to a string, found {}", value_kind_name(&source_value)),
+            });
+        };
+
+        let mut asset_object = Map::new();
+        asset_object.insert(AssetValueField::Marker.as_str().to_string(), Value::Bool(true));
+
+        if let Some((media_type, data)) = Self::split_data_source(source) {
+            asset_object.insert(
+                AssetValueField::SourceType.as_str().to_string(),
+                Value::String("base64".to_string()),
+            );
+            asset_object.insert(AssetValueField::Data.as_str().to_string(), Value::String(data.to_string()));
+            asset_object.insert(
+                AssetValueField::MediaType.as_str().to_string(),
+                Value::String(media_type.to_string()),
+            );
+        } else {
+            asset_object.insert(AssetValueField::SourceType.as_str().to_string(), Value::String("url".to_string()));
+            asset_object.insert(AssetValueField::Url.as_str().to_string(), Value::String(source.to_string()));
+        }
+
+        for option in &self.options {
+            let option_value = option.value.evaluate(evaluation_context, context)?;
+
+            match AssetPropertyName::from_identifier(option.name.as_str()) {
+                Some(AssetPropertyName::Type) => {
+                    let Some(kind_name) = option_value.as_str() else {
+                        return Err(WorkflowSemanticError::ExpressionEvaluation {
+                            context: context.to_string(),
+                            message: format!(
+                                "asset `type` option must resolve to a string, found {}",
+                                value_kind_name(&option_value)
+                            ),
+                        });
+                    };
+                    let Some(asset_kind) = ModelAssetKind::from_identifier(kind_name) else {
+                        return Err(WorkflowSemanticError::ExpressionEvaluation {
+                            context: context.to_string(),
+                            message: format!("unsupported asset type `{kind_name}`"),
+                        });
+                    };
+
+                    asset_object.insert(
+                        AssetValueField::Kind.as_str().to_string(),
+                        Value::String(asset_kind.as_str().to_string()),
+                    );
+                }
+                Some(AssetPropertyName::MediaType) => {
+                    asset_object.insert(AssetValueField::MediaType.as_str().to_string(), option_value);
+                }
+                Some(AssetPropertyName::Title) => {
+                    asset_object.insert(AssetValueField::Title.as_str().to_string(), option_value);
+                }
+                Some(AssetPropertyName::Context) => {
+                    asset_object.insert(AssetValueField::Context.as_str().to_string(), option_value);
+                }
+                Some(AssetPropertyName::Citations) => {
+                    asset_object.insert(AssetValueField::Citations.as_str().to_string(), option_value);
+                }
+                None => {
+                    return Err(WorkflowSemanticError::ExpressionEvaluation {
+                        context: context.to_string(),
+                        message: format!("unknown asset option `{}`", option.name),
+                    });
+                }
+            }
+        }
+
+        if !asset_object.contains_key(AssetValueField::Kind.as_str()) {
+            let asset_kind = asset_object
+                .get(AssetValueField::MediaType.as_str())
+                .and_then(Value::as_str)
+                .and_then(ModelAssetKind::from_media_type)
+                .or_else(|| ModelAssetKind::from_source(source))
+                .ok_or_else(|| WorkflowSemanticError::ExpressionEvaluation {
+                    context: context.to_string(),
+                    message: "asset type could not be inferred; set `type` in the asset options".to_string(),
+                })?;
+
+            asset_object.insert(
+                AssetValueField::Kind.as_str().to_string(),
+                Value::String(asset_kind.as_str().to_string()),
+            );
+        }
+
+        if !asset_object.contains_key(AssetValueField::MediaType.as_str()) {
+            if let Some(media_type) = ModelAssetKind::media_type_from_source(source) {
+                asset_object.insert(
+                    AssetValueField::MediaType.as_str().to_string(),
+                    Value::String(media_type.to_string()),
+                );
+            }
+        }
+
+        Ok(Value::Object(asset_object))
+    }
+
+    fn split_data_source(source: &str) -> Option<(&str, &str)> {
+        let data_source = source.strip_prefix("data:")?;
+        let (media_type, data) = data_source.split_once(";base64,")?;
+
+        Some((media_type, data))
     }
 }
 
@@ -299,9 +443,23 @@ impl Reference {
 }
 
 fn render_template_value(value: &Value) -> String {
+    if value.is_superwire_asset() {
+        return String::new();
+    }
+
     if let Some(string_value) = value.as_str() {
         return string_value.to_string();
     }
 
     serde_json::to_string(value).unwrap_or_else(|_| value.to_string())
+}
+
+trait ValueAssetExt {
+    fn is_superwire_asset(&self) -> bool;
+}
+
+impl ValueAssetExt for Value {
+    fn is_superwire_asset(&self) -> bool {
+        self.get(AssetValueField::Marker.as_str()).and_then(Value::as_bool) == Some(true)
+    }
 }

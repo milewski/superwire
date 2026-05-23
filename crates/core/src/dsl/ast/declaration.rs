@@ -1,7 +1,7 @@
 use super::{
     AgentDeclaration, Expression, McpBatchImportDeclaration, McpPromptBatchImportDeclaration, McpPromptImportDeclaration,
-    McpResourceBatchImportDeclaration, McpResourceImportDeclaration, McpToolBatchImportDeclaration, ModelDeclarationPropertyName,
-    ObjectField, SourceSpan, ToolDeclaration, TypeExpression, TypedField, Workflow,
+    McpResourceBatchImportDeclaration, McpResourceImportDeclaration, McpToolBatchImportDeclaration, ModelAssetKind,
+    ModelDeclarationPropertyName, ObjectField, SourceSpan, ToolDeclaration, TypeExpression, TypedField, Workflow,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,6 +121,47 @@ impl ModelDeclaration {
         };
 
         Some(fields.as_slice())
+    }
+
+    pub fn supported_asset_kinds(&self) -> Result<Vec<ModelAssetKind>, crate::semantic::WorkflowSemanticError> {
+        let Some(property) = self.property(ModelDeclarationPropertyName::Assets) else {
+            return Ok(Vec::new());
+        };
+        let Expression::ArrayLiteral(asset_kind_expressions) = &property.value else {
+            return Err(crate::semantic::WorkflowSemanticError::Other {
+                message: format!(
+                    "model `{}` property `{}` must be an array of string asset kinds",
+                    self.name,
+                    ModelDeclarationPropertyName::Assets.as_str()
+                ),
+            });
+        };
+        let mut asset_kinds = Vec::new();
+
+        for asset_kind_expression in asset_kind_expressions {
+            let Expression::StringLiteral(asset_kind_name) = asset_kind_expression else {
+                return Err(crate::semantic::WorkflowSemanticError::Other {
+                    message: format!(
+                        "model `{}` property `{}` entries must be string literals",
+                        self.name,
+                        ModelDeclarationPropertyName::Assets.as_str()
+                    ),
+                });
+            };
+            let Some(asset_kind) = ModelAssetKind::from_identifier(asset_kind_name) else {
+                return Err(crate::semantic::WorkflowSemanticError::Other {
+                    message: format!(
+                        "model `{}` property `{}` uses unsupported asset kind `{asset_kind_name}`",
+                        self.name,
+                        ModelDeclarationPropertyName::Assets.as_str()
+                    ),
+                });
+            };
+
+            asset_kinds.push(asset_kind);
+        }
+
+        Ok(asset_kinds)
     }
 }
 

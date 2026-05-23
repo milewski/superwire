@@ -35,6 +35,7 @@ pub struct Provider;
 pub struct Model {
     pub id: ModelId,
     pub inference: Option<ModelInference>,
+    pub assets: Option<ModelAssets>,
 }
 
 impl Model {
@@ -43,17 +44,19 @@ impl Model {
         Self {
             id: ModelId,
             inference: Some(ModelInference),
+            assets: Some(ModelAssets),
         }
     }
 
     #[must_use]
-    pub fn properties(&self) -> [PropertyDefinition; 2] {
+    pub fn properties(&self) -> [PropertyDefinition; 3] {
         [
             self.id.definition(),
             self.inference
                 .as_ref()
                 .expect("model structure should include inference")
                 .definition(),
+            self.assets.as_ref().expect("model structure should include assets").definition(),
         ]
     }
 }
@@ -410,6 +413,22 @@ impl DslProperty for ModelInference {
             repeatable: false,
             detail: "Default inference settings",
             documentation: "Defines default inference settings inherited by agents using this model profile.",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ModelAssets;
+
+impl DslProperty for ModelAssets {
+    fn definition(&self) -> PropertyDefinition {
+        PropertyDefinition {
+            name: "assets",
+            value_kind: PropertyValueKind::Expression,
+            required: false,
+            repeatable: false,
+            detail: "Supported asset kinds",
+            documentation: "Declares which asset kinds this model profile can receive.",
         }
     }
 }

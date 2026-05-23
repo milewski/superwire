@@ -700,6 +700,17 @@ impl ExpressionMcpExecutionPlanCollectorExt for Expression {
                         .collect_planned_mcp_calls(executor, evaluation_context, planned_calls)?;
                 }
             }
+            Self::Asset(asset) => {
+                asset
+                    .source
+                    .collect_planned_mcp_calls(executor, evaluation_context, planned_calls)?;
+
+                for option in &asset.options {
+                    option
+                        .value
+                        .collect_planned_mcp_calls(executor, evaluation_context, planned_calls)?;
+                }
+            }
             Self::NullFallback(null_fallback) => {
                 null_fallback
                     .value
