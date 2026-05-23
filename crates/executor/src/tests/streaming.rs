@@ -2,7 +2,7 @@ use super::fixtures;
 use super::support;
 use crate::event::ExecutorEventKind;
 use crate::service::ExecutorService;
-use crate::tests::support::{request_with_input, ConcurrentTrackingModelProvider, TestModelProvider};
+use crate::tests::support::{request_with_input, ConcurrentTrackingModelProvider, TestModelProvider, TrackingModelProvider};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -93,8 +93,8 @@ async fn failure_emits_workflow_failed_event() {
 }
 
 #[tokio::test]
-async fn dropping_stream_receiver_cancels_running_workflow() {
-    let model_provider = ConcurrentTrackingModelProvider::new(Duration::from_secs(5));
+async fn dropping_stream_receiver_does_not_cancel_running_workflow() {
+    let model_provider = ConcurrentTrackingModelProvider::new(Duration::from_millis(300));
     let service = ExecutorService::new(model_provider.clone());
     let request = support::request(fixtures::MINIMUM);
     let mut receiver = service.execute_stream(request);
@@ -115,13 +115,63 @@ async fn dropping_stream_receiver_cancels_running_workflow() {
 
     drop(receiver);
 
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    assert_eq!(
+        model_provider.active_requests(),
+        1,
+        "dropping the event receiver should not cancel the running workflow"
+    );
+
     tokio::time::timeout(Duration::from_secs(1), async {
         while model_provider.active_requests() > 0 {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await
-    .expect("dropping the event receiver should cancel the running workflow");
+    .expect("workflow should still complete after dropping the event receiver");
+}
+
+#[tokio::test]
+async fn dropping_stream_receiver_before_first_event_still_runs_workflow() {
+    let model_provider = TrackingModelProvider::new(vec![json!({ "value": "done" })]);
+    let service = ExecutorService::new(model_provider.clone());
+    let request = support::request(fixtures::MINIMUM);
+    let receiver = service.execute_stream(request);
+
+    drop(receiver);
+
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while model_provider.recorded_count() == 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("workflow should still start after dropping the event receiver");
+}
+
+#[tokio::test]
+async fn reconnecting_stream_replays_missed_events() {
+    let model_provider = ConcurrentTrackingModelProvider::new(Duration::from_millis(50));
+    let service = ExecutorService::new(model_provider);
+    let mut stream_subscription = service.start_streamed_execution(support::request(fixtures::MINIMUM));
+    let first_event = stream_subscription.receiver.recv().await.expect("first event should be emitted");
+    let run_identifier = stream_subscription.run_identifier.clone();
+
+    drop(stream_subscription);
+
+    let mut reconnected_subscription = service
+        .reconnect_streamed_execution(&run_identifier, Some(first_event.event_identifier))
+        .expect("stream should still be available for reconnect");
+    let mut event_kinds = Vec::new();
+
+    while let Some(sequenced_event) = reconnected_subscription.receiver.recv().await {
+        event_kinds.push(sequenced_event.event.kind);
+    }
+
+    assert!(!event_kinds.contains(&first_event.event.kind));
+    assert!(event_kinds.contains(&ExecutorEventKind::AgentStarted));
+    assert_eq!(event_kinds.last(), Some(&ExecutorEventKind::WorkflowCompleted));
 }
 
 #[tokio::test]

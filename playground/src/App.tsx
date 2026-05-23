@@ -32,6 +32,8 @@ import { createWorkflowTab, recoverWorkflowTabAfterReload, parseJsonObject, uniq
 const tabsStorageKey = 'superwire.playground.tabs.v3';
 const activeTabStorageKey = 'superwire.playground.activeTab.v3';
 const themeStorageKey = 'superwire.playground.theme';
+const runIdentifierHeader = 'x-superwire-run-id';
+const streamReconnectDelayMilliseconds = 1000;
 
 type RenameDialogTarget =
   | { kind: 'workflow'; tabId: string }
@@ -637,7 +639,7 @@ export default function App() {
         throw new Error(payload.error ?? `Request failed with ${response.status}`);
       }
 
-      const events = await readSseStream(response.body, currentTab.id, acceptSseChunk);
+      const events = await readWorkflowEventStream(response, currentTab.id, nextAbortController.signal, acceptSseChunk, updateTab);
       const failedEvent = events.find((event) => event.kind === 'workflow_failed');
 
       if (failedEvent) {
@@ -1105,10 +1107,132 @@ function restoreFromStorage(setTabs: (tabs: WorkflowTab[]) => void, setActiveTab
   setActiveTabId(activeTabId);
 }
 
-async function readSseStream(stream: ReadableStream<Uint8Array>, tabId: string, acceptChunk: (chunk: string, tabId: string) => ExecutorEvent | null) {
+type UpdateTab = (tabId: string, updater: (tab: WorkflowTab) => WorkflowTab) => void;
+
+interface SseReadResult {
+  events: ExecutorEvent[];
+  lastEventIdentifier: string | null;
+  terminalEvent: ExecutorEvent | null;
+}
+
+async function readWorkflowEventStream(
+  initialResponse: Response,
+  tabId: string,
+  abortSignal: AbortSignal,
+  acceptChunk: (chunk: string, tabId: string) => ExecutorEvent | null,
+  updateTab: UpdateTab,
+) {
+  const runIdentifier = initialResponse.headers.get(runIdentifierHeader);
+  let response = initialResponse;
+  let lastEventIdentifier: string | null = null;
+  const events: ExecutorEvent[] = [];
+
+  while (true) {
+    try {
+      const readResult = await readSseStream(response.body, tabId, acceptChunk, lastEventIdentifier);
+      events.push(...readResult.events);
+      lastEventIdentifier = readResult.lastEventIdentifier;
+
+      if (readResult.terminalEvent) {
+        return events;
+      }
+    } catch (error) {
+      if (abortSignal.aborted) {
+        throw error;
+      }
+    }
+
+    if (!runIdentifier) {
+      throw new Error('Run connection was lost and the server did not provide a reconnect identifier.');
+    }
+
+    let reconnected = false;
+
+    while (!reconnected) {
+      updateTab(tabId, (tab) => ({ ...tab, message: 'Run connection was lost. Reconnecting...' }));
+      await waitForReconnectDelay(abortSignal);
+
+      try {
+        response = await reconnectWorkflowEventStream(runIdentifier, lastEventIdentifier, abortSignal);
+        reconnected = true;
+      } catch (error) {
+        if (abortSignal.aborted || error instanceof WorkflowStreamUnavailableError) {
+          throw error;
+        }
+      }
+    }
+  }
+}
+
+class WorkflowStreamUnavailableError extends Error {}
+
+async function reconnectWorkflowEventStream(runIdentifier: string, lastEventIdentifier: string | null, abortSignal: AbortSignal) {
+  const headers: Record<string, string> = {
+    accept: 'text/event-stream',
+  };
+
+  if (lastEventIdentifier) {
+    headers['last-event-id'] = lastEventIdentifier;
+  }
+
+  const response = await fetch(`/execute/${encodeURIComponent(runIdentifier)}/events`, {
+    headers,
+    signal: abortSignal,
+  });
+
+  if (response.status === 404) {
+    throw new WorkflowStreamUnavailableError('Workflow stream is no longer available on the server.');
+  }
+
+  if (!response.ok || !response.body) {
+    const payload: Record<string, unknown> = await responsePayload(response).catch(() => ({}));
+    throw new Error(typeof payload.error === 'string' ? payload.error : `Unable to reconnect workflow stream (${response.status}).`);
+  }
+
+  return response;
+}
+
+async function waitForReconnectDelay(abortSignal: AbortSignal) {
+  await new Promise<void>((resolve, reject) => {
+    if (abortSignal.aborted) {
+      reject(new DOMException('Run cancelled.', 'AbortError'));
+
+      return;
+    }
+
+    let timeoutHandle: number | null = null;
+    const abortListener = () => {
+      if (timeoutHandle !== null) {
+        window.clearTimeout(timeoutHandle);
+      }
+
+      reject(new DOMException('Run cancelled.', 'AbortError'));
+    };
+
+    timeoutHandle = window.setTimeout(() => {
+      abortSignal.removeEventListener('abort', abortListener);
+      resolve();
+    }, streamReconnectDelayMilliseconds);
+
+    abortSignal.addEventListener('abort', abortListener, { once: true });
+  });
+}
+
+async function readSseStream(
+  stream: ReadableStream<Uint8Array> | null,
+  tabId: string,
+  acceptChunk: (chunk: string, tabId: string) => ExecutorEvent | null,
+  initialLastEventIdentifier: string | null,
+): Promise<SseReadResult> {
+  if (!stream) {
+    throw new Error('Workflow stream response did not include a body.');
+  }
+
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   const events: ExecutorEvent[] = [];
+  let lastEventIdentifier = initialLastEventIdentifier;
+  let terminalEvent: ExecutorEvent | null = null;
   let buffer = '';
 
   while (true) {
@@ -1123,36 +1247,75 @@ async function readSseStream(stream: ReadableStream<Uint8Array>, tabId: string, 
     buffer = chunks.pop() ?? '';
 
     for (const chunk of chunks) {
-      const event = acceptChunk(chunk, tabId);
+      const sseMessage = parseSseMessage(chunk);
+      const event = sseMessage.data ? acceptChunk(chunk, tabId) : null;
+
+      lastEventIdentifier = sseMessage.eventIdentifier ?? lastEventIdentifier;
 
       if (event) {
         events.push(event);
+
+        if (isTerminalWorkflowEvent(event)) {
+          terminalEvent = event;
+        }
       }
     }
   }
 
   if (buffer.trim()) {
-    const event = acceptChunk(buffer, tabId);
+    const sseMessage = parseSseMessage(buffer);
+    const event = sseMessage.data ? acceptChunk(buffer, tabId) : null;
+
+    lastEventIdentifier = sseMessage.eventIdentifier ?? lastEventIdentifier;
 
     if (event) {
       events.push(event);
+
+      if (isTerminalWorkflowEvent(event)) {
+        terminalEvent = event;
+      }
     }
   }
 
-  return events;
+  return {
+    events,
+    lastEventIdentifier,
+    terminalEvent,
+  };
 }
 
 function parseSseChunk(chunk: string): ExecutorEvent | null {
-  const dataLines = chunk
-    .split('\n')
-    .filter((line) => line.startsWith('data:'))
-    .map((line) => line.slice('data:'.length).trimStart());
+  const sseMessage = parseSseMessage(chunk);
 
-  if (dataLines.length === 0) {
+  if (!sseMessage.data) {
     return null;
   }
 
-  return JSON.parse(dataLines.join('\n')) as ExecutorEvent;
+  return JSON.parse(sseMessage.data) as ExecutorEvent;
+}
+
+function parseSseMessage(chunk: string) {
+  const eventIdentifierLines: string[] = [];
+  const dataLines: string[] = [];
+
+  for (const line of chunk.split('\n')) {
+    if (line.startsWith('id:')) {
+      eventIdentifierLines.push(line.slice('id:'.length).trimStart());
+    }
+
+    if (line.startsWith('data:')) {
+      dataLines.push(line.slice('data:'.length).trimStart());
+    }
+  }
+
+  return {
+    eventIdentifier: eventIdentifierLines.at(-1) ?? null,
+    data: dataLines.length > 0 ? dataLines.join('\n') : null,
+  };
+}
+
+function isTerminalWorkflowEvent(event: ExecutorEvent) {
+  return event.kind === 'workflow_completed' || event.kind === 'workflow_failed';
 }
 
 function jsonObjectValidationError(source: string) {

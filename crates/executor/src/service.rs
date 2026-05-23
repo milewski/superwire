@@ -5,15 +5,21 @@ use crate::event::ExecutorEvent;
 use crate::model::{CerseiModelProvider, ModelProvider};
 use crate::runtime::{ExecutorError, WorkflowExecutor};
 use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use std::time::Instant;
 use superwire_core::dsl::format_workflow_source;
 use tokio::sync::mpsc;
 
 const EVENT_BUFFER_SIZE: usize = 64;
+const COMPLETED_STREAM_RETENTION: Duration = Duration::from_secs(20 * 60);
 
 #[derive(Debug, Clone)]
 pub struct ExecutorService<ModelProviderType = CerseiModelProvider> {
     model_provider: ModelProviderType,
+    streamed_executions: StreamedExecutionRegistry,
 }
 
 impl Default for ExecutorService<CerseiModelProvider> {
@@ -25,7 +31,10 @@ impl Default for ExecutorService<CerseiModelProvider> {
 impl<ModelProviderType> ExecutorService<ModelProviderType> {
     #[must_use]
     pub fn new(model_provider: ModelProviderType) -> Self {
-        Self { model_provider }
+        Self {
+            model_provider,
+            streamed_executions: StreamedExecutionRegistry::default(),
+        }
     }
 }
 
@@ -111,40 +120,248 @@ where
     }
 
     pub fn execute_stream(&self, request: ExecutionRequest) -> mpsc::Receiver<ExecutorEvent> {
+        let streamed_execution = self.start_streamed_execution(request);
         let (event_sender, event_receiver) = mpsc::channel(EVENT_BUFFER_SIZE);
+
+        tokio::spawn(async move {
+            streamed_execution.forward_events(event_sender).await;
+        });
+
+        event_receiver
+    }
+
+    pub fn start_streamed_execution(&self, request: ExecutionRequest) -> StreamedExecutionSubscription {
+        let run_identifier = self.streamed_executions.next_run_identifier();
+        let subscription = self.streamed_executions.insert(run_identifier.clone());
+        let registry = self.streamed_executions.clone();
         let model_provider = self.model_provider.clone();
         let max_concurrency = request.options.max_concurrency;
 
         tokio::spawn(async move {
-            let workflow_started_at = Instant::now();
+            registry
+                .run_streamed_execution(request, model_provider, run_identifier, max_concurrency)
+                .await;
+        });
 
-            tokio::select! {
-                execution_result = run_streamed_execution(
-                    request,
-                    model_provider,
-                    event_sender.clone(),
-                    max_concurrency,
-                    workflow_started_at,
-                ) => {
-                    if let Err(error) = execution_result {
-                        let _ = event_sender
-                            .send(ExecutorEvent::workflow_failed(
-                                error.to_string(),
-                                Some(workflow_started_at.elapsed()),
-                            ))
-                            .await;
-                    }
-                }
-                () = event_sender.closed() => {
-                    // Dropping the receiver means the SSE client is gone. The
-                    // workflow future is dropped here so slow LLM/MCP work does
-                    // not continue without a listener.
-                    log::info!("streamed workflow execution cancelled because the event receiver closed");
-                }
+        subscription
+    }
+
+    pub fn reconnect_streamed_execution(
+        &self,
+        run_identifier: &str,
+        last_event_identifier: Option<u64>,
+    ) -> Option<StreamedExecutionSubscription> {
+        self.streamed_executions.subscribe(run_identifier, last_event_identifier)
+    }
+}
+
+#[derive(Debug)]
+pub struct StreamedExecutionSubscription {
+    pub run_identifier: String,
+    pub receiver: mpsc::Receiver<SequencedExecutorEvent>,
+}
+
+impl StreamedExecutionSubscription {
+    async fn forward_events(mut self, event_sender: mpsc::Sender<ExecutorEvent>) {
+        while let Some(sequenced_event) = self.receiver.recv().await {
+            if event_sender.send(sequenced_event.event).await.is_err() {
+                break;
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SequencedExecutorEvent {
+    pub event_identifier: u64,
+    pub event: ExecutorEvent,
+}
+
+#[derive(Debug, Clone)]
+struct StreamedExecutionRegistry {
+    executions: Arc<Mutex<HashMap<String, StreamedExecution>>>,
+    next_run_sequence: Arc<AtomicU64>,
+}
+
+impl Default for StreamedExecutionRegistry {
+    fn default() -> Self {
+        Self {
+            executions: Arc::new(Mutex::new(HashMap::new())),
+            next_run_sequence: Arc::new(AtomicU64::new(1)),
+        }
+    }
+}
+
+impl StreamedExecutionRegistry {
+    fn next_run_identifier(&self) -> String {
+        let timestamp_ms = ExecutorEvent::current_timestamp_ms();
+        let run_sequence = self.next_run_sequence.fetch_add(1, Ordering::SeqCst);
+
+        format!("{timestamp_ms}-{run_sequence}")
+    }
+
+    fn insert(&self, run_identifier: String) -> StreamedExecutionSubscription {
+        let streamed_execution = StreamedExecution::default();
+        let subscription = streamed_execution.subscribe(run_identifier.clone(), None);
+
+        self.executions
+            .lock()
+            .expect("streamed execution registry lock should not be poisoned")
+            .insert(run_identifier, streamed_execution);
+
+        subscription
+    }
+
+    fn subscribe(&self, run_identifier: &str, last_event_identifier: Option<u64>) -> Option<StreamedExecutionSubscription> {
+        self.executions
+            .lock()
+            .expect("streamed execution registry lock should not be poisoned")
+            .get(run_identifier)
+            .map(|streamed_execution| streamed_execution.subscribe(run_identifier.to_string(), last_event_identifier))
+    }
+
+    fn record_event(&self, run_identifier: &str, event: ExecutorEvent) {
+        let should_schedule_cleanup = self
+            .executions
+            .lock()
+            .expect("streamed execution registry lock should not be poisoned")
+            .get(run_identifier)
+            .is_some_and(|streamed_execution| streamed_execution.record_event(event));
+
+        if should_schedule_cleanup {
+            self.schedule_cleanup(run_identifier.to_string());
+        }
+    }
+
+    fn schedule_cleanup(&self, run_identifier: String) {
+        let registry = self.clone();
+
+        tokio::spawn(async move {
+            tokio::time::sleep(COMPLETED_STREAM_RETENTION).await;
+            registry.remove(&run_identifier);
+        });
+    }
+
+    fn remove(&self, run_identifier: &str) {
+        self.executions
+            .lock()
+            .expect("streamed execution registry lock should not be poisoned")
+            .remove(run_identifier);
+    }
+
+    async fn run_streamed_execution<ModelProviderType>(
+        self,
+        request: ExecutionRequest,
+        model_provider: ModelProviderType,
+        run_identifier: String,
+        max_concurrency: usize,
+    ) where
+        ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
+    {
+        let (event_sender, mut event_receiver) = mpsc::channel(EVENT_BUFFER_SIZE);
+        let event_registry = self.clone();
+        let event_run_identifier = run_identifier.clone();
+        let event_recorder = tokio::spawn(async move {
+            while let Some(event) = event_receiver.recv().await {
+                event_registry.record_event(&event_run_identifier, event);
             }
         });
 
-        event_receiver
+        let workflow_started_at = Instant::now();
+        let execution_result =
+            run_streamed_execution(request, model_provider, event_sender.clone(), max_concurrency, workflow_started_at).await;
+
+        if let Err(error) = execution_result {
+            log::error!("streamed workflow execution failed: {error}");
+
+            if event_sender
+                .send(ExecutorEvent::workflow_failed(
+                    error.to_string(),
+                    Some(workflow_started_at.elapsed()),
+                ))
+                .await
+                .is_err()
+            {
+                log::debug!("workflow failed event dropped because the stream recorder closed");
+            }
+        }
+
+        drop(event_sender);
+        let _ = event_recorder.await;
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+struct StreamedExecution {
+    state: Arc<Mutex<StreamedExecutionState>>,
+}
+
+impl StreamedExecution {
+    fn subscribe(&self, run_identifier: String, last_event_identifier: Option<u64>) -> StreamedExecutionSubscription {
+        let mut state = self.state.lock().expect("streamed execution lock should not be poisoned");
+        let missed_events = state.events_after(last_event_identifier);
+        let channel_size = EVENT_BUFFER_SIZE.max(missed_events.len() + EVENT_BUFFER_SIZE);
+        let (event_sender, event_receiver) = mpsc::channel(channel_size);
+
+        for event in missed_events {
+            if event_sender.try_send(event).is_err() {
+                break;
+            }
+        }
+
+        if !state.completed {
+            state.subscribers.push(event_sender);
+        }
+
+        StreamedExecutionSubscription {
+            run_identifier,
+            receiver: event_receiver,
+        }
+    }
+
+    fn record_event(&self, event: ExecutorEvent) -> bool {
+        let mut state = self.state.lock().expect("streamed execution lock should not be poisoned");
+        let sequenced_event = state.next_event(event);
+        let completed = sequenced_event.event.is_terminal();
+
+        state.events.push(sequenced_event.clone());
+        state
+            .subscribers
+            .retain(|subscriber| subscriber.try_send(sequenced_event.clone()).is_ok());
+
+        if completed {
+            state.completed = true;
+            state.subscribers.clear();
+        }
+
+        completed
+    }
+}
+
+#[derive(Debug, Default)]
+struct StreamedExecutionState {
+    events: Vec<SequencedExecutorEvent>,
+    subscribers: Vec<mpsc::Sender<SequencedExecutorEvent>>,
+    next_event_identifier: u64,
+    completed: bool,
+}
+
+impl StreamedExecutionState {
+    fn events_after(&self, last_event_identifier: Option<u64>) -> Vec<SequencedExecutorEvent> {
+        self.events
+            .iter()
+            .filter(|event| last_event_identifier.is_none_or(|event_identifier| event.event_identifier > event_identifier))
+            .cloned()
+            .collect()
+    }
+
+    fn next_event(&mut self, event: ExecutorEvent) -> SequencedExecutorEvent {
+        self.next_event_identifier += 1;
+
+        SequencedExecutorEvent {
+            event_identifier: self.next_event_identifier,
+            event,
+        }
     }
 }
 
@@ -162,12 +379,9 @@ where
         .resolved_workflow_source()
         .map_err(|message| ExecutorError::Other { message })?;
 
-    event_sender
-        .send(ExecutorEvent::workflow_started())
-        .await
-        .map_err(|error| ExecutorError::Other {
-            message: format!("failed to send workflow start event: {error}"),
-        })?;
+    if event_sender.send(ExecutorEvent::workflow_started()).await.is_err() {
+        log::debug!("workflow start event dropped because the stream receiver closed");
+    }
 
     log::info!("starting streamed workflow execution");
     log::debug!(
@@ -201,12 +415,13 @@ where
         .collect::<Vec<_>>();
 
     log::debug!("streamed workflow planned with agent order: {agent_execution_order:?}");
-    event_sender
+    if event_sender
         .send(ExecutorEvent::workflow_planned(agent_execution_order, mcp_imports, planned_steps))
         .await
-        .map_err(|error| ExecutorError::Other {
-            message: format!("failed to send workflow planned event: {error}"),
-        })?;
+        .is_err()
+    {
+        log::debug!("workflow planned event dropped because the stream receiver closed");
+    }
 
     let output = executor
         .execute(
@@ -218,12 +433,13 @@ where
         )
         .await?;
 
-    event_sender
+    if event_sender
         .send(ExecutorEvent::workflow_completed(output, workflow_started_at.elapsed()))
         .await
-        .map_err(|error| ExecutorError::Other {
-            message: format!("failed to send workflow completion event: {error}"),
-        })?;
+        .is_err()
+    {
+        log::debug!("workflow completion event dropped because the stream receiver closed");
+    }
 
     log::info!("streamed workflow execution completed");
 

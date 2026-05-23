@@ -166,6 +166,52 @@ async fn http_streams_events_when_accept_header_requests_event_stream() {
 }
 
 #[tokio::test]
+async fn http_stream_reconnect_replays_events_after_last_event_identifier() {
+    let router = executor_router_with_service(support::service(vec![json!({ "value": "ok" })]), true);
+    let request_body = json!({ "workflow_source": fixtures::MINIMUM });
+    let request = axum::http::Request::builder()
+        .method("POST")
+        .uri("/execute")
+        .header("accept", "text/event-stream")
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(request_body.to_string()))
+        .expect("request should build");
+
+    let response = router.clone().oneshot(request).await.expect("request should execute");
+    let run_identifier = response
+        .headers()
+        .get("x-superwire-run-id")
+        .and_then(|header_value| header_value.to_str().ok())
+        .expect("stream response should include run identifier")
+        .to_string();
+    let initial_body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should read");
+    let initial_response_body = String::from_utf8(initial_body.to_vec()).expect("response body should be valid UTF-8");
+
+    assert!(initial_response_body.contains("id: 1"));
+
+    let reconnect_request = axum::http::Request::builder()
+        .method("GET")
+        .uri(format!("/execute/{run_identifier}/events"))
+        .header("accept", "text/event-stream")
+        .header("last-event-id", "1")
+        .body(axum::body::Body::empty())
+        .expect("request should build");
+    let reconnect_response = router.oneshot(reconnect_request).await.expect("request should execute");
+
+    assert_eq!(reconnect_response.status(), axum::http::StatusCode::OK);
+
+    let reconnect_body = axum::body::to_bytes(reconnect_response.into_body(), usize::MAX)
+        .await
+        .expect("response body should read");
+    let reconnect_response_body = String::from_utf8(reconnect_body.to_vec()).expect("response body should be valid UTF-8");
+
+    assert!(!reconnect_response_body.contains("id: 1"));
+    assert!(reconnect_response_body.contains("\"kind\":\"workflow_completed\""));
+}
+
+#[tokio::test]
 async fn http_validate_returns_success_without_execution() {
     let router = executor_router_with_service(support::service(vec![json!("unused")]), true);
     let request_body = json!({

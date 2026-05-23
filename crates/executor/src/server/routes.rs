@@ -5,6 +5,7 @@ use crate::server::sse::event_to_sse_result;
 use crate::service::ExecutorService;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::Path;
+use axum::extract::Query;
 use axum::extract::State;
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::sse::{KeepAlive, Sse};
@@ -13,6 +14,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
 use futures::{SinkExt, StreamExt};
+use serde::Deserialize;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -20,6 +22,8 @@ use superwire_lsp::server::LanguageServer;
 use tokio::fs;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::ReceiverStream;
+
+const RUN_IDENTIFIER_HEADER: &str = "x-superwire-run-id";
 
 #[derive(Clone)]
 struct ExecutorRouterState<ModelProviderType> {
@@ -53,6 +57,10 @@ where
 
     let router = Router::new()
         .route("/execute", post(execute_handler::<ModelProviderType>))
+        .route(
+            "/execute/{run_identifier}/events",
+            axum::routing::get(reconnect_stream_handler::<ModelProviderType>),
+        )
         .route("/validate", post(validate_handler::<ModelProviderType>))
         .route("/graph", post(graph_handler::<ModelProviderType>))
         .route("/format", post(format_handler::<ModelProviderType>))
@@ -99,13 +107,63 @@ where
         }
 
         ExecuteResponseKind::EventStream => {
-            let event_receiver = state.service.execute_stream(request);
-            let event_stream = ReceiverStream::new(event_receiver).map(event_to_sse_result);
-            let keep_alive = KeepAlive::new().interval(Duration::from_secs(10)).text("workflow stream active");
+            let stream_subscription = state.service.start_streamed_execution(request);
+            let run_identifier = stream_subscription.run_identifier.clone();
+            let event_stream = ReceiverStream::new(stream_subscription.receiver).map(event_to_sse_result);
 
-            Ok(Sse::new(event_stream).keep_alive(keep_alive).into_response())
+            Ok(sse_response(event_stream, &run_identifier))
         }
     }
+}
+
+async fn reconnect_stream_handler<ModelProviderType>(
+    State(state): State<ExecutorRouterState<ModelProviderType>>,
+    Path(run_identifier): Path<String>,
+    Query(reconnect_parameters): Query<StreamReconnectParameters>,
+    request_headers: HeaderMap,
+) -> Result<Response, ExecutorHttpError>
+where
+    ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
+{
+    let last_event_identifier = reconnect_parameters.last_event_identifier(&request_headers);
+    let Some(stream_subscription) = state.service.reconnect_streamed_execution(&run_identifier, last_event_identifier) else {
+        return Ok(StatusCode::NOT_FOUND.into_response());
+    };
+
+    let event_stream = ReceiverStream::new(stream_subscription.receiver).map(event_to_sse_result);
+
+    Ok(sse_response(event_stream, &run_identifier))
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamReconnectParameters {
+    #[serde(default)]
+    after: Option<u64>,
+}
+
+impl StreamReconnectParameters {
+    fn last_event_identifier(&self, request_headers: &HeaderMap) -> Option<u64> {
+        self.after.or_else(|| {
+            request_headers
+                .get("last-event-id")
+                .and_then(|header_value| header_value.to_str().ok())
+                .and_then(|header_value| header_value.parse::<u64>().ok())
+        })
+    }
+}
+
+fn sse_response<StreamType>(event_stream: StreamType, run_identifier: &str) -> Response
+where
+    StreamType: futures::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>> + Send + 'static,
+{
+    let keep_alive = KeepAlive::new().interval(Duration::from_secs(10)).text("workflow stream active");
+    let mut response = Sse::new(event_stream).keep_alive(keep_alive).into_response();
+
+    if let Ok(header_value) = HeaderValue::from_str(run_identifier) {
+        response.headers_mut().insert(RUN_IDENTIFIER_HEADER, header_value);
+    }
+
+    response
 }
 
 enum ExecuteResponseKind {

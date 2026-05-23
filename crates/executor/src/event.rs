@@ -115,6 +115,13 @@ impl ExecutorEventKind {
     }
 }
 
+impl ExecutorEventKind {
+    #[must_use]
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, Self::WorkflowCompleted | Self::WorkflowFailed)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ExecutorEvent {
     pub kind: ExecutorEventKind,
@@ -338,11 +345,26 @@ impl ExecutorEvent {
     fn new(kind: ExecutorEventKind) -> Self {
         Self {
             kind,
-            timestamp_ms: current_timestamp_ms(),
+            timestamp_ms: Self::current_timestamp_ms(),
             agent_name: None,
             message: None,
             data: None,
         }
+    }
+
+    #[must_use]
+    pub fn is_terminal(&self) -> bool {
+        self.kind.is_terminal()
+    }
+
+    #[must_use]
+    pub(crate) fn current_timestamp_ms() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+            .try_into()
+            .unwrap_or(u64::MAX)
     }
 
     pub(crate) fn with_agent_name(mut self, agent_name: String) -> Self {
@@ -359,15 +381,6 @@ impl ExecutorEvent {
         self.data = Some(data);
         self
     }
-}
-
-fn current_timestamp_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .try_into()
-        .unwrap_or(u64::MAX)
 }
 
 fn duration_ms(duration: Duration) -> u64 {
