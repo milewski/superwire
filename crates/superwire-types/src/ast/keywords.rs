@@ -1,4 +1,4 @@
-use crate::dsl::structure::{self, DslProperty, PropertyDefinition as DslPropertyDefinition};
+use crate::structure::{self, DslProperty, PropertyDefinition as DslPropertyDefinition};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DeclarationKeyword {

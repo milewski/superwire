@@ -21,6 +21,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = "0.10"
 strsim = "0.11"
+superwire-types = { path = "../superwire-types" }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 ureq = { version = "3.3.0", default-features = false, features = ["json", "rustls"] }

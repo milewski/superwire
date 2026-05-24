@@ -2476,6 +2476,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "strsim",
+ "superwire-types",
  "thiserror 2.0.18",
  "tokio",
  "ureq",
@@ -2523,6 +2524,13 @@ dependencies = [
  "superwire-core",
  "thiserror 2.0.18",
  "tokio",
+]
+
+[[package]]
+name = "superwire-types"
+version = "0.1.0"
+dependencies = [
+ "strsim",
 ]
 
 [[package]]

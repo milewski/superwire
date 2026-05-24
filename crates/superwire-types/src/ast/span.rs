@@ -71,6 +71,17 @@ impl SourceSpan {
 
         Some(start_byte_offset..end_byte_offset)
     }
+
+    #[must_use]
+    pub fn contains_position(self, source_position: SourcePosition) -> bool {
+        let starts_before_or_at = (self.start.line < source_position.line)
+            || (self.start.line == source_position.line && self.start.column <= source_position.column);
+
+        let ends_after_or_at =
+            (self.end.line > source_position.line) || (self.end.line == source_position.line && self.end.column >= source_position.column);
+
+        starts_before_or_at && ends_after_or_at
+    }
 }
 
 #[cfg(test)]

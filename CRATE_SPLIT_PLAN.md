@@ -14,7 +14,7 @@ Split the unpublished workspace into smaller publishable crates while preserving
 
 ## Checklist
 
-- [ ] Create `superwire-types` and move pure shared data types into it. Rationale: every crate should be able to depend on AST/domain DTOs without pulling parser, semantic analysis, executor, LSP, server, MCP HTTP, or provider dependencies.
+- [x] Create `superwire-types` and move pure shared data types into it. Rationale: every crate should be able to depend on AST/domain DTOs without pulling parser, semantic analysis, executor, LSP, server, MCP HTTP, or provider dependencies.
 - [ ] Create `superwire-dsl` and move parser, formatter, validation, DSL diagnostics, structure metadata, and visitors into it. Rationale: language implementation is publishable and reusable, but it should be separate from pure data definitions.
 - [ ] Create `superwire-test-support` and move workflow source templates, fake MCP utilities, schema helpers, and snapshot helpers into it. Rationale: shared test infrastructure is valuable across crates but should not be part of production runtime APIs.
 - [ ] Create `superwire-macros` and move exported workflow source macros into it. Rationale: macros are already a first-class testing and authoring API, and isolating them keeps macro expansion dependencies explicit.
@@ -29,7 +29,7 @@ Split the unpublished workspace into smaller publishable crates while preserving
 
 ## Missing or pending tasks
 
-- None recorded yet. If a worker intentionally defers work, add it here with the owning checklist item, reason, and suggested follow-up.
+- Owning item: Create `superwire-types` and move pure shared data types into it. Reason: this first pass moved the clean leaf shared surfaces (`SourcePosition`, `SourceSpan`, DSL keyword/property enums, and DSL property metadata) into `superwire-types`, but the larger AST structs/enums still have formatter, validation, MCP lock, and semantic behavior implemented as inherent methods in `superwire-core`. Moving those AST owners now would either force unrelated implementation logic into `superwire-types` or require broad extension-trait rewrites. Follow-up: move the remaining AST/domain DTOs together with the relevant parser/formatter/validation and semantic implementation during the `superwire-dsl` and `superwire-semantic` checklist items.
 
 ## Final acceptance checks
 

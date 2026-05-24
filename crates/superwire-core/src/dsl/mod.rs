@@ -1,10 +1,14 @@
-mod ast;
 mod formatter;
 pub mod macros;
 mod parser;
-pub mod structure;
 mod validation;
 mod visitor;
+
+mod ast;
+
+pub mod structure {
+    pub use superwire_types::structure::*;
+}
 
 pub use ast::{
     AgentDeclaration, AgentExpressionPropertyName, AgentForLoop, AgentForLoopPattern, AgentProperty, Asset, AssetPropertyName,
@@ -20,7 +24,7 @@ pub use ast::{
 };
 pub use formatter::{format_workflow_source, DslFormatError};
 pub use parser::{parse_workflow, DslParseError};
-pub use structure::{DslProperty, PropertyDefinition, PropertyValueKind};
+pub use superwire_types::{DslProperty, PropertyDefinition, PropertyValueKind};
 pub use validation::{
     validate_workflow, SingletonDeclarationKind, ValidationContext, ValidationIssue, ValidationReport, WorkflowValidation,
 };
