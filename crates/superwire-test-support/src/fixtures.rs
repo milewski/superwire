@@ -44,7 +44,9 @@ pub const MCP_PROMPT_REQUIRED_BINDING_VALIDATION: &str = include_str!("../fixtur
 pub const VARIANT_MATCH_PROJECTION: &str = include_str!("../fixtures/036_variant_match_projection.wire");
 pub const SCHEMA_TYPES: &str = include_str!("../fixtures/037_schema_types.wire");
 pub const SCHEMA_VARIANT_TYPES: &str = include_str!("../fixtures/038_schema_variant_types.wire");
-pub const CERSEI_PROVIDERS: &str = include_str!("../../superwire-dsl/workflows/providers.wire");
+// Numbered provider fixtures must have a same-numbered provider test file.
+// Example: `044_name_test.rs` must test `044_name.wire`; never cross-link numbers.
+pub const CERSEI_PROVIDERS: &str = include_str!("../fixtures/039_cersei_providers.wire");
 pub const AGENT_OUTPUT_INJECTIONS: &str = include_str!("../fixtures/040_agent_output_injections.wire");
 pub const ARRAY_PLUCK_ASSETS: &str = include_str!("../fixtures/041_array_pluck_assets.wire");
 pub const ARRAY_PLUCK_MODES: &str = include_str!("../fixtures/042_array_pluck_modes.wire");
