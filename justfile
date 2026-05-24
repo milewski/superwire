@@ -19,6 +19,8 @@ build-docker tag="latest":
     docker build -t rmilewski/superwire:{{tag}} -f Dockerfile .
 
 playground:
+    #!/usr/bin/env bash
+    trap 'kill 0' EXIT
     cargo run --release -p superwire-executor -- --address=0.0.0.0:3000 &
     cd playground && npm run dev
 
