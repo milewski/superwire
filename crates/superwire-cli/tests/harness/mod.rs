@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
-use superwire_dsl::testing::WorkflowSourceTemplate;
+use superwire_test_support::WorkflowSourceTemplate;
 
 pub struct CliCommand {
     arguments: Vec<String>,
@@ -202,7 +202,9 @@ impl TemporaryWorkspace {
         absolute_path
     }
 
-    pub fn write_workflow(&self, relative_path: impl AsRef<Path>, source_template: &WorkflowSourceTemplate) -> PathBuf {
+    pub fn write_workflow(&self, relative_path: impl AsRef<Path>, source_template: impl Into<WorkflowSourceTemplate>) -> PathBuf {
+        let source_template = source_template.into();
+
         self.write_file(relative_path, source_template.source())
     }
 

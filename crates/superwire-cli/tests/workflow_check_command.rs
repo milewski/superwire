@@ -7,7 +7,7 @@ fn validates_workflow_file_when_check_command_succeeds() {
     let temporary_workspace = TemporaryWorkspace::new("superwire-workflow-check-tests");
     let workflow_file_path = temporary_workspace.write_workflow(
         "valid.wire",
-        &superwire_dsl::workflow_source_template! {
+        superwire_dsl::workflow_source_template! {
             output {
                 ok: true
             }
@@ -25,7 +25,7 @@ fn rejects_workflow_file_with_invalid_reference_types() {
     let temporary_workspace = TemporaryWorkspace::new("superwire-workflow-check-tests");
     let workflow_file_path = temporary_workspace.write_workflow(
         "invalid.wire",
-        &superwire_dsl::workflow_source_template! {
+        superwire_dsl::workflow_source_template! {
             input {
                 title: string
             }

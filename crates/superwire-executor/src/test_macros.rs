@@ -1,7 +1,7 @@
 macro_rules! execute {
     ($fixture:expr $(,)?) => {
         async move {
-            let workflow_source = superwire_core::testing::WorkflowSource::inline($fixture)
+            let workflow_source = superwire_test_support::WorkflowSource::inline($fixture)
                 .read()
                 .expect("inline workflow source should read");
 
@@ -11,7 +11,7 @@ macro_rules! execute {
 
     ($fixture:expr, input: $input:tt $(,)?) => {
         async move {
-            let workflow_source = superwire_core::testing::WorkflowSource::inline($fixture)
+            let workflow_source = superwire_test_support::WorkflowSource::inline($fixture)
                 .read()
                 .expect("inline workflow source should read");
 
@@ -21,7 +21,7 @@ macro_rules! execute {
 
     ($fixture:expr, input: $input:tt, $(output: $output:tt),+ $(,)?) => {
         async move {
-            let workflow_source = superwire_core::testing::WorkflowSource::inline($fixture)
+            let workflow_source = superwire_test_support::WorkflowSource::inline($fixture)
                 .read()
                 .expect("inline workflow source should read");
 
@@ -36,7 +36,7 @@ macro_rules! execute {
 
     ($fixture:expr, $(output: $output:tt),+ $(,)?) => {
         async move {
-            let workflow_source = superwire_core::testing::WorkflowSource::inline($fixture)
+            let workflow_source = superwire_test_support::WorkflowSource::inline($fixture)
                 .read()
                 .expect("inline workflow source should read");
 
@@ -48,7 +48,7 @@ macro_rules! execute {
 macro_rules! execute_error {
     ($fixture:expr $(,)?) => {
         async move {
-            let workflow_source = superwire_core::testing::WorkflowSource::inline($fixture)
+            let workflow_source = superwire_test_support::WorkflowSource::inline($fixture)
                 .read()
                 .expect("inline workflow source should read");
 
@@ -58,7 +58,7 @@ macro_rules! execute_error {
 
     ($fixture:expr, input: $input:tt $(,)?) => {
         async move {
-            let workflow_source = superwire_core::testing::WorkflowSource::inline($fixture)
+            let workflow_source = superwire_test_support::WorkflowSource::inline($fixture)
                 .read()
                 .expect("inline workflow source should read");
 
@@ -70,7 +70,7 @@ macro_rules! execute_error {
 macro_rules! execute_secrets {
     ($fixture:expr, input: $input:tt, secrets: $secrets:tt, $(output: $output:tt),+ $(,)?) => {
         async move {
-            let workflow_source = superwire_core::testing::WorkflowSource::inline($fixture)
+            let workflow_source = superwire_test_support::WorkflowSource::inline($fixture)
                 .read()
                 .expect("inline workflow source should read");
 
@@ -88,7 +88,7 @@ macro_rules! execute_secrets {
 macro_rules! execute_secrets_error {
     ($fixture:expr, input: $input:tt, secrets: $secrets:tt $(,)?) => {
         async move {
-            let workflow_source = superwire_core::testing::WorkflowSource::inline($fixture)
+            let workflow_source = superwire_test_support::WorkflowSource::inline($fixture)
                 .read()
                 .expect("inline workflow source should read");
 

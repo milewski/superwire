@@ -6,7 +6,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use harness::{CliCommand, CommandOutputAssertions, TemporaryWorkspace};
 use serde_json::{json, Value};
 use superwire_cli::{Application, ExitCode, ExitStatus};
-use superwire_core::testing::{FakeMcpClientFactory, FakeMcpServerBuilder};
+use superwire_test_support::{FakeMcpClientFactory, FakeMcpServerBuilder};
 
 #[test]
 fn writes_single_project_lock_for_multiple_workflows() {

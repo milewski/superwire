@@ -11,7 +11,7 @@ macro_rules! call {
 
 macro_rules! schema {
     () => {
-        superwire_core::testing::empty_object_schema()
+        superwire_test_support::empty_object_schema()
     };
 
     ($($field_name:ident : $field_type:ty),+ $(,)?) => {{
@@ -21,6 +21,6 @@ macro_rules! schema {
             $($field_name: $field_type,)*
         }
 
-        superwire_core::testing::schema_for_type::<TestSchema>()
+        superwire_test_support::schema_for_type::<TestSchema>()
     }};
 }

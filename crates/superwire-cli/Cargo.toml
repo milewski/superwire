@@ -21,3 +21,6 @@ superwire-executor = { path = "../superwire-executor" }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 jsonschema = { workspace = true }
+
+[dev-dependencies]
+superwire-test-support = { path = "../superwire-test-support" }

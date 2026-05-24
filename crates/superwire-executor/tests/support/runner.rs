@@ -5,10 +5,10 @@ use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread;
-pub use superwire_core::testing::FakeMcpRequest;
-use superwire_core::testing::{FakeMcpClientFactory, WorkflowSource};
 use superwire_executor::model::CerseiModelProvider;
 use superwire_executor::runtime::{ExecutorError, WorkflowExecutor};
+pub use superwire_test_support::FakeMcpRequest;
+use superwire_test_support::{FakeMcpClientFactory, WorkflowSource};
 
 type MessageAssertion = Arc<dyn Fn(&[Value]) + Send + Sync>;
 
@@ -487,8 +487,8 @@ impl McpToolBuilder {
     fn build(self) -> McpToolScript {
         McpToolScript {
             description: self.description.unwrap_or_else(|| "Test MCP tool".to_string()),
-            input_schema: self.input_schema.unwrap_or_else(superwire_core::testing::empty_object_schema),
-            output_schema: self.output_schema.unwrap_or_else(superwire_core::testing::empty_object_schema),
+            input_schema: self.input_schema.unwrap_or_else(superwire_test_support::empty_object_schema),
+            output_schema: self.output_schema.unwrap_or_else(superwire_test_support::empty_object_schema),
             responses: self.responses,
         }
     }

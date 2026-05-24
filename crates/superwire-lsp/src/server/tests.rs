@@ -4,8 +4,8 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use superwire_core::mcp::{McpLock, McpLockResolutionContext, ProjectMcpLock};
-use superwire_core::testing::FakeMcpClientFactory;
 use superwire_dsl::workflow_source;
+use superwire_test_support::{FakeMcpClientFactory, FakeMcpServerBuilder};
 
 const PLAYGROUND_DOCUMENT_URI: &str = "file:///playground/document.wire";
 
@@ -318,7 +318,7 @@ fn fake_mcp_client_factory() -> FakeMcpClientFactory {
     FakeMcpClientFactory::new().with_server("local", standard_mcp_server)
 }
 
-fn standard_mcp_server(server_builder: &mut superwire_core::testing::FakeMcpServerBuilder) {
+fn standard_mcp_server(server_builder: &mut FakeMcpServerBuilder) {
     server_builder.tool("update-user-name", |tool_builder| {
         tool_builder
             .description("Update user name")

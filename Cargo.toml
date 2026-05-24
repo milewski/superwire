@@ -2,6 +2,7 @@
 members = [
     "crates/superwire-types",
     "crates/superwire-dsl",
+    "crates/superwire-test-support",
     "crates/superwire-core",
     "crates/superwire-lsp",
     "crates/superwire-cli",

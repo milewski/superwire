@@ -22,6 +22,9 @@ thiserror = { workspace = true }
 log = { workspace = true }
 colog = { workspace = true }
 
+[dev-dependencies]
+superwire-test-support = { path = "../superwire-test-support" }
+
 [[bench]]
 name = "completion_filtering"
 harness = false

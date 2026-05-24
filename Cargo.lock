@@ -2455,6 +2455,7 @@ dependencies = [
  "superwire-core",
  "superwire-dsl",
  "superwire-executor",
+ "superwire-test-support",
  "thiserror 2.0.18",
  "tokio",
 ]
@@ -2513,6 +2514,7 @@ dependencies = [
  "superwire-core",
  "superwire-dsl",
  "superwire-lsp",
+ "superwire-test-support",
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
@@ -2532,8 +2534,18 @@ dependencies = [
  "serde_json",
  "superwire-core",
  "superwire-dsl",
+ "superwire-test-support",
  "thiserror 2.0.18",
  "tokio",
+]
+
+[[package]]
+name = "superwire-test-support"
+version = "0.1.0"
+dependencies = [
+ "schemars",
+ "serde_json",
+ "superwire-core",
 ]
 
 [[package]]
