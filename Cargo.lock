@@ -2517,6 +2517,7 @@ dependencies = [
  "superwire-lsp",
  "superwire-macros",
  "superwire-mcp",
+ "superwire-model",
  "superwire-protocol",
  "superwire-semantic",
  "superwire-test-support",
@@ -2568,6 +2569,20 @@ dependencies = [
  "superwire-types",
  "thiserror 2.0.18",
  "ureq",
+]
+
+[[package]]
+name = "superwire-model"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde_json",
+ "superwire-mcp",
+ "superwire-protocol",
+ "superwire-semantic",
+ "superwire-types",
+ "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]

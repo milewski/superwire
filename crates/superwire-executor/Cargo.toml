@@ -25,6 +25,7 @@ superwire-core = { path = "../superwire-core" }
 superwire-dsl = { path = "../superwire-dsl" }
 superwire-lsp = { path = "../superwire-lsp" }
 superwire-mcp = { path = "../superwire-mcp" }
+superwire-model = { path = "../superwire-model" }
 superwire-protocol = { path = "../superwire-protocol" }
 superwire-semantic = { path = "../superwire-semantic" }
 thiserror = { workspace = true }

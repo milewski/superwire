@@ -1,9 +1,3 @@
-use crate::model::provider::ModelProvider;
-use crate::model::types::{
-    FinalizeCallKind, ModelAsset, ModelAssetSource, ModelPromptContent, ModelRequest, ModelResponse, ModelSchemaCache, ModelToolDefinition,
-    ModelToolSource,
-};
-use crate::runtime::ExecutorError;
 use async_trait::async_trait;
 use cersei_provider::{Anthropic, CompletionRequest, Gemini, OpenAi, Provider};
 use cersei_types::{
@@ -13,7 +7,12 @@ use jsonschema::ValidationError;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
+use superwire_dsl::ModelAssetKind;
 use superwire_mcp::{normalize_mcp_tool_result, render_mcp_prompt_text_result, render_mcp_resource_text_result, McpServerConfig};
+use superwire_model::{
+    FinalizeCallKind, ModelAsset, ModelAssetSource, ModelPromptContent, ModelProvider, ModelProviderError as ExecutorError, ModelRequest,
+    ModelResponse, ModelSchemaCache, ModelToolDefinition, ModelToolSource,
+};
 use superwire_protocol::event::{ExecutorEvent, McpCallEventDetails};
 use superwire_semantic::support::provider::{ProviderApiFormat, ProviderConfig, ProviderDriver};
 
@@ -133,7 +132,12 @@ impl CerseiRequestContext {
     }
 }
 
-impl ModelRequest {
+trait ModelRequestCerseiMessageExt {
+    fn cersei_user_message(&self) -> Message;
+    fn cersei_content_blocks(&self) -> Vec<ContentBlock>;
+}
+
+impl ModelRequestCerseiMessageExt for ModelRequest {
     fn cersei_user_message(&self) -> Message {
         if self.prompt_content.is_empty() {
             return Message::user(self.prompt.clone());
@@ -162,13 +166,20 @@ impl ModelRequest {
     }
 }
 
-impl ModelAsset {
+trait ModelAssetCerseiExt {
+    fn cersei_content_block(&self) -> ContentBlock;
+    fn cersei_image_source(&self) -> ImageSource;
+    fn cersei_document_source(&self) -> DocumentSource;
+    fn cersei_source_parts(&self) -> (String, Option<String>, Option<String>);
+}
+
+impl ModelAssetCerseiExt for ModelAsset {
     fn cersei_content_block(&self) -> ContentBlock {
         match self.kind {
-            superwire_dsl::ModelAssetKind::Image => ContentBlock::Image {
+            ModelAssetKind::Image => ContentBlock::Image {
                 source: self.cersei_image_source(),
             },
-            superwire_dsl::ModelAssetKind::Document | superwire_dsl::ModelAssetKind::Video => ContentBlock::Document {
+            ModelAssetKind::Document | ModelAssetKind::Video => ContentBlock::Document {
                 source: self.cersei_document_source(),
                 title: self.title.clone(),
                 context: self.context.clone(),
@@ -408,7 +419,15 @@ struct McpImportTarget<'source> {
     headers: &'source BTreeMap<String, String>,
 }
 
-impl ModelRequest {
+trait ModelRequestCerseiContextExt {
+    fn cersei_request_context(&self, schema_cache: &mut ModelSchemaCache) -> Result<CerseiRequestContext, ExecutorError>;
+    fn max_tokens(&self) -> u32;
+    fn temperature(&self) -> Option<f32>;
+    fn cersei_options(&self) -> HashMap<String, Value>;
+    fn call_limit_error(&self, tool_definition: &ModelToolDefinition) -> Option<Value>;
+}
+
+impl ModelRequestCerseiContextExt for ModelRequest {
     fn cersei_request_context(&self, schema_cache: &mut ModelSchemaCache) -> Result<CerseiRequestContext, ExecutorError> {
         let output_schema_text = self
             .output_schema
@@ -478,7 +497,41 @@ impl ModelRequest {
     }
 }
 
-impl ModelToolDefinition {
+trait ModelToolDefinitionCerseiExt {
+    fn to_cersei_tool_definition(&self, schema_cache: &mut ModelSchemaCache) -> ToolDefinition;
+    fn parse_finalize_arguments(&self, arguments: Value) -> Result<FinalizeResult, ExecutorError>;
+    fn argument_error(&self, message: String, schema_cache: &mut ModelSchemaCache) -> Value;
+    fn call_limit_error(&self, message: String) -> Value;
+    fn execute_external_tool(
+        &self,
+        request: &ModelRequest,
+        arguments: Value,
+        schema_cache: &mut ModelSchemaCache,
+    ) -> Result<ToolCallOutcome, ExecutorError>;
+    fn execute_mcp_tool(
+        &self,
+        request: &ModelRequest,
+        arguments: Value,
+        target: McpToolTarget<'_>,
+        schema_cache: &mut ModelSchemaCache,
+    ) -> Result<ToolCallOutcome, ExecutorError>;
+    fn execute_mcp_prompt(
+        &self,
+        request: &ModelRequest,
+        arguments: Value,
+        target: McpImportTarget<'_>,
+        schema_cache: &mut ModelSchemaCache,
+    ) -> Result<ToolCallOutcome, ExecutorError>;
+    fn execute_mcp_resource(
+        &self,
+        request: &ModelRequest,
+        arguments: Value,
+        target: McpImportTarget<'_>,
+        schema_cache: &mut ModelSchemaCache,
+    ) -> Result<ToolCallOutcome, ExecutorError>;
+}
+
+impl ModelToolDefinitionCerseiExt for ModelToolDefinition {
     fn to_cersei_tool_definition(&self, schema_cache: &mut ModelSchemaCache) -> ToolDefinition {
         ToolDefinition {
             name: self.name.clone(),

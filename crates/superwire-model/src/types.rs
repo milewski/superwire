@@ -1,11 +1,11 @@
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
-use superwire_dsl::ModelAssetKind;
 use superwire_mcp::McpClientPool;
 use superwire_protocol::event::ExecutorEvent;
 use superwire_semantic::support::provider::ProviderConfig;
 use superwire_semantic::support::types::{WorkflowSchemaCache, WorkflowType};
+use superwire_types::ModelAssetKind;
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
@@ -228,7 +228,7 @@ impl ModelSchema {
     }
 
     #[must_use]
-    pub(crate) fn cache_fingerprint_value(&self, schema_cache: &mut ModelSchemaCache) -> Value {
+    pub fn cache_fingerprint_value(&self, schema_cache: &mut ModelSchemaCache) -> Value {
         self.json_value_with_cache(schema_cache)
     }
 
@@ -476,7 +476,7 @@ impl ModelToolDefinition {
     }
 
     #[must_use]
-    pub(crate) fn cache_fingerprint_value(&self, schema_cache: &mut ModelSchemaCache) -> Value {
+    pub fn cache_fingerprint_value(&self, schema_cache: &mut ModelSchemaCache) -> Value {
         serde_json::json!({
             "name": self.name,
             "description": self.description,
@@ -531,7 +531,7 @@ impl ToolCallLimitScope {
     }
 
     #[must_use]
-    pub(crate) fn cache_fingerprint_value(&self) -> Value {
+    pub fn cache_fingerprint_value(&self) -> Value {
         match self {
             Self::Workflow => serde_json::json!({ "kind": "workflow" }),
             Self::Agent { agent_name } => {
@@ -598,7 +598,7 @@ pub enum ModelToolSource {
 
 impl ModelToolSource {
     #[must_use]
-    pub(crate) fn cache_fingerprint_value(&self) -> Value {
+    pub fn cache_fingerprint_value(&self) -> Value {
         match self {
             Self::Finalize => serde_json::json!({
                 "kind": "finalize",

@@ -1,11 +1,11 @@
-use crate::runtime::ExecutorError;
+use crate::error::ModelProviderError;
 use serde_json::Value;
 
-pub fn parse_model_json_output(agent_name: &str, content: &str) -> Result<Value, ExecutorError> {
+pub fn parse_model_json_output(agent_name: &str, content: &str) -> Result<Value, ModelProviderError> {
     let trimmed_content = content.trim();
 
     if trimmed_content.is_empty() {
-        return Err(ExecutorError::Model {
+        return Err(ModelProviderError::Model {
             agent_name: agent_name.to_string(),
             message: "model response did not include assistant content".to_string(),
         });
@@ -13,7 +13,7 @@ pub fn parse_model_json_output(agent_name: &str, content: &str) -> Result<Value,
 
     let json_candidate = strip_markdown_json_fence(trimmed_content);
 
-    serde_json::from_str(json_candidate).map_err(|error| ExecutorError::Model {
+    serde_json::from_str(json_candidate).map_err(|error| ModelProviderError::Model {
         agent_name: agent_name.to_string(),
         message: format!("model response was not valid JSON: {error}; response content: {content}"),
     })

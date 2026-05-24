@@ -7,6 +7,7 @@ members = [
     "crates/superwire-semantic",
     "crates/superwire-mcp",
     "crates/superwire-protocol",
+    "crates/superwire-model",
     "crates/superwire-core",
     "crates/superwire-lsp",
     "crates/superwire-cli",

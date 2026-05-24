@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::model::{ModelProvider, ModelRequest, ModelResponse};
+use crate::model::{ModelProvider, ModelProviderError, ModelRequest, ModelResponse};
 use crate::runtime::ExecutorError;
 use crate::service::ExecutorService;
 use async_trait::async_trait;
@@ -30,7 +30,7 @@ impl TestModelProvider {
 
 #[async_trait]
 impl ModelProvider for TestModelProvider {
-    async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ExecutorError> {
+    async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ModelProviderError> {
         let output = self
             .outputs
             .lock()
@@ -69,7 +69,7 @@ impl ScriptedModelProvider {
 
 #[async_trait]
 impl ModelProvider for ScriptedModelProvider {
-    async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ExecutorError> {
+    async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ModelProviderError> {
         let mut responses = self.responses.lock().expect("scripted provider lock should not be poisoned");
 
         let output = if let Some(queue) = responses.get_mut(&request.agent_name) {
@@ -126,7 +126,7 @@ impl TrackingModelProvider {
 
 #[async_trait]
 impl ModelProvider for TrackingModelProvider {
-    async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ExecutorError> {
+    async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ModelProviderError> {
         self.recorded_requests
             .lock()
             .expect("tracking lock should not be poisoned")
@@ -161,8 +161,8 @@ impl FailingModelProvider {
 
 #[async_trait]
 impl ModelProvider for FailingModelProvider {
-    async fn generate(&self, _request: ModelRequest) -> Result<ModelResponse, ExecutorError> {
-        Err(ExecutorError::Model {
+    async fn generate(&self, _request: ModelRequest) -> Result<ModelResponse, ModelProviderError> {
+        Err(ModelProviderError::Model {
             agent_name: "failing-provider".to_string(),
             message: self.message.clone(),
         })
@@ -196,7 +196,7 @@ impl ConcurrentTrackingModelProvider {
 
 #[async_trait]
 impl ModelProvider for ConcurrentTrackingModelProvider {
-    async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ExecutorError> {
+    async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ModelProviderError> {
         let active_request_guard = ActiveRequestGuard::new(self.active_requests.clone());
         let active_request_count = active_request_guard.active_request_count();
 

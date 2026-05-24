@@ -1,0 +1,17 @@
+[package]
+name = "superwire-model"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = "0.1"
+serde_json = { workspace = true }
+superwire-mcp = { path = "../superwire-mcp" }
+superwire-protocol = { path = "../superwire-protocol" }
+superwire-semantic = { path = "../superwire-semantic" }
+superwire-types = { path = "../superwire-types" }
+thiserror = { workspace = true }
+tokio = { workspace = true }

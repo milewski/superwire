@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::hint::black_box;
 use std::time::Instant;
 use superwire_dsl::{parse_workflow, validate_workflow, AgentExpressionPropertyName, Workflow};
-use superwire_executor::model::{ModelProvider, ModelRequest, ModelResponse};
-use superwire_executor::{ExecutorError, WorkflowExecutor};
+use superwire_executor::model::{ModelProvider, ModelProviderError, ModelRequest, ModelResponse};
+use superwire_executor::WorkflowExecutor;
 use superwire_semantic::support::expression::{evaluate_expression, EvaluationContext};
 use superwire_semantic::support::types::WorkflowSchemaCache;
 use superwire_semantic::{build_dynamic_typed_workflow_ir, build_execution_plan, ExecutionPlan};
@@ -352,12 +352,12 @@ impl FakeBenchmarkProvider {
 
 #[async_trait]
 impl ModelProvider for FakeBenchmarkProvider {
-    async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ExecutorError> {
+    async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ModelProviderError> {
         let output = self
             .model_outputs
             .get(&request.agent_name)
             .cloned()
-            .ok_or_else(|| ExecutorError::Model {
+            .ok_or_else(|| ModelProviderError::Model {
                 agent_name: request.agent_name.clone(),
                 message: "benchmark fake provider has no output for agent".to_string(),
             })?;
