@@ -3,13 +3,11 @@ use crate::event::{ExecutorEvent, McpCallEventDetails};
 use crate::model::{normalize_mcp_tool_result, ModelSchema, ModelToolDefinition, ModelToolSource, ToolCallLimitScope};
 use serde_json::{Map, Value};
 use std::time::Instant;
-use superwire_core::dsl::{
-    AgentExpressionPropertyName, Declaration, Expression, ObjectField, ReferenceKeyword, ToolCall, ToolSource, Workflow,
-};
 use superwire_core::mcp::McpServerConfig;
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
 use superwire_core::semantic::support::types::WorkflowType;
 use superwire_core::semantic::{PlannedAgent, TypedToolIr};
+use superwire_dsl::{AgentExpressionPropertyName, Declaration, Expression, ObjectField, ReferenceKeyword, ToolCall, ToolSource, Workflow};
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone, Copy)]
@@ -83,11 +81,11 @@ impl WorkflowExecutor {
         })))
     }
 
-    fn planned_mcp_import_call(&self, mcp_call: &superwire_core::dsl::McpCall) -> Option<Value> {
+    fn planned_mcp_import_call(&self, mcp_call: &superwire_dsl::McpCall) -> Option<Value> {
         let target_name = mcp_call.target_name()?;
 
         match mcp_call.operation {
-            superwire_core::dsl::McpCallOperation::Read => {
+            superwire_dsl::McpCallOperation::Read => {
                 let resource_import = self.lookups.resource_import(target_name)?;
 
                 Some(serde_json::json!({
@@ -97,7 +95,7 @@ impl WorkflowExecutor {
                     "item_name": resource_import.source.item_name,
                 }))
             }
-            superwire_core::dsl::McpCallOperation::Render => {
+            superwire_dsl::McpCallOperation::Render => {
                 let prompt_import = self.lookups.prompt_import(target_name)?;
 
                 Some(serde_json::json!({
@@ -564,7 +562,7 @@ impl WorkflowExecutor {
 
     fn model_tool_source(
         &self,
-        tool_declaration: &superwire_core::dsl::ToolDeclaration,
+        tool_declaration: &superwire_dsl::ToolDeclaration,
         evaluation_context: &EvaluationContext,
     ) -> Result<ModelToolSource, ExecutorError> {
         let Some(ToolSource::Mcp(mcp_tool_source)) = &tool_declaration.source else {
@@ -688,7 +686,7 @@ impl ExpressionMcpExecutionPlanCollectorExt for Expression {
             }
             Self::StringTemplate(string_template) => {
                 for string_template_part in &string_template.parts {
-                    if let superwire_core::dsl::StringTemplatePart::Interpolation(interpolation_expression) = string_template_part {
+                    if let superwire_dsl::StringTemplatePart::Interpolation(interpolation_expression) = string_template_part {
                         interpolation_expression.collect_planned_mcp_calls(executor, evaluation_context, planned_calls)?;
                     }
                 }
@@ -725,7 +723,7 @@ impl ExpressionMcpExecutionPlanCollectorExt for Expression {
                     .collect_planned_mcp_calls(executor, evaluation_context, planned_calls)?;
 
                 for match_branch in &match_expression.branches {
-                    if let superwire_core::dsl::MatchBranch::Fallback { value, .. } = match_branch {
+                    if let superwire_dsl::MatchBranch::Fallback { value, .. } = match_branch {
                         value.collect_planned_mcp_calls(executor, evaluation_context, planned_calls)?;
                     }
                 }

@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 superwire-core = { path = "../superwire-core" }
+superwire-dsl = { path = "../superwire-dsl" }
 lsp-server = "0.7"
 lsp-types = "0.97"
 serde = { workspace = true }

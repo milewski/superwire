@@ -1,4 +1,4 @@
-use superwire_core::dsl::parse_workflow;
+use superwire_dsl::parse_workflow;
 
 use lsp_types::{Position, Range};
 

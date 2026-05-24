@@ -166,10 +166,10 @@ impl ModelRequest {
 impl ModelAsset {
     fn cersei_content_block(&self) -> ContentBlock {
         match self.kind {
-            superwire_core::dsl::ModelAssetKind::Image => ContentBlock::Image {
+            superwire_dsl::ModelAssetKind::Image => ContentBlock::Image {
                 source: self.cersei_image_source(),
             },
-            superwire_core::dsl::ModelAssetKind::Document | superwire_core::dsl::ModelAssetKind::Video => ContentBlock::Document {
+            superwire_dsl::ModelAssetKind::Document | superwire_dsl::ModelAssetKind::Video => ContentBlock::Document {
                 source: self.cersei_document_source(),
                 title: self.title.clone(),
                 context: self.context.clone(),

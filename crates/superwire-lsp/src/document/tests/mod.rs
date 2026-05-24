@@ -2,13 +2,13 @@ use super::{CompletionSuggestion, DocumentDiagnostic, DocumentState, Position, T
 use crate::diagnostic_code::DiagnosticCode;
 use lsp_types::CompletionItemKind;
 use std::collections::BTreeMap;
-use superwire_core::dsl::{
+use superwire_core::mcp::{McpLock, McpPromptArgumentLock, McpServerLock, McpToolLock};
+use superwire_core::semantic::InferenceSetting;
+use superwire_dsl::testing::WorkflowSourceTemplate;
+use superwire_dsl::{
     AgentExpressionPropertyName, BuiltinFunctionName, DeclarationKeyword, ForClauseKeyword, McpCallOperation, ReferenceKeyword,
     SingletonDeclarationKind, ToolCallKeyword,
 };
-use superwire_core::mcp::{McpLock, McpPromptArgumentLock, McpServerLock, McpToolLock};
-use superwire_core::semantic::InferenceSetting;
-use superwire_core::testing::WorkflowSourceTemplate;
 
 macro_rules! inline_completion_suggestions {
     ($($workflow_tokens:tt)*) => {{

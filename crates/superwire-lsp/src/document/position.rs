@@ -1,4 +1,4 @@
-use superwire_core::dsl::{SourcePosition, SourceSpan};
+use superwire_dsl::{SourcePosition, SourceSpan};
 
 use lsp_types::{Position, Range};
 

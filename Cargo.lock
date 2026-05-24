@@ -2453,6 +2453,7 @@ dependencies = [
  "serde",
  "serde_json",
  "superwire-core",
+ "superwire-dsl",
  "superwire-executor",
  "thiserror 2.0.18",
  "tokio",
@@ -2486,12 +2487,7 @@ dependencies = [
 name = "superwire-dsl"
 version = "0.1.0"
 dependencies = [
- "ariadne",
- "pest",
- "pest_derive",
- "serde_json",
- "superwire-types",
- "thiserror 2.0.18",
+ "superwire-core",
 ]
 
 [[package]]
@@ -2515,6 +2511,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "superwire-core",
+ "superwire-dsl",
  "superwire-lsp",
  "thiserror 2.0.18",
  "tokio",
@@ -2534,6 +2531,7 @@ dependencies = [
  "serde",
  "serde_json",
  "superwire-core",
+ "superwire-dsl",
  "thiserror 2.0.18",
  "tokio",
 ]

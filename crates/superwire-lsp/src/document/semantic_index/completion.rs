@@ -1,9 +1,9 @@
 use lsp_types::{CompletionItemKind, Position};
-use superwire_core::dsl::{
+use superwire_core::semantic::ProviderDriver;
+use superwire_dsl::{
     BuiltinFunctionName, DeclarationKeyword, ImportKeyword, McpCallOperation, ReferenceKeyword, SingletonDeclarationKind, ToolCallKeyword,
     ToolPropertyName,
 };
-use superwire_core::semantic::ProviderDriver;
 
 use super::super::completion_context::{ModelCallCompletionContext, ValueCompletionContext};
 use super::super::hover::builtin_symbol_suggestions;

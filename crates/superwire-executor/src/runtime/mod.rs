@@ -28,12 +28,12 @@ use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
-use superwire_core::dsl::{
-    AgentProperty, Declaration, Expression, McpPromptImportDeclaration, McpResourceImportDeclaration, McpServerDeclaration, Workflow,
-};
 use superwire_core::mcp::McpClientPool;
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
 use superwire_core::semantic::{ExecutionPlan, WorkflowExecutionGraph};
+use superwire_dsl::{
+    AgentProperty, Declaration, Expression, McpPromptImportDeclaration, McpResourceImportDeclaration, McpServerDeclaration, Workflow,
+};
 use tokio::sync::{mpsc, Semaphore};
 
 #[derive(Debug, Clone)]
@@ -299,8 +299,8 @@ impl WorkflowExecutor {
 
                 for string_template_part in &string_template.parts {
                     match string_template_part {
-                        superwire_core::dsl::StringTemplatePart::Text(template_text) => rendered_template.push_str(template_text),
-                        superwire_core::dsl::StringTemplatePart::Interpolation(interpolation_expression) => {
+                        superwire_dsl::StringTemplatePart::Text(template_text) => rendered_template.push_str(template_text),
+                        superwire_dsl::StringTemplatePart::Interpolation(interpolation_expression) => {
                             let interpolation_value =
                                 self.evaluate_runtime_expression(interpolation_expression, tool_call_execution_context, context)?;
                             rendered_template.push_str(&normalize_prompt(&interpolation_value));

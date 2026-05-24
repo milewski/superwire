@@ -1,8 +1,8 @@
 use lsp_types::Position;
-use superwire_core::dsl::{
+use superwire_core::semantic::InferenceSetting;
+use superwire_dsl::{
     AgentExpressionPropertyName, DeclarationKeyword, ForClauseKeyword, McpCallOperation, ReferenceKeyword, ToolCallKeyword,
 };
-use superwire_core::semantic::InferenceSetting;
 
 use super::super::completion_context::{
     AgentPropertyValueCompletionContext, ForLoopIterableValueCompletionContext, InferenceSettingValueCompletionContext,

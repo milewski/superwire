@@ -1,4 +1,4 @@
-use superwire_core::dsl::{ToolPropertyName, TypedField};
+use superwire_dsl::{ToolPropertyName, TypedField};
 
 use lsp_types::{Position, Range};
 

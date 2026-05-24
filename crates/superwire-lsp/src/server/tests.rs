@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use superwire_core::mcp::{McpLock, McpLockResolutionContext, ProjectMcpLock};
 use superwire_core::testing::FakeMcpClientFactory;
-use superwire_core::workflow_source;
+use superwire_dsl::workflow_source;
 
 const PLAYGROUND_DOCUMENT_URI: &str = "file:///playground/document.wire";
 
@@ -48,7 +48,7 @@ fn reads_mcp_lock_from_project_lock_without_refreshing() {
         agent_contexts: BTreeMap::new(),
     };
     let discovered_lock = McpLock::discover_from_workflow_with_lock_context_and_client_factory(
-        &superwire_core::dsl::parse_workflow(workflow_source).expect("workflow should parse"),
+        &superwire_dsl::parse_workflow(workflow_source).expect("workflow should parse"),
         Some(&lock_context),
         &mcp_client_factory,
     )

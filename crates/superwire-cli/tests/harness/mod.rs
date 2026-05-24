@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
-use superwire_core::testing::WorkflowSourceTemplate;
+use superwire_dsl::testing::WorkflowSourceTemplate;
 
 pub struct CliCommand {
     arguments: Vec<String>,

@@ -1,6 +1,6 @@
 use lsp_types::{CompletionItemKind, Position};
-use superwire_core::dsl::{DeclarationKeyword, ImportKeyword, ToolPropertyName};
 use superwire_core::mcp::McpServerLock;
+use superwire_dsl::{DeclarationKeyword, ImportKeyword, ToolPropertyName};
 
 use super::super::position::{byte_offset_for_position, source_span_contains_position};
 use super::super::semantic_index::SemanticIndex;
@@ -75,7 +75,7 @@ impl DocumentState {
     }
 
     fn mcp_tool_schema_field_suggestion(
-        typed_field: &superwire_core::dsl::TypedField,
+        typed_field: &superwire_dsl::TypedField,
         tool_property_name: ToolPropertyName,
     ) -> CompletionSuggestion {
         let rendered_type = typed_field.field_type.render_type();
@@ -161,12 +161,12 @@ impl DocumentState {
 
         workflow.declarations().iter().find_map(|declaration| {
             let (server_name, span, tool_names) = match declaration {
-                superwire_core::dsl::Declaration::McpToolBatch(mcp_tool_batch) => (
+                superwire_dsl::Declaration::McpToolBatch(mcp_tool_batch) => (
                     mcp_tool_batch.server_name.clone(),
                     mcp_tool_batch.span,
                     mcp_tool_batch.items.iter().map(|item| item.source_name.clone()).collect(),
                 ),
-                superwire_core::dsl::Declaration::McpBatch(mcp_batch) => (
+                superwire_dsl::Declaration::McpBatch(mcp_batch) => (
                     mcp_batch.server_name.clone(),
                     mcp_batch.span,
                     mcp_batch.tool_items.iter().map(|item| item.source_name.clone()).collect(),

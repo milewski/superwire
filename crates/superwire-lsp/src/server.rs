@@ -20,10 +20,10 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
-use superwire_core::dsl::{parse_workflow, Workflow};
 use superwire_core::mcp::{
     HttpMcpClientFactory, McpClientFactory, McpLock, McpLockResolutionContext, McpServerConfig, McpServerLock, ProjectMcpLock,
 };
+use superwire_dsl::{parse_workflow, Workflow};
 use thiserror::Error;
 
 use crate::document::{
@@ -593,7 +593,7 @@ impl LanguageServer {
             .declarations()
             .iter()
             .filter_map(|declaration| match declaration {
-                superwire_core::dsl::Declaration::McpServer(mcp_server_declaration) => Some(mcp_server_declaration.name.as_str()),
+                superwire_dsl::Declaration::McpServer(mcp_server_declaration) => Some(mcp_server_declaration.name.as_str()),
                 _ => None,
             })
             .filter(|server_name| !mcp_lock.servers.contains_key(*server_name))
@@ -654,7 +654,7 @@ impl McpDiscoveryCache {
         let mut mcp_lock = McpLock::empty();
 
         for declaration in workflow.declarations() {
-            let superwire_core::dsl::Declaration::McpServer(mcp_server_declaration) = declaration else {
+            let superwire_dsl::Declaration::McpServer(mcp_server_declaration) = declaration else {
                 continue;
             };
 

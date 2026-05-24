@@ -24,9 +24,9 @@ pub use types::{
 };
 
 use lsp_types::{CompletionItemKind, DiagnosticSeverity, Position};
-use superwire_core::dsl::{Declaration, Expression, ToolPropertyName, TypeExpression, TypedField};
 use superwire_core::mcp::{McpLock, McpToolLock};
 use superwire_core::semantic::ProviderDriver;
+use superwire_dsl::{Declaration, Expression, ToolPropertyName, TypeExpression, TypedField};
 
 use crate::diagnostic_code::DiagnosticCode;
 
@@ -94,7 +94,7 @@ impl DocumentState {
         for declaration in workflow.declarations() {
             match declaration {
                 Declaration::Tool(tool_declaration) => {
-                    if let Some(superwire_core::dsl::ToolSource::Mcp(mcp_tool_source)) = &tool_declaration.source {
+                    if let Some(superwire_dsl::ToolSource::Mcp(mcp_tool_source)) = &tool_declaration.source {
                         if let Some(mcp_tool_lock) =
                             Self::mcp_tool_lock(mcp_lock, mcp_tool_source.server_name.as_deref(), &mcp_tool_source.tool_name)
                         {
@@ -279,7 +279,7 @@ impl DocumentState {
         &self,
         tool_name: &str,
         mcp_tool_lock: &McpToolLock,
-        binding_fields: &[superwire_core::dsl::ObjectField],
+        binding_fields: &[superwire_dsl::ObjectField],
     ) -> Vec<DocumentDiagnostic> {
         let expected_fields = Self::mcp_schema_fields(mcp_tool_lock, ToolPropertyName::Input);
 
@@ -299,7 +299,7 @@ impl DocumentState {
     fn batch_binding_override_diagnostics(
         &self,
         tool_locks: &[(&str, &McpToolLock)],
-        binding_fields: &[superwire_core::dsl::ObjectField],
+        binding_fields: &[superwire_dsl::ObjectField],
     ) -> Vec<DocumentDiagnostic> {
         let mut diagnostics = Vec::new();
 
@@ -430,7 +430,7 @@ impl DocumentState {
         }
     }
 
-    fn mcp_schema_diagnostic(&self, span: superwire_core::dsl::SourceSpan, message: String) -> DocumentDiagnostic {
+    fn mcp_schema_diagnostic(&self, span: superwire_dsl::SourceSpan, message: String) -> DocumentDiagnostic {
         DocumentDiagnostic {
             range: position::source_span_to_range(&self.text, span),
             severity: DiagnosticSeverity::ERROR,

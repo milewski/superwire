@@ -2,8 +2,8 @@ use super::support::{request, request_with_input, TrackingModelProvider};
 use crate::model::{ModelAssetSource, ModelPromptContent};
 use crate::service::ExecutorService;
 use serde_json::json;
-use superwire_core::dsl::ModelAssetKind;
-use superwire_core::workflow_source;
+use superwire_dsl::workflow_source;
+use superwire_dsl::ModelAssetKind;
 
 #[tokio::test]
 async fn renders_image_asset_from_instruction_template_into_model_request() {

@@ -1,4 +1,4 @@
-use superwire_core::dsl::{DeclarationKeyword, ForClauseKeyword};
+use superwire_dsl::{DeclarationKeyword, ForClauseKeyword};
 
 pub fn trailing_identifier(line_prefix: &str) -> Option<&str> {
     let mut start_index = line_prefix.len();

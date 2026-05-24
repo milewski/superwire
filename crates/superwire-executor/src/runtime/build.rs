@@ -4,10 +4,10 @@ use crate::runtime::tools::StartupMcpToolValidationContext;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Instant;
-use superwire_core::dsl::{parse_workflow, validate_workflow, Declaration, Workflow};
 use superwire_core::mcp::{HttpMcpClientFactory, McpClientFactory, McpClientPool, McpLock, McpServerConfig};
 use superwire_core::semantic::support::expression::EvaluationContext;
 use superwire_core::semantic::{build_dynamic_typed_workflow_ir, build_execution_plan, ExecutionPlan, WorkflowSemanticError};
+use superwire_dsl::{parse_workflow, validate_workflow, Declaration, Workflow};
 use tokio::sync::mpsc;
 
 struct RuntimeBuildContext<'a> {

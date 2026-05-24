@@ -4,10 +4,10 @@ use std::path::{Path, PathBuf};
 
 use clap::Args;
 use serde_json::{Map, Value};
-use superwire_core::dsl::{parse_workflow, Declaration, Workflow};
 use superwire_core::mcp::{
     McpClientFactory, McpLock, McpLockResolutionContext, McpServerConfig, ProjectMcpLock, PROJECT_MCP_LOCK_FILE_NAME,
 };
+use superwire_dsl::{parse_workflow, Declaration, Workflow};
 
 use super::json::WorkflowPayloadSources;
 use super::paths::WorkflowPathTargets;

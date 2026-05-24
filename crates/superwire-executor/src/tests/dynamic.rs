@@ -7,7 +7,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use superwire_core::workflow_source;
+use superwire_dsl::workflow_source;
 
 #[tokio::test]
 async fn dynamic_values_are_computed_and_used() {

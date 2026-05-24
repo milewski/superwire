@@ -8,7 +8,7 @@ use crate::runtime::cache::AgentCacheOptions;
 use crate::runtime::state::RuntimeState;
 use futures::future::try_join_all;
 use serde_json::Value;
-use superwire_core::dsl::Declaration;
+use superwire_dsl::Declaration;
 use tokio::sync::mpsc;
 
 impl WorkflowExecutor {

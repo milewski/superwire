@@ -2,10 +2,10 @@ use crate::event::ExecutorEvent;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
-use superwire_core::dsl::ModelAssetKind;
 use superwire_core::mcp::McpClientPool;
 use superwire_core::semantic::support::provider::ProviderConfig;
 use superwire_core::semantic::support::types::{WorkflowSchemaCache, WorkflowType};
+use superwire_dsl::ModelAssetKind;
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]

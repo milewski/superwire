@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use lsp_types::Position;
-use superwire_core::dsl::{SourceSpan, TypeExpression};
+use superwire_dsl::{SourceSpan, TypeExpression};
 
 use super::super::position::source_span_contains_position;
 use super::super::scope::CompletionScope;

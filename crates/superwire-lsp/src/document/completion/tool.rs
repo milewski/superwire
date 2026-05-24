@@ -1,5 +1,5 @@
 use lsp_types::{CompletionItemKind, Position};
-use superwire_core::dsl::{ReferenceKeyword, ToolCallKeyword, ToolPropertyName, TypeExpression, TypedField};
+use superwire_dsl::{ReferenceKeyword, ToolCallKeyword, ToolPropertyName, TypeExpression, TypedField};
 
 use super::super::position::byte_offset_for_position;
 use super::super::scope::tool_property_scope_suggestions;

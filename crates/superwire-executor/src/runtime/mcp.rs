@@ -3,9 +3,9 @@ use crate::event::{ExecutorEvent, McpCallEventDetails};
 use crate::model::ToolCallTracker;
 use serde_json::Value;
 use std::time::Instant;
-use superwire_core::dsl::{McpCall, McpCallOperation, McpImportBindingEvaluationKind, McpImportBindings, ObjectField};
 use superwire_core::mcp::McpServerConfig;
 use superwire_core::semantic::support::expression::EvaluationContext;
+use superwire_dsl::{McpCall, McpCallOperation, McpImportBindingEvaluationKind, McpImportBindings, ObjectField};
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone, Copy)]

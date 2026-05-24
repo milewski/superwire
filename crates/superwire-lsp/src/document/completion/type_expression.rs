@@ -1,5 +1,5 @@
 use lsp_types::Position;
-use superwire_core::dsl::ToolPropertyName;
+use superwire_dsl::ToolPropertyName;
 
 use super::super::completion_context::{ArrayFixedLengthCompletionContext, ValueCompletionContext};
 use super::super::scope::CompletionScope;

@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::time::Instant;
-use superwire_core::dsl::format_workflow_source;
+use superwire_dsl::format_workflow_source;
 use tokio::sync::mpsc;
 use tokio::task::AbortHandle;
 

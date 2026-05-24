@@ -1,5 +1,5 @@
-use superwire_core::dsl::{AgentExpressionPropertyName, DeclarationKeyword, ImportKeyword, ReferenceKeyword, ToolPropertyName};
 use superwire_core::WorkflowDocument;
+use superwire_dsl::{AgentExpressionPropertyName, DeclarationKeyword, ImportKeyword, ReferenceKeyword, ToolPropertyName};
 
 use lsp_types::{Position, Range};
 

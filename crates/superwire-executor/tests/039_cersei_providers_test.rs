@@ -1,7 +1,7 @@
 #[macro_use]
 mod support;
 
-use superwire_core::dsl::{parse_workflow, validate_workflow};
+use superwire_dsl::{parse_workflow, validate_workflow};
 use support::fixtures;
 
 #[test]

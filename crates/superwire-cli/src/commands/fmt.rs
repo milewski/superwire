@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use clap::Args;
-use superwire_core::dsl::{format_workflow_source, DslFormatError};
+use superwire_dsl::{format_workflow_source, DslFormatError};
 
 use crate::diagnostics::CommandError;
 

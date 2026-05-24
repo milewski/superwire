@@ -7,9 +7,4 @@ edition = "2021"
 workspace = true
 
 [dependencies]
-ariadne = "0.6.0"
-pest = { workspace = true }
-pest_derive = { workspace = true }
-serde_json = { workspace = true }
-superwire-types = { path = "../superwire-types" }
-thiserror = { workspace = true }
+superwire-core = { path = "../superwire-core" }

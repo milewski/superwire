@@ -1,5 +1,5 @@
-use superwire_core::dsl::{DeclarationKeyword, ReferenceKeyword, SingletonDeclarationKind};
 use superwire_core::semantic::ProviderDriver;
+use superwire_dsl::{DeclarationKeyword, ReferenceKeyword, SingletonDeclarationKind};
 
 use lsp_types::{CompletionItemKind, Position};
 

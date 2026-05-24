@@ -1,13 +1,13 @@
 use std::collections::{BTreeMap, HashMap};
 
-use superwire_core::dsl::{
+use superwire_core::mcp::McpLock;
+use superwire_core::semantic::{ProviderDriver, SemanticToolingSnapshot, ToolingSymbolCategory, WorkflowSemanticIndex};
+use superwire_core::WorkflowDocument;
+use superwire_dsl::{
     AgentForLoopPattern, AgentProperty, Declaration, DeclarationKeyword, Expression, ModelDeclaration, ModelDeclarationPropertyName,
     ModelUsagePropertyName, ObjectField, ProviderDeclaration, ReferenceKeyword, SingletonDeclarationKind, SourceSpan, ToolSource,
     TypeExpression, TypedField, Workflow,
 };
-use superwire_core::mcp::McpLock;
-use superwire_core::semantic::{ProviderDriver, SemanticToolingSnapshot, ToolingSymbolCategory, WorkflowSemanticIndex};
-use superwire_core::WorkflowDocument;
 
 use super::types::{AgentSummary, FieldMetadata, ModelSummary, NamedSpan, ProviderSummary, SchemaSummary, SemanticIndex, ToolSummary};
 
@@ -175,7 +175,7 @@ impl SemanticIndex {
         }
     }
 
-    fn insert_schema_declaration(&mut self, schema_declaration: &superwire_core::dsl::SchemaDeclaration) {
+    fn insert_schema_declaration(&mut self, schema_declaration: &superwire_dsl::SchemaDeclaration) {
         self.insert_schema_field_locations(schema_declaration.name.as_str(), &schema_declaration.fields);
 
         let schema_fields = TypedField::type_map(&schema_declaration.fields);
@@ -199,7 +199,7 @@ impl SemanticIndex {
         self.typed_declaration_locations.push(schema_declaration.span);
     }
 
-    fn insert_input_declaration(&mut self, input_declaration: &superwire_core::dsl::InputDeclaration) {
+    fn insert_input_declaration(&mut self, input_declaration: &superwire_dsl::InputDeclaration) {
         self.has_input_declaration = true;
 
         if self.input_fields.is_empty() {
@@ -211,7 +211,7 @@ impl SemanticIndex {
         self.typed_declaration_locations.push(input_declaration.span);
     }
 
-    fn insert_secrets_declaration(&mut self, secrets_declaration: &superwire_core::dsl::SecretsDeclaration) {
+    fn insert_secrets_declaration(&mut self, secrets_declaration: &superwire_dsl::SecretsDeclaration) {
         self.has_secrets_declaration = true;
 
         if self.secrets_fields.is_empty() {
@@ -223,7 +223,7 @@ impl SemanticIndex {
         self.typed_declaration_locations.push(secrets_declaration.span);
     }
 
-    fn insert_tool_declaration(&mut self, tool_declaration: &superwire_core::dsl::ToolDeclaration) {
+    fn insert_tool_declaration(&mut self, tool_declaration: &superwire_dsl::ToolDeclaration) {
         let (mcp_server_name, mcp_tool_name) = match &tool_declaration.source {
             Some(ToolSource::Mcp(mcp_source)) => (mcp_source.server_name.clone(), Some(mcp_source.tool_name.clone())),
             None => (None, None),
@@ -256,7 +256,7 @@ impl SemanticIndex {
         self.typed_declaration_locations.push(tool_declaration.span);
     }
 
-    fn insert_resource_import_declaration(&mut self, resource_import_declaration: &superwire_core::dsl::McpResourceImportDeclaration) {
+    fn insert_resource_import_declaration(&mut self, resource_import_declaration: &superwire_dsl::McpResourceImportDeclaration) {
         self.resource_names.push(resource_import_declaration.name.clone());
         NamedSpan::push_indexed(
             &mut self.resource_locations,
@@ -266,7 +266,7 @@ impl SemanticIndex {
         );
     }
 
-    fn insert_prompt_import_declaration(&mut self, prompt_import_declaration: &superwire_core::dsl::McpPromptImportDeclaration) {
+    fn insert_prompt_import_declaration(&mut self, prompt_import_declaration: &superwire_dsl::McpPromptImportDeclaration) {
         self.prompt_names.push(prompt_import_declaration.name.clone());
         NamedSpan::push_indexed(
             &mut self.prompt_locations,
@@ -276,7 +276,7 @@ impl SemanticIndex {
         );
     }
 
-    fn insert_agent_declaration(&mut self, agent_declaration: &superwire_core::dsl::AgentDeclaration) {
+    fn insert_agent_declaration(&mut self, agent_declaration: &superwire_dsl::AgentDeclaration) {
         let mut agent_dynamic_fields = self.dynamic_fields.clone();
         let mut agent_dynamic_field_metadata = self.dynamic_field_metadata.clone();
         let mut agent_dynamic_field_locations = self.dynamic_field_locations.clone();
@@ -633,7 +633,7 @@ impl SemanticIndex {
         );
     }
 
-    fn insert_workflow_dynamic_block(&mut self, dynamic_block: &superwire_core::dsl::DynamicBlock) {
+    fn insert_workflow_dynamic_block(&mut self, dynamic_block: &superwire_dsl::DynamicBlock) {
         let mut dynamic_fields = self.dynamic_fields.clone();
         let mut dynamic_field_metadata = self.dynamic_field_metadata.clone();
         let mut dynamic_field_locations = self.dynamic_field_locations.clone();
@@ -652,7 +652,7 @@ impl SemanticIndex {
 
     fn insert_dynamic_block_fields(
         &self,
-        dynamic_block: &superwire_core::dsl::DynamicBlock,
+        dynamic_block: &superwire_dsl::DynamicBlock,
         dynamic_fields: &mut BTreeMap<String, TypeExpression>,
         dynamic_field_metadata: &mut BTreeMap<String, FieldMetadata>,
         dynamic_field_locations: &mut HashMap<String, SourceSpan>,
@@ -761,7 +761,7 @@ impl SemanticIndex {
 
     fn for_loop_binding_types(
         &self,
-        agent_for_loop: &superwire_core::dsl::AgentForLoop,
+        agent_for_loop: &superwire_dsl::AgentForLoop,
         iterable_item_type: TypeExpression,
     ) -> BTreeMap<String, Vec<TypeExpression>> {
         let mut binding_types = BTreeMap::new();
@@ -886,7 +886,7 @@ impl SemanticIndex {
 
     fn reference_expression_type(
         &self,
-        reference: &superwire_core::dsl::Reference,
+        reference: &superwire_dsl::Reference,
         dynamic_fields: &BTreeMap<String, TypeExpression>,
     ) -> Option<TypeExpression> {
         let reference_keyword = reference.root_keyword()?;

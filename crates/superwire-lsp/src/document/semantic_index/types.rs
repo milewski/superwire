@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 
-use superwire_core::dsl::{SourceSpan, TypeExpression};
 use superwire_core::mcp::{McpLock, McpServerToolLookup};
 use superwire_core::semantic::{ProviderDriver, SemanticToolingSnapshot, WorkflowSemanticIndex};
+use superwire_dsl::{SourceSpan, TypeExpression};
 
 #[derive(Debug, Clone)]
 pub struct SemanticIndex {

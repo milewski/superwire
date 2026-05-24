@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::io::{self, IsTerminal, Write};
 
 use serde_json::{Map, Value};
-use superwire_core::dsl::{TypeExpression, TypedField, Workflow};
 use superwire_core::mcp::McpLockResolutionContext;
+use superwire_dsl::{TypeExpression, TypedField, Workflow};
 
 use crate::diagnostics::CommandError;
 

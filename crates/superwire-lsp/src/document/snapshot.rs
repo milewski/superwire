@@ -2,10 +2,10 @@ use lsp_types::DiagnosticSeverity;
 use superwire_core::diagnostic::{
     Diagnostic as CoreDiagnostic, DiagnosticCode as CoreDiagnosticCode, DiagnosticSeverity as CoreDiagnosticSeverity,
 };
-use superwire_core::dsl::DslParseError;
 use superwire_core::mcp::McpLock;
 use superwire_core::semantic::build_dynamic_typed_workflow_ir;
 use superwire_core::WorkflowDocument;
+use superwire_dsl::DslParseError;
 
 use crate::diagnostic_code::DiagnosticCode;
 
@@ -29,7 +29,7 @@ impl SemanticSnapshot {
                 let semantic_index = SemanticIndex::from_workflow_document(&workflow_document);
                 let mut diagnostics = workflow_document
                     .validation_report()
-                    .map(superwire_core::dsl::ValidationReport::diagnostics)
+                    .map(superwire_dsl::ValidationReport::diagnostics)
                     .unwrap_or_default();
 
                 if diagnostics.is_empty() && workflow.find_output().is_some() {

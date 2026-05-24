@@ -12,7 +12,7 @@ use superwire_core::testing::{FakeMcpClientFactory, FakeMcpServerBuilder};
 fn writes_single_project_lock_for_multiple_workflows() {
     let fake_mcp_client_factory = fake_mcp_client_factory();
     let temporary_workspace = TemporaryWorkspace::new("superwire-workflow-lock-tests");
-    let first_workflow_source = superwire_core::workflow_source_template! {
+    let first_workflow_source = superwire_dsl::workflow_source_template! {
         secrets {
             mcp_endpoint: string
         }
@@ -24,7 +24,7 @@ fn writes_single_project_lock_for_multiple_workflows() {
         tool update_user_name from mcp.local.tool.update_user_name
     };
 
-    let second_workflow_source = superwire_core::workflow_source_template! {
+    let second_workflow_source = superwire_dsl::workflow_source_template! {
         secrets {
             mcp_endpoint: string
         }
@@ -107,7 +107,7 @@ fn writes_single_project_lock_for_multiple_workflows() {
 fn subprocess_writes_single_project_lock_for_multiple_workflows() {
     let test_mcp_server = TestMcpHttpServer::spawn_with_mode(TestMcpServerMode::Standard);
     let temporary_workspace = TemporaryWorkspace::new("superwire-workflow-lock-tests");
-    let first_workflow_source = superwire_core::workflow_source_template! {
+    let first_workflow_source = superwire_dsl::workflow_source_template! {
         secrets {
             mcp_endpoint: string
         }
@@ -119,7 +119,7 @@ fn subprocess_writes_single_project_lock_for_multiple_workflows() {
         tool update_user_name from mcp.local.tool.update_user_name
     };
 
-    let second_workflow_source = superwire_core::workflow_source_template! {
+    let second_workflow_source = superwire_dsl::workflow_source_template! {
         secrets {
             mcp_endpoint: string
         }
@@ -192,13 +192,13 @@ fn subprocess_writes_single_project_lock_for_multiple_workflows() {
 #[test]
 fn recursively_locks_workflows_from_directory_target() {
     let temporary_workspace = TemporaryWorkspace::new("superwire-workflow-lock-tests");
-    let first_workflow_source = superwire_core::workflow_source_template! {
+    let first_workflow_source = superwire_dsl::workflow_source_template! {
         output {
             value: "first"
         }
     };
 
-    let second_workflow_source = superwire_core::workflow_source_template! {
+    let second_workflow_source = superwire_dsl::workflow_source_template! {
         output {
             value: "second"
         }
@@ -244,7 +244,7 @@ fn help_includes_project_lock_example() {
 #[test]
 fn writes_relative_workflow_keys_when_using_default_output_path() {
     let temporary_workspace = TemporaryWorkspace::new("superwire-workflow-lock-tests");
-    let workflow_source = superwire_core::workflow_source_template! {
+    let workflow_source = superwire_dsl::workflow_source_template! {
         output {
             value: "ok"
         }
@@ -268,7 +268,7 @@ fn writes_relative_workflow_keys_when_using_default_output_path() {
 fn reads_default_vars_file_next_to_custom_output_path() {
     let fake_mcp_client_factory = fake_mcp_client_factory();
     let temporary_workspace = TemporaryWorkspace::new("superwire-workflow-lock-tests");
-    let workflow_source = superwire_core::workflow_source_template! {
+    let workflow_source = superwire_dsl::workflow_source_template! {
         secrets {
             mcp_endpoint: string
         }
@@ -309,7 +309,7 @@ fn reads_default_vars_file_next_to_custom_output_path() {
 fn applies_vars_file_overrides_per_workflow_path() {
     let fake_mcp_client_factory = fake_mcp_client_factory();
     let temporary_workspace = TemporaryWorkspace::new("superwire-workflow-lock-tests");
-    let workflow_source = superwire_core::workflow_source_template! {
+    let workflow_source = superwire_dsl::workflow_source_template! {
         input {
             project_id: number
             task_id: number
@@ -409,12 +409,12 @@ fn applies_vars_file_overrides_per_workflow_path() {
 #[test]
 fn appends_new_workflows_when_lock_file_already_exists() {
     let temporary_workspace = TemporaryWorkspace::new("superwire-workflow-lock-tests");
-    let first_workflow_source = superwire_core::workflow_source_template! {
+    let first_workflow_source = superwire_dsl::workflow_source_template! {
         output {
             value: "first"
         }
     };
-    let second_workflow_source = superwire_core::workflow_source_template! {
+    let second_workflow_source = superwire_dsl::workflow_source_template! {
         output {
             value: "second"
         }
@@ -445,7 +445,7 @@ fn appends_new_workflows_when_lock_file_already_exists() {
 #[test]
 fn fails_when_mcp_server_requires_runtime_values_without_vars_context() {
     let temporary_workspace = TemporaryWorkspace::new("superwire-workflow-lock-tests");
-    let workflow_source = superwire_core::workflow_source_template! {
+    let workflow_source = superwire_dsl::workflow_source_template! {
         secrets {
             mcp_endpoint: string
         }
@@ -473,7 +473,7 @@ fn fails_when_mcp_server_requires_runtime_values_without_vars_context() {
 #[test]
 fn fails_with_actionable_error_for_missing_prompted_values_in_non_interactive_mode() {
     let temporary_workspace = TemporaryWorkspace::new("superwire-workflow-lock-tests");
-    let workflow_source = superwire_core::workflow_source_template! {
+    let workflow_source = superwire_dsl::workflow_source_template! {
         input {
             project_id: number
         }
@@ -498,7 +498,7 @@ fn fails_with_actionable_error_for_missing_prompted_values_in_non_interactive_mo
 #[test]
 fn reports_missing_nested_object_leaf_values_in_non_interactive_mode() {
     let temporary_workspace = TemporaryWorkspace::new("superwire-workflow-lock-tests");
-    let workflow_source = superwire_core::workflow_source_template! {
+    let workflow_source = superwire_dsl::workflow_source_template! {
         secrets {
             models: {
                 flash: string
@@ -534,7 +534,7 @@ fn reports_missing_nested_object_leaf_values_in_non_interactive_mode() {
 #[test]
 fn generates_vars_file_from_workflow_directory() {
     let temporary_workspace = TemporaryWorkspace::new("superwire-workflow-lock-tests");
-    let workflow_source = superwire_core::workflow_source_template! {
+    let workflow_source = superwire_dsl::workflow_source_template! {
         input {
             project_id: number
             task_group_id: number
@@ -575,7 +575,7 @@ fn generates_vars_file_from_workflow_directory() {
 #[test]
 fn writes_partial_vars_file_even_when_some_workflows_fail_to_parse() {
     let temporary_workspace = TemporaryWorkspace::new("superwire-workflow-lock-tests");
-    let valid_workflow_source = superwire_core::workflow_source_template! {
+    let valid_workflow_source = superwire_dsl::workflow_source_template! {
         input {
             project_id: number
         }
@@ -584,7 +584,7 @@ fn writes_partial_vars_file_even_when_some_workflows_fail_to_parse() {
             value: "ok"
         }
     };
-    let invalid_workflow_source = superwire_core::workflow_source_template! {
+    let invalid_workflow_source = superwire_dsl::workflow_source_template! {
         input {
             project_id:
         }
@@ -752,7 +752,7 @@ fn response_for_method(method: Option<&str>) -> Option<Value> {
 fn continues_lock_discovery_when_mcp_server_rejects_initialize_endpoints() {
     let test_mcp_server = TestMcpHttpServer::spawn_with_mode(TestMcpServerMode::RejectInitialize);
     let temporary_workspace = TemporaryWorkspace::new("superwire-workflow-lock-tests");
-    let workflow_source = superwire_core::workflow_source_template! {
+    let workflow_source = superwire_dsl::workflow_source_template! {
         secrets {
             mcp_endpoint: string
         }

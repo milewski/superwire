@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use clap::Args;
-use superwire_core::dsl::parse_workflow;
+use superwire_dsl::parse_workflow;
 use superwire_executor::{ExecutorError, WorkflowExecutor};
 
 use super::schema::CliRuntimeSchemaContext;

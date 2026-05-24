@@ -3,8 +3,8 @@ use super::text_utils::{
 };
 use super::CompletionSuggestion;
 use lsp_types::CompletionItemKind;
-use superwire_core::dsl::{AgentExpressionPropertyName, DeclarationKeyword, ForClauseKeyword, ImportKeyword, ReferenceKeyword};
 use superwire_core::semantic::InferenceSetting;
+use superwire_dsl::{AgentExpressionPropertyName, DeclarationKeyword, ForClauseKeyword, ImportKeyword, ReferenceKeyword};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeclarationHeaderCompletionContext {

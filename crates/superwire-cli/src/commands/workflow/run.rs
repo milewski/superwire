@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use clap::Args;
 use serde_json::Value;
-use superwire_core::dsl::parse_workflow;
+use superwire_dsl::parse_workflow;
 use superwire_executor::{
     AgentCacheDriver, AgentCacheOptions, AgentCacheSession, AgentCacheTimeToLive, CerseiModelProvider, ExecutorError, WorkflowExecutor,
 };

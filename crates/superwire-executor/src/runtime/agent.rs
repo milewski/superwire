@@ -11,11 +11,11 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
-use superwire_core::dsl::{AgentExpressionPropertyName, AgentProperty, Expression, ModelAssetKind};
 use superwire_core::mcp::McpClientPool;
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
 use superwire_core::semantic::support::provider::ProviderConfig;
 use superwire_core::semantic::{PlannedAgent, WorkflowSemanticError};
+use superwire_dsl::{AgentExpressionPropertyName, AgentProperty, Expression, ModelAssetKind};
 use tokio::sync::mpsc;
 
 pub(in crate::runtime) struct AgentRunContext<'a, ModelProviderType> {
@@ -416,10 +416,10 @@ impl WorkflowExecutor {
 
                 for string_template_part in &string_template.parts {
                     match string_template_part {
-                        superwire_core::dsl::StringTemplatePart::Text(template_text) => {
+                        superwire_dsl::StringTemplatePart::Text(template_text) => {
                             rendered_prompt.push_text(template_text.clone());
                         }
-                        superwire_core::dsl::StringTemplatePart::Interpolation(interpolation_expression) => {
+                        superwire_dsl::StringTemplatePart::Interpolation(interpolation_expression) => {
                             let interpolation_prompt =
                                 self.evaluate_prompt_expression(interpolation_expression, tool_call_execution_context, context)?;
                             rendered_prompt.extend(interpolation_prompt);
