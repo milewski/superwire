@@ -1,5 +1,4 @@
 use lsp_types::DiagnosticSeverity;
-use superwire_core::WorkflowDocument;
 use superwire_dsl::diagnostic::{
     Diagnostic as CoreDiagnostic, DiagnosticCode as CoreDiagnosticCode, DiagnosticSeverity as CoreDiagnosticSeverity,
 };
@@ -11,6 +10,7 @@ use crate::diagnostic_code::DiagnosticCode;
 
 use super::position::{source_span_to_range, zero_range};
 use super::semantic_index::SemanticIndex;
+use super::workflow_document::WorkflowDocument;
 use super::DocumentDiagnostic;
 
 #[derive(Debug)]

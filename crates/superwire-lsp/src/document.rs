@@ -15,6 +15,7 @@ mod snapshot;
 mod symbol;
 mod text_utils;
 mod types;
+mod workflow_document;
 
 use snapshot::SemanticSnapshot;
 use text_utils::is_symbol_character;

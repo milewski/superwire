@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
 
-use superwire_core::WorkflowDocument;
 use superwire_dsl::{
     parse_workflow, AgentForLoopPattern, AgentProperty, Declaration, DeclarationKeyword, Expression, ModelDeclaration,
     ModelDeclarationPropertyName, ModelUsagePropertyName, ObjectField, ProviderDeclaration, ReferenceKeyword, SingletonDeclarationKind,
@@ -8,6 +7,8 @@ use superwire_dsl::{
 };
 use superwire_mcp::McpLock;
 use superwire_semantic::{ProviderDriver, SemanticToolingSnapshot, ToolingSymbolCategory, WorkflowSemanticIndex};
+
+use crate::document::workflow_document::WorkflowDocument;
 
 use super::types::{AgentSummary, FieldMetadata, ModelSummary, NamedSpan, ProviderSummary, SchemaSummary, SemanticIndex, ToolSummary};
 

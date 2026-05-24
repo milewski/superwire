@@ -1,4 +1,3 @@
-use superwire_core::WorkflowDocument;
 use superwire_dsl::{AgentExpressionPropertyName, DeclarationKeyword, ImportKeyword, ReferenceKeyword, ToolPropertyName};
 
 use lsp_types::{Position, Range};
@@ -19,6 +18,7 @@ use super::super::semantic_index::SemanticIndex;
 use super::super::text_utils::{
     is_inside_interpolation_expression, is_inside_multiline_string_literal, trailing_identifier, trailing_reference_token,
 };
+use super::super::workflow_document::WorkflowDocument;
 use super::super::{CompletionSuggestion, DocumentState};
 use super::ReferenceCompletionInputs;
 

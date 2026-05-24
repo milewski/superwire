@@ -11,7 +11,6 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-superwire-core = { path = "../superwire-core" }
 superwire-dsl = { path = "../superwire-dsl" }
 superwire-mcp = { path = "../superwire-mcp" }
 superwire-semantic = { path = "../superwire-semantic" }

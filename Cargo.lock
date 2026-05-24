@@ -2448,17 +2448,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "superwire-core"
-version = "0.1.0"
-dependencies = [
- "schemars",
- "serde_json",
- "superwire-dsl",
- "superwire-mcp",
- "superwire-semantic",
-]
-
-[[package]]
 name = "superwire-dsl"
 version = "0.1.0"
 dependencies = [
@@ -2529,7 +2518,6 @@ dependencies = [
  "lsp-types",
  "serde",
  "serde_json",
- "superwire-core",
  "superwire-dsl",
  "superwire-macros",
  "superwire-mcp",

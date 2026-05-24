@@ -8,12 +8,7 @@ pub struct WorkflowDocument {
     parse_result: WorkflowDocumentParseResult,
     validation_report: Option<ValidationReport>,
     semantic_index: Option<WorkflowSemanticIndex>,
-    mcp_enrichment: Option<WorkflowDocumentMcpEnrichment>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct WorkflowDocumentMcpEnrichment {
-    mcp_lock: McpLock,
+    mcp_lock: Option<McpLock>,
 }
 
 #[derive(Debug)]
@@ -24,19 +19,13 @@ enum WorkflowDocumentParseResult {
 
 impl WorkflowDocument {
     #[must_use]
-    pub fn from_source(source_text: impl Into<String>) -> Self {
-        Self::from_source_with_mcp_lock(source_text, None)
-    }
-
-    #[must_use]
     pub fn from_source_with_mcp_lock(source_text: impl Into<String>, mcp_lock: Option<McpLock>) -> Self {
         let source_text = source_text.into();
-        let mcp_enrichment = mcp_lock.map(WorkflowDocumentMcpEnrichment::new);
 
         match parse_workflow(&source_text) {
             Ok(mut workflow) => {
-                if let Some(mcp_enrichment) = &mcp_enrichment {
-                    mcp_enrichment.apply_to_workflow(&mut workflow);
+                if let Some(mcp_lock) = &mcp_lock {
+                    mcp_lock.apply_to_workflow(&mut workflow);
                 }
 
                 let workflow_validation = workflow.validate_with_semantic_index();
@@ -47,7 +36,7 @@ impl WorkflowDocument {
                     parse_result: WorkflowDocumentParseResult::Parsed(workflow),
                     validation_report: Some(validation_report),
                     semantic_index: Some(semantic_index),
-                    mcp_enrichment,
+                    mcp_lock,
                 }
             }
             Err(parse_error) => Self {
@@ -55,7 +44,7 @@ impl WorkflowDocument {
                 parse_result: WorkflowDocumentParseResult::Failed(parse_error),
                 validation_report: None,
                 semantic_index: None,
-                mcp_enrichment,
+                mcp_lock,
             },
         }
     }
@@ -99,29 +88,8 @@ impl WorkflowDocument {
     }
 
     #[must_use]
-    pub fn mcp_enrichment(&self) -> Option<&WorkflowDocumentMcpEnrichment> {
-        self.mcp_enrichment.as_ref()
-    }
-
-    #[must_use]
     pub fn mcp_lock(&self) -> Option<&McpLock> {
-        self.mcp_enrichment.as_ref().map(WorkflowDocumentMcpEnrichment::mcp_lock)
-    }
-}
-
-impl WorkflowDocumentMcpEnrichment {
-    #[must_use]
-    pub fn new(mcp_lock: McpLock) -> Self {
-        Self { mcp_lock }
-    }
-
-    #[must_use]
-    pub fn mcp_lock(&self) -> &McpLock {
-        &self.mcp_lock
-    }
-
-    fn apply_to_workflow(&self, workflow: &mut Workflow) {
-        self.mcp_lock.apply_to_workflow(workflow);
+        self.mcp_lock.as_ref()
     }
 }
 
@@ -129,12 +97,13 @@ impl WorkflowDocumentMcpEnrichment {
 mod tests {
     use std::collections::BTreeMap;
 
-    use crate::document::WorkflowDocument;
+    use super::WorkflowDocument;
+    use superwire_macros::workflow_source;
     use superwire_mcp::{McpLock, McpServerLock};
 
     #[test]
     fn workflow_document_caches_parsed_validation_and_semantic_outputs() {
-        let source_text = crate::workflow_source! {
+        let source_text = workflow_source! {
             input {
                 request: string
             }
@@ -143,7 +112,7 @@ mod tests {
                 request: input.request
             }
         };
-        let workflow_document = WorkflowDocument::from_source(source_text);
+        let workflow_document = WorkflowDocument::from_source_with_mcp_lock(source_text, None);
 
         assert!(workflow_document.parse_result().is_ok());
         assert!(workflow_document
@@ -156,7 +125,7 @@ mod tests {
 
     #[test]
     fn workflow_document_keeps_optional_mcp_enrichment() {
-        let source_text = crate::workflow_source! {
+        let source_text = workflow_source! {
             from mcp.local {}
 
             output {
