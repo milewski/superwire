@@ -2456,6 +2456,7 @@ dependencies = [
  "superwire-dsl",
  "superwire-executor",
  "superwire-macros",
+ "superwire-mcp",
  "superwire-semantic",
  "superwire-test-support",
  "thiserror 2.0.18",
@@ -2473,17 +2474,15 @@ dependencies = [
  "pest",
  "pest_derive",
  "petgraph",
- "rust-mcp-schema",
  "schemars",
  "serde",
  "serde_json",
- "sha2 0.10.9",
  "strsim",
+ "superwire-mcp",
  "superwire-semantic",
  "superwire-types",
  "thiserror 2.0.18",
  "tokio",
- "ureq",
 ]
 
 [[package]]
@@ -2517,6 +2516,7 @@ dependencies = [
  "superwire-dsl",
  "superwire-lsp",
  "superwire-macros",
+ "superwire-mcp",
  "superwire-semantic",
  "superwire-test-support",
  "thiserror 2.0.18",
@@ -2539,6 +2539,7 @@ dependencies = [
  "superwire-core",
  "superwire-dsl",
  "superwire-macros",
+ "superwire-mcp",
  "superwire-semantic",
  "superwire-test-support",
  "thiserror 2.0.18",
@@ -2551,6 +2552,21 @@ version = "0.1.0"
 dependencies = [
  "superwire-core",
  "superwire-test-support",
+]
+
+[[package]]
+name = "superwire-mcp"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "rust-mcp-schema",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "superwire-semantic",
+ "superwire-types",
+ "thiserror 2.0.18",
+ "ureq",
 ]
 
 [[package]]
@@ -2575,6 +2591,7 @@ dependencies = [
  "schemars",
  "serde_json",
  "superwire-core",
+ "superwire-mcp",
  "superwire-semantic",
 ]
 

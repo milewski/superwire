@@ -8,7 +8,7 @@ use superwire_core::dsl::{
     format_workflow_source, parse_workflow, DeclarationKeyword, DslFormatError, DslParseError, Reference, ReferenceAccess,
     ReferenceKeyword, ReferenceRoot, Workflow,
 };
-use superwire_core::mcp::{
+use superwire_mcp::{
     McpClientBackend, McpClientFactory, McpError, McpLock, McpPromptArgumentLock, McpServerConfig, McpServerLock, McpToolLock,
     ProjectMcpLock, PROJECT_MCP_LOCK_FILE_NAME,
 };
@@ -1444,7 +1444,7 @@ mod tests {
     use serde_json::json;
     use std::collections::BTreeMap;
     use superwire_core::dsl::ReferenceKeyword;
-    use superwire_core::mcp::{McpLock, McpServerLock, ProjectMcpLock};
+    use superwire_mcp::{McpLock, McpServerLock, ProjectMcpLock};
     use superwire_semantic::support::types::WorkflowType;
     use superwire_semantic::{ReferenceResolutionError, ReferenceResolutionRoot, WorkflowExecutionGraph, WorkflowSemanticIndex};
 

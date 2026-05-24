@@ -24,8 +24,8 @@ pub use types::{
 };
 
 use lsp_types::{CompletionItemKind, DiagnosticSeverity, Position};
-use superwire_core::mcp::{McpLock, McpToolLock};
 use superwire_dsl::{Declaration, Expression, ToolPropertyName, TypeExpression, TypedField};
+use superwire_mcp::{McpLock, McpToolLock};
 use superwire_semantic::ProviderDriver;
 
 use crate::diagnostic_code::DiagnosticCode;

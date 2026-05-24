@@ -1,12 +1,12 @@
 use std::collections::{BTreeMap, HashMap};
 
-use superwire_core::mcp::McpLock;
 use superwire_core::WorkflowDocument;
 use superwire_dsl::{
     parse_workflow, AgentForLoopPattern, AgentProperty, Declaration, DeclarationKeyword, Expression, ModelDeclaration,
     ModelDeclarationPropertyName, ModelUsagePropertyName, ObjectField, ProviderDeclaration, ReferenceKeyword, SingletonDeclarationKind,
     SourceSpan, ToolSource, TypeExpression, TypedField, Workflow,
 };
+use superwire_mcp::McpLock;
 use superwire_semantic::{ProviderDriver, SemanticToolingSnapshot, ToolingSymbolCategory, WorkflowSemanticIndex};
 
 use super::types::{AgentSummary, FieldMetadata, ModelSummary, NamedSpan, ProviderSummary, SchemaSummary, SemanticIndex, ToolSummary};
@@ -501,7 +501,7 @@ impl SemanticIndex {
         }
     }
 
-    fn mcp_server_tool_lookups(mcp_lock: Option<&McpLock>) -> HashMap<String, superwire_core::mcp::McpServerToolLookup> {
+    fn mcp_server_tool_lookups(mcp_lock: Option<&McpLock>) -> HashMap<String, superwire_mcp::McpServerToolLookup> {
         let Some(mcp_lock) = mcp_lock else {
             return HashMap::new();
         };

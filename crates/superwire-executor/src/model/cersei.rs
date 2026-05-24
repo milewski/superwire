@@ -1,6 +1,5 @@
 use crate::event::{ExecutorEvent, McpCallEventDetails};
 use crate::model::provider::ModelProvider;
-use crate::model::response::normalize_mcp_tool_result;
 use crate::model::types::{
     FinalizeCallKind, ModelAsset, ModelAssetSource, ModelPromptContent, ModelRequest, ModelResponse, ModelSchemaCache, ModelToolDefinition,
     ModelToolSource,
@@ -15,7 +14,7 @@ use jsonschema::ValidationError;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
-use superwire_core::mcp::McpServerConfig;
+use superwire_mcp::{normalize_mcp_tool_result, render_mcp_prompt_text_result, render_mcp_resource_text_result, McpServerConfig};
 use superwire_semantic::support::provider::{ProviderApiFormat, ProviderConfig, ProviderDriver};
 
 const MAX_TOOL_CALL_ROUNDS: usize = 8;
@@ -674,7 +673,7 @@ impl ModelToolDefinition {
                 });
             }
         };
-        let rendered_result = Value::String(result.render_mcp_prompt_result());
+        let rendered_result = Value::String(render_mcp_prompt_text_result(&result));
 
         request.send_mcp_call_completed(call_details, rendered_result.clone(), result, started_at.elapsed());
 
@@ -715,7 +714,7 @@ impl ModelToolDefinition {
                 });
             }
         };
-        let rendered_result = Value::String(result.render_mcp_resource_result());
+        let rendered_result = Value::String(render_mcp_resource_text_result(&result));
 
         request.send_mcp_call_completed(call_details, rendered_result.clone(), result, started_at.elapsed());
 
@@ -873,42 +872,6 @@ impl MessageExt for Message {
             id,
             metadata,
         }
-    }
-}
-
-trait McpRenderedValue {
-    fn render_mcp_prompt_result(&self) -> String;
-
-    fn render_mcp_resource_result(&self) -> String;
-}
-
-impl McpRenderedValue for Value {
-    fn render_mcp_prompt_result(&self) -> String {
-        self.get("messages")
-            .and_then(Value::as_array)
-            .map(|messages| {
-                messages
-                    .iter()
-                    .filter_map(|message| message.pointer("/content/text").and_then(Value::as_str))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            })
-            .filter(|content| !content.is_empty())
-            .unwrap_or_else(|| self.to_string())
-    }
-
-    fn render_mcp_resource_result(&self) -> String {
-        self.get("contents")
-            .and_then(Value::as_array)
-            .map(|contents| {
-                contents
-                    .iter()
-                    .filter_map(|content| content.get("text").and_then(Value::as_str))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            })
-            .filter(|content| !content.is_empty())
-            .unwrap_or_else(|| self.to_string())
     }
 }
 

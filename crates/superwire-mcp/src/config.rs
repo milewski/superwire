@@ -1,8 +1,8 @@
-use crate::dsl::{Declaration, Expression, McpServerDeclaration, McpServerPropertyName, Workflow};
-use crate::mcp::McpError;
-use crate::semantic::support::expression::{evaluate_expression, EvaluationContext};
+use crate::McpError;
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
+use superwire_semantic::support::expression::{evaluate_expression, EvaluationContext};
+use superwire_types::ast::{Declaration, Expression, McpServerDeclaration, McpServerPropertyName, Workflow};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpServerConfig {

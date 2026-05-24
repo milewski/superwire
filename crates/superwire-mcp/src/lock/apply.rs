@@ -1,5 +1,5 @@
 use super::{McpLock, McpToolLock};
-use crate::dsl::{Declaration, McpPromptImportDeclaration, McpResourceImportDeclaration, ToolDeclaration, ToolSource, Workflow};
+use superwire_types::ast::{Declaration, McpPromptImportDeclaration, McpResourceImportDeclaration, ToolDeclaration, ToolSource, Workflow};
 
 impl McpLock {
     pub fn apply_to_workflow(&self, workflow: &mut Workflow) {

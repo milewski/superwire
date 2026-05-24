@@ -1,5 +1,5 @@
 use super::{McpLock, McpPromptArgumentLock};
-use crate::dsl::{Declaration, McpPromptImportDeclaration, Workflow};
+use superwire_types::ast::{Declaration, McpPromptImportDeclaration, Workflow};
 
 impl McpLock {
     #[must_use]

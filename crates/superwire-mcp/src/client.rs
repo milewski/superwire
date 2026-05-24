@@ -1,5 +1,5 @@
-use crate::mcp::schema::to_json_value;
-use crate::mcp::{McpError, McpPromptArgumentLock, McpServerConfig, McpServerLock, McpToolLock};
+use crate::schema::to_json_value;
+use crate::{McpError, McpPromptArgumentLock, McpServerConfig, McpServerLock, McpToolLock};
 use rust_mcp_schema::{
     CallToolRequest, CallToolRequestParams, ClientCapabilities, GetPromptRequest, GetPromptRequestParams, Implementation,
     InitializeRequest, InitializeRequestParams, InitializedNotification, JsonrpcResponse, ListPromptsRequest, ListPromptsResult,
@@ -280,7 +280,7 @@ impl McpClient {
             GetPromptRequest,
             2,
             GetPromptRequestParams {
-                arguments: string_arguments(arguments),
+                arguments: arguments.to_prompt_string_arguments(),
                 meta: None,
                 name: prompt_name.to_string(),
             }
@@ -682,26 +682,26 @@ impl McpClientPool {
         })
     }
 
-    pub fn from_workflow(workflow: &crate::dsl::Workflow) -> Result<Self, McpError> {
+    pub fn from_workflow(workflow: &superwire_types::ast::Workflow) -> Result<Self, McpError> {
         Self::from_server_configs(McpServerConfig::from_workflow(workflow)?)
     }
 
     pub fn from_workflow_with_context(
-        workflow: &crate::dsl::Workflow,
-        evaluation_context: &crate::semantic::support::expression::EvaluationContext,
+        workflow: &superwire_types::ast::Workflow,
+        evaluation_context: &superwire_semantic::support::expression::EvaluationContext,
     ) -> Result<Self, McpError> {
         Self::from_workflow_with_context_and_factory(workflow, evaluation_context, &HttpMcpClientFactory)
     }
 
     pub fn from_workflow_with_context_and_factory(
-        workflow: &crate::dsl::Workflow,
-        evaluation_context: &crate::semantic::support::expression::EvaluationContext,
+        workflow: &superwire_types::ast::Workflow,
+        evaluation_context: &superwire_semantic::support::expression::EvaluationContext,
         client_factory: &dyn McpClientFactory,
     ) -> Result<Self, McpError> {
         let mut clients = HashMap::new();
 
         for declaration in workflow.declarations() {
-            let crate::dsl::Declaration::McpServer(mcp_server_declaration) = declaration else {
+            let superwire_types::ast::Declaration::McpServer(mcp_server_declaration) = declaration else {
                 continue;
             };
             let server_config = McpServerConfig::resolve_from_declaration(mcp_server_declaration, evaluation_context)?;
@@ -753,20 +753,27 @@ impl From<ListToolsResult> for McpServerLock {
     }
 }
 
-fn string_arguments(arguments: Value) -> Option<BTreeMap<String, String>> {
-    Some(
-        arguments
-            .as_object()?
-            .iter()
-            .map(|(argument_name, argument_value)| (argument_name.clone(), prompt_argument_value(argument_value)))
-            .collect(),
-    )
+trait McpPromptArgumentsExt {
+    fn to_prompt_string_arguments(&self) -> Option<BTreeMap<String, String>>;
+
+    fn to_prompt_string_argument(&self) -> String;
 }
 
-fn prompt_argument_value(argument_value: &Value) -> String {
-    match argument_value {
-        Value::String(string_value) => string_value.clone(),
-        Value::Null | Value::Bool(_) | Value::Number(_) => argument_value.to_string(),
-        Value::Array(_) | Value::Object(_) => serde_json::to_string(argument_value).expect("JSON value should serialize"),
+impl McpPromptArgumentsExt for Value {
+    fn to_prompt_string_arguments(&self) -> Option<BTreeMap<String, String>> {
+        Some(
+            self.as_object()?
+                .iter()
+                .map(|(argument_name, argument_value)| (argument_name.clone(), argument_value.to_prompt_string_argument()))
+                .collect(),
+        )
+    }
+
+    fn to_prompt_string_argument(&self) -> String {
+        match self {
+            Value::String(string_value) => string_value.clone(),
+            Value::Null | Value::Bool(_) | Value::Number(_) => self.to_string(),
+            Value::Array(_) | Value::Object(_) => serde_json::to_string(self).expect("JSON value should serialize"),
+        }
     }
 }

@@ -1,12 +1,12 @@
-use crate::dsl::{Declaration, ToolSource, Workflow};
-use crate::mcp::schema::to_json_value;
-use crate::mcp::{HttpMcpClientFactory, McpClientFactory, McpError, McpServerConfig};
-use crate::semantic::support::expression::EvaluationContext;
+use crate::schema::to_json_value;
+use crate::{HttpMcpClientFactory, McpClientFactory, McpError, McpServerConfig};
 use rust_mcp_schema::{ToolInputSchema, ToolOutputSchema};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::Path;
+use superwire_semantic::support::expression::EvaluationContext;
+use superwire_types::ast::{Declaration, ToolSource, Workflow};
 
 mod apply;
 mod name_resolution;
@@ -246,10 +246,13 @@ impl McpLockResolutionContext {
 #[cfg(test)]
 mod tests {
     use super::{McpLock, McpPromptArgumentLock, McpServerLock, McpToolLock};
-    use crate::dsl::{Declaration, McpToolSource, SourceSpan, ToolSource};
-    use crate::parse_inline_workflow;
     use serde_json::json;
     use std::collections::BTreeMap;
+    use superwire_types::ast::{
+        Declaration, Expression, McpBatchImportDeclaration, McpImportKind, McpImportSource, McpPromptBatchImportItem,
+        McpPromptImportDeclaration, McpResourceImportDeclaration, McpToolSource, ObjectField, SourceSpan, ToolDeclaration, ToolSource,
+        Workflow,
+    };
 
     #[test]
     fn normalizes_mcp_item_names_for_lookup() {
@@ -297,11 +300,15 @@ mod tests {
 
     #[test]
     fn applies_lock_name_resolution_to_workflow_imports() {
-        let mut workflow = parse_inline_workflow! {
-            tool fetch_task_data from mcp.local.tool.fetch_task_data
-            resource project_readme from mcp.local.resource.project_readme
-            prompt summarize_task_prompt from mcp.local.prompt.summarize_task_prompt
-        };
+        let mut workflow = workflow_with_declarations(vec![
+            Declaration::Tool(tool_import_declaration("fetch_task_data", "fetch_task_data")),
+            Declaration::McpResource(resource_import_declaration("project_readme", "project_readme")),
+            Declaration::McpPrompt(prompt_import_declaration(
+                "summarize_task_prompt",
+                "summarize_task_prompt",
+                Vec::new(),
+            )),
+        ]);
         let mcp_lock = import_resolution_lock();
 
         mcp_lock.apply_to_workflow(&mut workflow);
@@ -318,7 +325,7 @@ mod tests {
         };
 
         assert_eq!(
-            tool_declaration.source.as_ref().and_then(crate::dsl::ToolSource::mcp_tool_name),
+            tool_declaration.source.as_ref().and_then(ToolSource::mcp_tool_name),
             Some("FetchTaskData")
         );
         assert_eq!(resource_declaration.source.item_name, "project-readme");
@@ -396,9 +403,10 @@ mod tests {
 
     #[test]
     fn applies_lock_schema_to_imported_tool() {
-        let mut workflow = parse_inline_workflow! {
-            tool fetch_task_data from mcp.local.tool.fetch_task_data
-        };
+        let mut workflow = workflow_with_declarations(vec![Declaration::Tool(tool_import_declaration(
+            "fetch_task_data",
+            "fetch_task_data",
+        ))]);
         let mcp_lock = import_resolution_lock();
 
         mcp_lock.apply_to_workflow(&mut workflow);
@@ -414,9 +422,11 @@ mod tests {
 
     #[test]
     fn ignores_prompt_binding_validation_for_missing_server_lock() {
-        let workflow = parse_inline_workflow! {
-            prompt summarize_task_prompt from mcp.local.prompt.summarize_task_prompt
-        };
+        let workflow = workflow_with_declarations(vec![Declaration::McpPrompt(prompt_import_declaration(
+            "summarize_task_prompt",
+            "summarize_task_prompt",
+            Vec::new(),
+        ))]);
         let mcp_lock = McpLock::empty();
         let binding_messages = mcp_lock.validate_prompt_import_bindings(&workflow);
 
@@ -425,25 +435,7 @@ mod tests {
 
     #[test]
     fn validates_mixed_prompt_batch_with_shared_and_item_bindings() {
-        let workflow = parse_inline_workflow! {
-            input {
-                project_id: number
-                task_id: number
-            }
-
-            from mcp.local {
-                bindings {
-                    project_id: input.project_id
-                    task_id: input.task_id
-                }
-
-                prompt dynamic_summary_prompt {
-                    bindings {
-                        type: "task"
-                    }
-                }
-            }
-        };
+        let workflow = mixed_prompt_batch_workflow(vec!["project_id", "task_id"], vec!["type"]);
         let mcp_lock = prompt_argument_lock();
         let binding_messages = mcp_lock.validate_prompt_import_bindings(&workflow);
 
@@ -452,21 +444,7 @@ mod tests {
 
     #[test]
     fn rejects_mixed_prompt_batch_when_item_binding_is_missing() {
-        let workflow = parse_inline_workflow! {
-            input {
-                project_id: number
-                task_id: number
-            }
-
-            from mcp.local {
-                bindings {
-                    project_id: input.project_id
-                    task_id: input.task_id
-                }
-
-                prompt dynamic_summary_prompt
-            }
-        };
+        let workflow = mixed_prompt_batch_workflow(vec!["project_id", "task_id"], Vec::new());
         let mcp_lock = prompt_argument_lock();
         let binding_messages = mcp_lock.validate_prompt_import_bindings(&workflow);
 
@@ -474,6 +452,92 @@ mod tests {
             binding_messages,
             vec!["MCP prompt `dynamic_summary_prompt` requires binding `type` from server prompt `dynamic_summary_prompt`"]
         );
+    }
+
+    fn workflow_with_declarations(declarations: Vec<Declaration>) -> Workflow {
+        Workflow {
+            declarations,
+            source_text: None,
+        }
+    }
+
+    fn tool_import_declaration(local_name: &str, tool_name: &str) -> ToolDeclaration {
+        ToolDeclaration {
+            name: local_name.to_string(),
+            description: None,
+            max_calls: None,
+            source: Some(ToolSource::Mcp(McpToolSource {
+                server_name: Some("local".to_string()),
+                tool_name: tool_name.to_string(),
+                span: SourceSpan::generated(),
+            })),
+            imported: true,
+            input_fields: Vec::new(),
+            binding_fields: Vec::new(),
+            fixed_binding_fields: Vec::new(),
+            output_fields: Vec::new(),
+            span: SourceSpan::generated(),
+        }
+    }
+
+    fn resource_import_declaration(local_name: &str, resource_name: &str) -> McpResourceImportDeclaration {
+        McpResourceImportDeclaration {
+            name: local_name.to_string(),
+            source: mcp_import_source(McpImportKind::Resource, resource_name),
+            parameters: Vec::new(),
+            span: SourceSpan::generated(),
+        }
+    }
+
+    fn prompt_import_declaration(local_name: &str, prompt_name: &str, parameters: Vec<ObjectField>) -> McpPromptImportDeclaration {
+        McpPromptImportDeclaration {
+            name: local_name.to_string(),
+            source: mcp_import_source(McpImportKind::Prompt, prompt_name),
+            parameters,
+            span: SourceSpan::generated(),
+        }
+    }
+
+    fn mcp_import_source(kind: McpImportKind, item_name: &str) -> McpImportSource {
+        McpImportSource {
+            server_name: "local".to_string(),
+            kind,
+            item_name: item_name.to_string(),
+            span: SourceSpan::generated(),
+        }
+    }
+
+    fn mixed_prompt_batch_workflow(shared_binding_names: Vec<&str>, prompt_binding_names: Vec<&str>) -> Workflow {
+        workflow_with_declarations(vec![Declaration::McpBatch(McpBatchImportDeclaration {
+            server_name: "local".to_string(),
+            fixed_binding_fields: binding_fields(shared_binding_names),
+            input_fields: Vec::new(),
+            max_calls: None,
+            output_fields: Vec::new(),
+            tool_items: Vec::new(),
+            resource_items: Vec::new(),
+            prompt_items: vec![McpPromptBatchImportItem::new(
+                "dynamic_summary_prompt".to_string(),
+                None,
+                binding_fields(prompt_binding_names),
+                SourceSpan::generated(),
+            )],
+            tools: Vec::new(),
+            resources: Vec::new(),
+            prompts: Vec::new(),
+            span: SourceSpan::generated(),
+        })])
+    }
+
+    fn binding_fields(binding_names: Vec<&str>) -> Vec<ObjectField> {
+        binding_names
+            .into_iter()
+            .map(|binding_name| ObjectField {
+                name: binding_name.to_string(),
+                value: Expression::StringLiteral("value".to_string()),
+                span: SourceSpan::generated(),
+            })
+            .collect()
     }
 
     fn prompt_argument_lock() -> McpLock {

@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
-use superwire_core::mcp::{McpLock, McpServerToolLookup};
 use superwire_dsl::{SourceSpan, TypeExpression};
+use superwire_mcp::{McpLock, McpServerToolLookup};
 use superwire_semantic::{ProviderDriver, SemanticToolingSnapshot, WorkflowSemanticIndex};
 
 #[derive(Debug, Clone)]

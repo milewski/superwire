@@ -1,5 +1,5 @@
 use superwire_core::dsl::ModelAssetKindSupportError;
-use superwire_core::mcp::McpError;
+use superwire_mcp::McpError;
 use superwire_semantic::WorkflowSemanticError;
 use thiserror::Error;
 

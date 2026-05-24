@@ -1,6 +1,6 @@
 use lsp_types::{CompletionItemKind, Position};
-use superwire_core::mcp::McpServerLock;
 use superwire_dsl::{DeclarationKeyword, ImportKeyword, ToolPropertyName};
+use superwire_mcp::McpServerLock;
 
 use super::super::position::{byte_offset_for_position, source_span_contains_position};
 use super::super::semantic_index::SemanticIndex;

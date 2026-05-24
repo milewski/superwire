@@ -28,10 +28,10 @@ use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
-use superwire_core::mcp::McpClientPool;
 use superwire_dsl::{
     AgentProperty, Declaration, Expression, McpPromptImportDeclaration, McpResourceImportDeclaration, McpServerDeclaration, Workflow,
 };
+use superwire_mcp::McpClientPool;
 use superwire_semantic::support::expression::{evaluate_expression, EvaluationContext};
 use superwire_semantic::{ExecutionPlan, WorkflowExecutionGraph};
 use tokio::sync::{mpsc, Semaphore};

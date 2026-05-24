@@ -1,6 +1,5 @@
 pub mod document;
 pub mod dsl;
-pub mod mcp;
 pub mod testing;
 
 pub use document::{WorkflowDocument, WorkflowDocumentMcpEnrichment};

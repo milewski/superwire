@@ -3,10 +3,6 @@ use crate::dsl::{
     format_workflow_source, parse_workflow, DeclarationKeyword, DslFormatError, DslParseError, Reference, ReferenceAccess,
     ReferenceKeyword, ReferenceRoot, Workflow,
 };
-use crate::mcp::{
-    McpClientBackend, McpClientFactory, McpError, McpLock, McpPromptArgumentLock, McpServerConfig, McpServerLock, McpToolLock,
-    ProjectMcpLock, PROJECT_MCP_LOCK_FILE_NAME,
-};
 use crate::semantic::support::types::WorkflowType;
 use crate::semantic::{
     ReferenceResolution, ReferenceResolutionError, ReferenceResolutionRoot, ReferenceResolutionScope, WorkflowExecutionGraph,
@@ -17,6 +13,10 @@ use std::collections::{BTreeMap, VecDeque};
 use std::fmt::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use superwire_mcp::{
+    McpClientBackend, McpClientFactory, McpError, McpLock, McpPromptArgumentLock, McpServerConfig, McpServerLock, McpToolLock,
+    ProjectMcpLock, PROJECT_MCP_LOCK_FILE_NAME,
+};
 
 pub const COMPACT_CURSOR_MARKER: &str = "<cursor>";
 pub const SPACED_CURSOR_MARKER: &str = "< cursor >";
@@ -1424,11 +1424,11 @@ mod tests {
         WorkflowSourceTemplate,
     };
     use crate::dsl::ReferenceKeyword;
-    use crate::mcp::{McpLock, McpServerLock, ProjectMcpLock};
     use crate::semantic::support::types::WorkflowType;
     use crate::semantic::{ReferenceResolutionError, ReferenceResolutionRoot, WorkflowExecutionGraph, WorkflowSemanticIndex};
     use serde_json::json;
     use std::collections::BTreeMap;
+    use superwire_mcp::{McpLock, McpServerLock, ProjectMcpLock};
 
     #[test]
     fn inline_cursor_layout_normalizes_cursor_before_block_close() {

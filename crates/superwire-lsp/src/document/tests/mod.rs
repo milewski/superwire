@@ -2,11 +2,11 @@ use super::{CompletionSuggestion, DocumentDiagnostic, DocumentState, Position, T
 use crate::diagnostic_code::DiagnosticCode;
 use lsp_types::CompletionItemKind;
 use std::collections::BTreeMap;
-use superwire_core::mcp::{McpLock, McpPromptArgumentLock, McpServerLock, McpToolLock};
 use superwire_dsl::{
     AgentExpressionPropertyName, BuiltinFunctionName, DeclarationKeyword, ForClauseKeyword, McpCallOperation, ReferenceKeyword,
     SingletonDeclarationKind, ToolCallKeyword,
 };
+use superwire_mcp::{McpLock, McpPromptArgumentLock, McpServerLock, McpToolLock};
 use superwire_semantic::InferenceSetting;
 use superwire_test_support::WorkflowSourceTemplate;
 

@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use clap::Args;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use superwire_core::mcp::McpLockResolutionContext;
 use superwire_dsl::{parse_workflow, TypedField, Workflow};
+use superwire_mcp::McpLockResolutionContext;
 
 use super::paths::WorkflowPathTargets;
 use crate::diagnostics::CommandError;

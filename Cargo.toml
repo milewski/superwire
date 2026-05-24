@@ -5,6 +5,7 @@ members = [
     "crates/superwire-test-support",
     "crates/superwire-macros",
     "crates/superwire-semantic",
+    "crates/superwire-mcp",
     "crates/superwire-core",
     "crates/superwire-lsp",
     "crates/superwire-cli",

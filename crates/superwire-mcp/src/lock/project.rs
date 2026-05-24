@@ -1,5 +1,5 @@
 use super::{McpLock, ProjectMcpLock, ProjectWorkflowMcpLockEntry, PROJECT_MCP_LOCK_FILE_NAME};
-use crate::mcp::McpError;
+use crate::McpError;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

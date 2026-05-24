@@ -5,7 +5,6 @@ pub mod types;
 
 pub use cersei::CerseiModelProvider;
 pub use provider::ModelProvider;
-pub use response::normalize_mcp_tool_result;
 pub use types::{
     FinalizeCallKind, ModelAsset, ModelAssetSource, ModelPromptContent, ModelRequest, ModelResponse, ModelSchema, ModelSchemaCache,
     ModelToolDefinition, ModelToolSource, ToolCallLimitScope, ToolCallTracker,

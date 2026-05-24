@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, HashSet};
 
 use lsp_types::{CompletionItemKind, Position};
-use superwire_core::mcp::McpServerLock;
 use superwire_dsl::{DeclarationKeyword, ReferenceAccess, ReferenceAccessKind, ReferenceKeyword, SourceSpan, TypeExpression, TypedField};
+use superwire_mcp::McpServerLock;
 
 use super::position::source_span_contains_position;
 use super::semantic_index::{FieldMetadata, SemanticIndex};

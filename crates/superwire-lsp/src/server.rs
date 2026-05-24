@@ -20,10 +20,10 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
-use superwire_core::mcp::{
+use superwire_dsl::{parse_workflow, Workflow};
+use superwire_mcp::{
     HttpMcpClientFactory, McpClientFactory, McpLock, McpLockResolutionContext, McpServerConfig, McpServerLock, ProjectMcpLock,
 };
-use superwire_dsl::{parse_workflow, Workflow};
 use thiserror::Error;
 
 use crate::document::{
@@ -625,7 +625,7 @@ impl McpDiscoveryCache {
         }
     }
 
-    fn discover_from_workflow(&mut self, workflow: &Workflow) -> Result<McpLock, superwire_core::mcp::McpError> {
+    fn discover_from_workflow(&mut self, workflow: &Workflow) -> Result<McpLock, superwire_mcp::McpError> {
         let mut mcp_lock = McpLock::empty();
 
         for server_config in McpServerConfig::from_workflow(workflow)? {
@@ -649,7 +649,7 @@ impl McpDiscoveryCache {
         &mut self,
         workflow: &Workflow,
         lock_resolution_context: &McpLockResolutionContext,
-    ) -> Result<McpLock, superwire_core::mcp::McpError> {
+    ) -> Result<McpLock, superwire_mcp::McpError> {
         let evaluation_context = lock_resolution_context.to_evaluation_context();
         let mut mcp_lock = McpLock::empty();
 

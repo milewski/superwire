@@ -1,6 +1,6 @@
 use crate::dsl::{parse_workflow, DslParseError, ValidationReport, Workflow, WorkflowValidationExt};
-use crate::mcp::McpLock;
 use crate::semantic::WorkflowSemanticIndex;
+use superwire_mcp::McpLock;
 
 #[derive(Debug)]
 pub struct WorkflowDocument {
@@ -130,7 +130,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::document::WorkflowDocument;
-    use crate::mcp::{McpLock, McpServerLock};
+    use superwire_mcp::{McpLock, McpServerLock};
 
     #[test]
     fn workflow_document_caches_parsed_validation_and_semantic_outputs() {

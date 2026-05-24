@@ -1,0 +1,18 @@
+[package]
+name = "superwire-mcp"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+log = { workspace = true }
+rust-mcp-schema = { version = "0.10.0", default-features = false, features = ["2025_11_25", "schema_utils"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+superwire-semantic = { path = "../superwire-semantic" }
+superwire-types = { path = "../superwire-types" }
+thiserror = { workspace = true }
+ureq = { version = "3.3.0", default-features = false, features = ["json", "rustls"] }

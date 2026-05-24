@@ -1,7 +1,7 @@
-use crate::dsl::{SourceSpan, TypeExpression, TypedField};
 use rust_mcp_schema::{ToolInputSchema, ToolOutputSchema};
 use serde::Serialize;
 use serde_json::Value;
+use superwire_types::ast::{SourceSpan, TypeExpression, TypedField};
 
 impl super::McpToolLock {
     #[must_use]
@@ -176,8 +176,8 @@ pub(super) fn to_json_value(schema: &impl Serialize) -> Value {
 #[cfg(test)]
 mod tests {
     use super::TypedJsonSchema;
-    use crate::dsl::TypeExpression;
     use serde_json::json;
+    use superwire_types::ast::TypeExpression;
 
     #[test]
     fn type_expression_supports_nullable_array_type_keyword() {

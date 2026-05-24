@@ -2,8 +2,8 @@ use super::super::{CompletionSuggestion, RenderTypeExpression};
 use super::SemanticIndex;
 use lsp_types::CompletionItemKind;
 use std::collections::{BTreeMap, HashSet};
-use superwire_core::mcp::{McpServerLock, McpToolLock};
 use superwire_dsl::{ToolPropertyName, TypedField};
+use superwire_mcp::{McpServerLock, McpToolLock};
 
 impl SemanticIndex {
     pub fn mcp_tool_batch_item_suggestions(

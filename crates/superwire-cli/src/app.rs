@@ -2,7 +2,7 @@ use std::ffi::OsString;
 
 use clap::{Parser, Subcommand};
 use serde_json::json;
-use superwire_core::mcp::{HttpMcpClientFactory, McpClientFactory};
+use superwire_mcp::{HttpMcpClientFactory, McpClientFactory};
 
 use crate::commands::fmt::FormatCommand;
 use crate::commands::workflow::WorkflowCommand;

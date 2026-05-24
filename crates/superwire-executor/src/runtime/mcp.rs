@@ -3,8 +3,8 @@ use crate::event::{ExecutorEvent, McpCallEventDetails};
 use crate::model::ToolCallTracker;
 use serde_json::Value;
 use std::time::Instant;
-use superwire_core::mcp::McpServerConfig;
 use superwire_dsl::{McpCall, McpCallOperation, McpImportBindingEvaluationKind, McpImportBindings, ObjectField};
+use superwire_mcp::{render_mcp_prompt_result, render_mcp_resource_result, McpServerConfig};
 use superwire_semantic::support::expression::EvaluationContext;
 use tokio::sync::mpsc;
 
@@ -288,54 +288,4 @@ impl WorkflowExecutor {
     }
 }
 
-pub(in crate::runtime) fn normalize_prompt(prompt_value: &Value) -> String {
-    if let Some(prompt) = prompt_value.as_str() {
-        return prompt.to_string();
-    }
-
-    serde_json::to_string(prompt_value).unwrap_or_else(|_| prompt_value.to_string())
-}
-
-fn render_mcp_prompt_result(result: &Value) -> String {
-    let Some(messages) = result.get("messages").and_then(Value::as_array) else {
-        return normalize_prompt(result);
-    };
-    let mut rendered_messages = Vec::new();
-
-    for message in messages {
-        let role = message.get("role").and_then(Value::as_str).unwrap_or("message");
-        let content = message.get("content").map_or_else(String::new, render_mcp_content_value);
-        rendered_messages.push(format!("{role}: {content}"));
-    }
-
-    rendered_messages.join("\n")
-}
-
-fn render_mcp_resource_result(result: &Value) -> String {
-    let Some(contents) = result.get("contents").and_then(Value::as_array) else {
-        return normalize_prompt(result);
-    };
-    let mut rendered_contents = Vec::new();
-
-    for content in contents {
-        rendered_contents.push(render_mcp_content_value(content));
-    }
-
-    rendered_contents.join("\n")
-}
-
-fn render_mcp_content_value(content: &Value) -> String {
-    if let Some(text) = content.as_str() {
-        return text.to_string();
-    }
-
-    if let Some(text) = content.get("text").and_then(Value::as_str) {
-        return text.to_string();
-    }
-
-    if let Some(blob) = content.get("blob").and_then(Value::as_str) {
-        return blob.to_string();
-    }
-
-    normalize_prompt(content)
-}
+pub(in crate::runtime) use superwire_mcp::normalize_mcp_prompt_value as normalize_prompt;

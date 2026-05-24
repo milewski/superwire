@@ -1,5 +1,5 @@
 use clap::{Args, Subcommand};
-use superwire_core::mcp::McpClientFactory;
+use superwire_mcp::McpClientFactory;
 
 use crate::diagnostics::CommandError;
 

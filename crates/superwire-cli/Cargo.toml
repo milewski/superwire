@@ -18,6 +18,7 @@ serde_json = { workspace = true }
 superwire-core = { path = "../superwire-core" }
 superwire-dsl = { path = "../superwire-dsl" }
 superwire-executor = { path = "../superwire-executor" }
+superwire-mcp = { path = "../superwire-mcp" }
 superwire-semantic = { path = "../superwire-semantic" }
 thiserror = { workspace = true }
 tokio = { workspace = true }
