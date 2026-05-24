@@ -4,7 +4,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use superwire_core::mcp::{McpLock, McpLockResolutionContext, ProjectMcpLock};
-use superwire_dsl::workflow_source;
+use superwire_macros::workflow_source;
 use superwire_test_support::{FakeMcpClientFactory, FakeMcpServerBuilder};
 
 const PLAYGROUND_DOCUMENT_URI: &str = "file:///playground/document.wire";

@@ -327,7 +327,7 @@ async fn http_validate_rejects_input_field() {
 async fn http_validate_with_secrets_resolves_mcp_schemas_without_input() {
     let server = TestMcpHttpServer::spawn([("authorization".to_string(), "Bearer secret-token".to_string())]);
     let router = executor_router_with_service(support::service(vec![]), true);
-    let workflow_source = superwire_dsl::workflow_source! {
+    let workflow_source = superwire_macros::workflow_source! {
         provider openai from openai {
             endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
@@ -395,7 +395,7 @@ async fn http_validate_with_secrets_resolves_mcp_schemas_without_input() {
 #[tokio::test]
 async fn http_graph_returns_agent_relationships_and_tools() {
     let router = executor_router_with_service(support::service(vec![]), true);
-    let workflow_source = superwire_dsl::workflow_source! {
+    let workflow_source = superwire_macros::workflow_source! {
         provider openai from openai {
             endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"

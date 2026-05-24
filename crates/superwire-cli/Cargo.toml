@@ -23,4 +23,5 @@ tokio = { workspace = true }
 jsonschema = { workspace = true }
 
 [dev-dependencies]
+superwire-macros = { path = "../superwire-macros" }
 superwire-test-support = { path = "../superwire-test-support" }

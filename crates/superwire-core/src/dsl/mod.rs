@@ -1,5 +1,4 @@
 mod formatter;
-pub mod macros;
 mod parser;
 mod validation;
 mod visitor;

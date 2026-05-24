@@ -1,11 +1,22 @@
 use std::collections::BTreeMap;
 
 use superwire_core::dsl::{validate_workflow, Reference, ReferenceAccess, ReferenceKeyword, ReferenceRoot, TypeExpression};
-use superwire_core::parse_inline_workflow;
 use superwire_core::semantic::support::types::WorkflowType;
 use superwire_core::semantic::{
     ProviderDriver, ReferenceResolutionScope, SemanticDeclarationKey, SemanticFieldRoot, SemanticMcpImportKind, WorkflowSemanticIndex,
 };
+
+macro_rules! parse_inline_workflow {
+    ($($workflow_tokens:tt)*) => {{
+        let workflow_source_template = superwire_core::testing::WorkflowSourceTemplate::from_inline(stringify!($($workflow_tokens)*));
+        workflow_source_template.parse_workflow().unwrap_or_else(|parse_error| {
+            panic!(
+                "inline workflow failed to parse:\n{}",
+                parse_error.render_with_source(workflow_source_template.source(), "<inline workflow>")
+            )
+        })
+    }};
+}
 
 #[test]
 fn workflow_semantic_index_exposes_declaration_lookup() {

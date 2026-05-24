@@ -8,7 +8,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
 use std::time::Duration;
-use superwire_dsl::workflow_source;
+use superwire_macros::workflow_source;
 
 #[tokio::test]
 async fn lifecycle_events_are_emitted_in_order() {

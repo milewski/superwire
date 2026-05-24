@@ -4,7 +4,7 @@ use crate::service::ExecutorService;
 use crate::tests::support::{request_with_input, ConcurrentTrackingModelProvider, ScriptedModelProvider, TestModelProvider};
 use serde_json::{json, Value};
 use std::time::Duration;
-use superwire_dsl::workflow_source;
+use superwire_macros::workflow_source;
 
 #[tokio::test]
 async fn for_loop_over_literal_array() {

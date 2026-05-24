@@ -1450,7 +1450,7 @@ mod tests {
 
     #[test]
     fn inline_cursor_layout_normalizes_cursor_before_block_close() {
-        let source_template = WorkflowSourceTemplate::from_inline(superwire_core::workflow_source! {
+        let source_template = WorkflowSourceTemplate::from_inline(stringify! {
             agent worker { <cursor> }
         });
         let source_with_cursor = source_template.with_cursor();
@@ -1471,7 +1471,7 @@ mod tests {
 
     #[test]
     fn inline_workflow_source_reads_formatted_source() {
-        let workflow_source = WorkflowSource::inline(superwire_core::workflow_source! {
+        let workflow_source = WorkflowSource::inline(stringify! {
             input {
                 project_id:number
             }
@@ -1483,12 +1483,12 @@ mod tests {
     }
 
     #[test]
-    fn workflow_source_template_macro_parses_inline_source() {
-        let source_template = superwire_core::workflow_source_template! {
+    fn workflow_source_template_parses_inline_source() {
+        let source_template = WorkflowSourceTemplate::from_inline(stringify! {
             input {
                 project_id: number
             }
-        };
+        });
 
         let workflow = source_template.parse_workflow().expect("inline workflow source should parse");
 
@@ -1512,7 +1512,7 @@ mod tests {
 
     #[test]
     fn formatter_snapshot_assertion_compares_formatted_output() {
-        let source_template = WorkflowSourceTemplate::from_inline(superwire_core::workflow_source! {
+        let source_template = WorkflowSourceTemplate::from_inline(stringify! {
             output { value:"ok" }
         });
         let expected_output = concat!("output {\n", "    value: \"ok\"\n", "}\n");
@@ -1542,7 +1542,7 @@ mod tests {
 
     #[test]
     fn semantic_index_snapshot_assertion_compares_stable_summary() {
-        let workflow = superwire_core::parse_inline_workflow! {
+        let workflow = WorkflowSourceTemplate::from_inline(stringify! {
             input {
                 topic: string
             }
@@ -1572,7 +1572,9 @@ mod tests {
             output {
                 summary: agent.researcher.summary
             }
-        };
+        })
+        .parse_workflow()
+        .expect("inline workflow source should parse");
         let semantic_index = WorkflowSemanticIndex::from_workflow(&workflow);
         let expected_output = concat!(
             "providers:\n",
@@ -1626,7 +1628,7 @@ mod tests {
 
     #[test]
     fn semantic_fixture_builds_index_and_asserts_types() {
-        let fixture = SemanticFixture::from_source_template(WorkflowSourceTemplate::from_inline(superwire_core::workflow_source! {
+        let fixture = SemanticFixture::from_source_template(WorkflowSourceTemplate::from_inline(stringify! {
             input {
                 profile: {
                     title: string
@@ -1668,7 +1670,7 @@ mod tests {
 
     #[test]
     fn semantic_fixture_asserts_reference_resolution_and_errors() {
-        let fixture = SemanticFixture::from_source_template(WorkflowSourceTemplate::from_inline(superwire_core::workflow_source! {
+        let fixture = SemanticFixture::from_source_template(WorkflowSourceTemplate::from_inline(stringify! {
             input {
                 profile: {
                     title: string
@@ -1705,7 +1707,7 @@ mod tests {
 
     #[test]
     fn semantic_fixture_exposes_core_completion_labels() {
-        let fixture = SemanticFixture::from_source_template(WorkflowSourceTemplate::from_inline(superwire_core::workflow_source! {
+        let fixture = SemanticFixture::from_source_template(WorkflowSourceTemplate::from_inline(stringify! {
             provider openai from openai {}
 
             model fast from openai {

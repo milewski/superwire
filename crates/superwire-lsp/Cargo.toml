@@ -23,6 +23,7 @@ log = { workspace = true }
 colog = { workspace = true }
 
 [dev-dependencies]
+superwire-macros = { path = "../superwire-macros" }
 superwire-test-support = { path = "../superwire-test-support" }
 
 [[bench]]

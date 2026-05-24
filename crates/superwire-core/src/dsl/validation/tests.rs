@@ -1,7 +1,7 @@
 use super::{validate_workflow, SingletonDeclarationKind, ValidationContext, ValidationIssue};
-use crate::dsl::macros::{parse_inline_workflow, workflow_source};
 use crate::dsl::{parse_workflow, ReferenceKeyword, Workflow};
 use crate::semantic::InferenceSetting;
+use crate::{parse_inline_workflow, workflow_source};
 
 macro_rules! assert_issues_contain {
     ($validation_issues:expr, $issue_pattern:pat $(if $guard:expr)? ) => {{

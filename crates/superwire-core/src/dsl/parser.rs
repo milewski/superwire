@@ -280,13 +280,12 @@ pub fn parse_workflow(source: &str) -> Result<Workflow, DslParseError> {
 #[cfg(test)]
 mod tests {
     use super::parse_workflow;
-    use crate::dsl::macros::parse_inline_workflow;
     use crate::dsl::{
         AgentExpressionPropertyName, AgentForLoopPattern, AgentProperty, AssetPropertyName, Declaration, DslParseError, Expression,
         McpCallOperation, McpImportKind, McpServerPropertyName, ReferenceAccess, ReferenceAccessKind, ReferenceKeyword, ReferenceRoot,
         StringTemplatePart, ToolSource, TypeExpression,
     };
-    use crate::workflow_source;
+    use crate::{parse_inline_workflow, workflow_source};
     use std::fs;
     use std::path::{Path, PathBuf};
 

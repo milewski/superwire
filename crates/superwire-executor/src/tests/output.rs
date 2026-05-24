@@ -1,7 +1,7 @@
 use super::fixtures;
 use super::support::{request, service};
 use serde_json::json;
-use superwire_dsl::workflow_source;
+use superwire_macros::workflow_source;
 
 #[tokio::test]
 async fn string_interpolation_in_prompt() {

@@ -1,6 +1,6 @@
 use crate::support::runner::TestRunner;
 use serde_json::{json, Value};
-use superwire_dsl::workflow_source;
+use superwire_macros::workflow_source;
 
 #[tokio::test]
 async fn sends_image_asset_as_openai_compatible_content_block() {
