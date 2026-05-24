@@ -135,3 +135,67 @@ async fn compact_agent_context_runs_compaction_before_target_agent() {
         Some(json!({ "agent": "summarize__context_compaction" }))
     );
 }
+
+#[tokio::test]
+async fn context_expression_serializes_agent_context_in_workflow_output() {
+    let output = execute!(fixtures::AGENT_CONTEXT_EXPRESSION_OUTPUT, output: { "result": "cat joke" }).await;
+
+    assert_eq!(
+        output,
+        json!({
+            "context_value": { "agent": "analyzer" },
+            "context_text": "stored {\"agent\":\"analyzer\"}",
+        })
+    );
+}
+
+#[tokio::test]
+async fn compact_context_expression_runs_compaction_for_workflow_output() {
+    let model_provider = TrackingModelProvider::new(vec![json!({ "result": "cat joke" }), json!("compact joke context")]);
+    let service = ExecutorService::new(model_provider.clone());
+
+    let output = service
+        .execute(request(fixtures::AGENT_CONTEXT_EXPRESSION_COMPACTION))
+        .await
+        .expect("workflow should execute")
+        .output;
+
+    assert_eq!(
+        output,
+        json!({
+            "compacted": { "agent": "analyzer__context_compaction" },
+        })
+    );
+
+    let recorded_requests = model_provider
+        .recorded_requests
+        .lock()
+        .expect("recorded requests lock should not be poisoned");
+
+    assert_eq!(recorded_requests.len(), 2);
+    assert_eq!(recorded_requests[1].agent_name, "analyzer__context_compaction");
+    assert_eq!(recorded_requests[1].context, Some(json!({ "agent": "analyzer" })));
+    assert_eq!(recorded_requests[1].prompt, "Compact this context for final output.");
+}
+
+#[tokio::test]
+async fn context_expression_renders_inside_agent_instruction_template() {
+    let model_provider = TrackingModelProvider::new(vec![json!({ "result": "cat joke" }), json!({ "result": "used context" })]);
+    let service = ExecutorService::new(model_provider.clone());
+
+    let output = service
+        .execute(request(fixtures::AGENT_CONTEXT_EXPRESSION_PROMPT))
+        .await
+        .expect("workflow should execute")
+        .output;
+
+    assert_eq!(output, json!({ "result": "used context" }));
+
+    let recorded_requests = model_provider
+        .recorded_requests
+        .lock()
+        .expect("recorded requests lock should not be poisoned");
+
+    assert_eq!(recorded_requests.len(), 2);
+    assert_eq!(recorded_requests[1].prompt, "Use {\"agent\":\"analyzer\"}");
+}

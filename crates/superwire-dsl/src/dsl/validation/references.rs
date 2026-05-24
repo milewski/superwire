@@ -558,6 +558,9 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                     );
                 }
             }
+            Expression::AgentContext(agent_context) => {
+                self.validate_agent_context(agent_context, dynamic_field_types, context);
+            }
             Expression::Asset(asset) => {
                 self.validate_expression(&asset.source, dynamic_field_types, context.clone(), secret_reference_policy);
 

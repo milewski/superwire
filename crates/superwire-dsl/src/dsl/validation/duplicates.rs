@@ -533,6 +533,9 @@ impl ExpressionDuplicateValidationExt for Expression {
                         .report_duplicate_object_fields(context.clone(), duplicate_span, validation_report);
                 }
             }
+            Self::AgentContext(agent_context) => {
+                agent_context.report_duplicate_object_fields(context, duplicate_span, validation_report);
+            }
             Self::Asset(asset) => {
                 asset.report_duplicate_object_fields(context, duplicate_span, validation_report);
             }
@@ -624,6 +627,41 @@ impl ExpressionDuplicateValidationExt for Expression {
             | Self::NullLiteral
             | Self::VariantProjection(_)
             | Self::Reference(_) => {}
+        }
+    }
+}
+
+trait AgentContextDuplicateValidationExt {
+    fn report_duplicate_object_fields(
+        &self,
+        context: ValidationContext,
+        duplicate_span: Option<SourceSpan>,
+        validation_report: &mut ValidationReport,
+    );
+}
+
+impl AgentContextDuplicateValidationExt for AgentContext {
+    fn report_duplicate_object_fields(
+        &self,
+        context: ValidationContext,
+        duplicate_span: Option<SourceSpan>,
+        validation_report: &mut ValidationReport,
+    ) {
+        let Self::Compact(compact_agent_context) = self else {
+            return;
+        };
+
+        report_duplicate_object_field_names(
+            compact_agent_context.properties.as_slice(),
+            context.clone(),
+            duplicate_span,
+            validation_report,
+        );
+
+        for property in &compact_agent_context.properties {
+            property
+                .value
+                .report_duplicate_object_fields(context.clone(), duplicate_span, validation_report);
         }
     }
 }

@@ -6,6 +6,7 @@ use crate::runtime::cache::{hash_serializable_value, AgentCacheKey, CachedAgentE
 use crate::runtime::mcp::normalize_prompt;
 use crate::runtime::schema::{AgentOutputInjections, PlannedAgentSchemaExt};
 use crate::runtime::state::RuntimeState;
+use futures::future::{BoxFuture, FutureExt};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
@@ -189,9 +190,14 @@ struct AgentContextResolutionRequest<'a, ModelProviderType> {
     evaluation_context: &'a EvaluationContext,
     agent_execution_context: &'a AgentExecutionContext,
     model_provider: &'a ModelProviderType,
-    provider_config: &'a ProviderConfig,
-    model_name: &'a str,
-    inference: &'a HashMap<String, Value>,
+}
+
+pub(in crate::runtime) struct AgentContextExpressionRequest<'a, ModelProviderType> {
+    pub(in crate::runtime) evaluation_context: &'a EvaluationContext,
+    pub(in crate::runtime) event_sender: Option<&'a mpsc::Sender<ExecutorEvent>>,
+    pub(in crate::runtime) tool_call_tracker: &'a ToolCallTracker,
+    pub(in crate::runtime) model_provider: &'a ModelProviderType,
+    pub(in crate::runtime) target_agent: Option<&'a PlannedAgent>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -406,9 +412,6 @@ impl WorkflowExecutor {
                     evaluation_context,
                     agent_execution_context,
                     model_provider,
-                    provider_config: &provider_config,
-                    model_name: &model_name,
-                    inference: &inference,
                 },
             )
             .await?;
@@ -430,11 +433,15 @@ impl WorkflowExecutor {
 
         let tool_call_execution_context =
             ToolCallExecutionContext::new(evaluation_context, None, &agent_execution_context.tool_call_tracker);
-        let rendered_instruction = self.evaluate_prompt_expression(
-            instruction_expression,
-            tool_call_execution_context,
-            &format!("instruction for agent `{}`", planned_agent.name),
-        )?;
+        let rendered_instruction = self
+            .evaluate_prompt_expression_with_model(
+                instruction_expression,
+                tool_call_execution_context,
+                &format!("instruction for agent `{}`", planned_agent.name),
+                model_provider,
+                Some(planned_agent),
+            )
+            .await?;
         self.validate_model_asset_support(planned_agent, &supported_asset_kinds, &rendered_instruction)?;
         let agent_instruction = rendered_instruction.text.clone();
         let prompt = if agent_execution_context.import_context.is_empty() {
@@ -519,6 +526,95 @@ impl WorkflowExecutor {
         }
     }
 
+    fn evaluate_prompt_expression_with_model<'a, ModelProviderType>(
+        &'a self,
+        expression: &'a Expression,
+        tool_call_execution_context: ToolCallExecutionContext<'a>,
+        context: &'a str,
+        model_provider: &'a ModelProviderType,
+        target_agent: Option<&'a PlannedAgent>,
+    ) -> BoxFuture<'a, Result<RenderedPrompt, ExecutorError>>
+    where
+        ModelProviderType: ModelProvider + 'a,
+    {
+        async move {
+            match expression {
+                Expression::StringTemplate(string_template) => {
+                    let mut rendered_prompt = RenderedPrompt::default();
+
+                    for string_template_part in &string_template.parts {
+                        match string_template_part {
+                            superwire_dsl::StringTemplatePart::Text(template_text) => {
+                                rendered_prompt.push_text(template_text.clone());
+                            }
+                            superwire_dsl::StringTemplatePart::Interpolation(interpolation_expression) => {
+                                let interpolation_prompt = self
+                                    .evaluate_prompt_expression_with_model(
+                                        interpolation_expression,
+                                        tool_call_execution_context,
+                                        context,
+                                        model_provider,
+                                        target_agent,
+                                    )
+                                    .await?;
+                                rendered_prompt.extend(interpolation_prompt);
+                            }
+                        }
+                    }
+
+                    Ok(rendered_prompt)
+                }
+                Expression::Asset(_) => {
+                    let value = self
+                        .evaluate_runtime_expression_with_model(expression, tool_call_execution_context, context, model_provider)
+                        .await?;
+                    let Some(assets) = ModelAsset::all_from_value(&value) else {
+                        return Err(ExecutorError::Other {
+                            message: format!("asset expression for {context} did not produce asset values"),
+                        });
+                    };
+
+                    Ok(RenderedPrompt::assets(assets))
+                }
+                Expression::Reference(_) => {
+                    let value = self
+                        .evaluate_runtime_expression_with_model(expression, tool_call_execution_context, context, model_provider)
+                        .await?;
+
+                    if let Some(assets) = ModelAsset::non_empty_all_from_value(&value) {
+                        return Ok(RenderedPrompt::assets(assets));
+                    }
+
+                    Ok(RenderedPrompt::text(normalize_prompt(&value)))
+                }
+                Expression::AgentContext(agent_context) => {
+                    let value = self
+                        .resolve_agent_context_expression(
+                            agent_context,
+                            AgentContextExpressionRequest {
+                                evaluation_context: tool_call_execution_context.evaluation_context,
+                                event_sender: tool_call_execution_context.event_sender,
+                                tool_call_tracker: tool_call_execution_context.tool_call_tracker,
+                                model_provider,
+                                target_agent,
+                            },
+                        )
+                        .await?;
+
+                    Ok(RenderedPrompt::text(normalize_prompt(&value)))
+                }
+                _ => {
+                    let value = self
+                        .evaluate_runtime_expression_with_model(expression, tool_call_execution_context, context, model_provider)
+                        .await?;
+
+                    Ok(RenderedPrompt::text(normalize_prompt(&value)))
+                }
+            }
+        }
+        .boxed()
+    }
+
     async fn resolve_agent_context<ModelProviderType>(
         &self,
         planned_agent: &PlannedAgent,
@@ -531,34 +627,104 @@ impl WorkflowExecutor {
             return Ok(None);
         };
 
-        let source_context = self.source_agent_context(agent_context, request.evaluation_context, &planned_agent.name)?;
+        self.resolve_agent_context_expression(
+            agent_context,
+            AgentContextExpressionRequest {
+                evaluation_context: request.evaluation_context,
+                event_sender: request.agent_execution_context.event_sender.as_ref(),
+                tool_call_tracker: &request.agent_execution_context.tool_call_tracker,
+                model_provider: request.model_provider,
+                target_agent: Some(planned_agent),
+            },
+        )
+        .await
+        .map(Some)
+    }
+
+    pub(in crate::runtime) async fn resolve_agent_context_expression<ModelProviderType>(
+        &self,
+        agent_context: &AgentContext,
+        request: AgentContextExpressionRequest<'_, ModelProviderType>,
+    ) -> Result<Value, ExecutorError>
+    where
+        ModelProviderType: ModelProvider,
+    {
+        let source_context = self.source_agent_context(agent_context, request.evaluation_context, "context expression")?;
 
         match agent_context {
-            AgentContext::Direct(_) => Ok(Some(source_context)),
-            AgentContext::Compact(_) => {
-                let instruction =
-                    self.resolve_compaction_instruction(agent_context, request.evaluation_context, request.agent_execution_context)?;
-                let output_schema = ModelSchema::workflow(WorkflowType::String);
-                let tool_definitions = vec![ModelToolDefinition::finalize(output_schema.clone())];
-                let compaction_request = ModelRequest {
-                    agent_name: format!("{}__context_compaction", planned_agent.name),
-                    provider_config: request.provider_config.clone(),
-                    model_name: request.model_name.to_string(),
-                    inference: request.inference.clone(),
-                    context: Some(source_context),
-                    prompt: instruction.clone(),
-                    prompt_content: vec![ModelPromptContent::text(instruction)],
-                    output_schema,
-                    tools: tool_definitions,
-                    event_sender: request.agent_execution_context.event_sender.clone(),
-                    mcp_pool: self.mcp_pool.clone(),
-                    tool_call_tracker: request.agent_execution_context.tool_call_tracker.clone(),
-                };
-                let compaction_response = request.model_provider.generate(compaction_request).await?;
-
-                Ok(Some(compaction_response.context))
-            }
+            AgentContext::Direct(_) => Ok(source_context),
+            AgentContext::Compact(_) => self.compact_agent_context(agent_context, source_context, request).await,
         }
+    }
+
+    async fn compact_agent_context<ModelProviderType>(
+        &self,
+        agent_context: &AgentContext,
+        source_context: Value,
+        request: AgentContextExpressionRequest<'_, ModelProviderType>,
+    ) -> Result<Value, ExecutorError>
+    where
+        ModelProviderType: ModelProvider,
+    {
+        let compaction_agent = self.compaction_agent(agent_context, request.target_agent)?;
+        let provider_template = self
+            .execution_plan
+            .provider_index
+            .get(&compaction_agent.provider_name)
+            .ok_or_else(|| ExecutorError::Other {
+                message: format!("provider `{}` is not declared", compaction_agent.provider_name),
+            })?;
+        let provider_config = provider_template.resolve(&compaction_agent.provider_name, request.evaluation_context)?;
+        let model_name = compaction_agent.evaluate_model_name(request.evaluation_context)?;
+        let inference = self.evaluate_inference_fields(compaction_agent, request.evaluation_context)?;
+        let instruction = self.resolve_compaction_instruction(
+            agent_context,
+            request.evaluation_context,
+            request.event_sender,
+            request.tool_call_tracker,
+        )?;
+        let output_schema = ModelSchema::workflow(WorkflowType::String);
+        let tool_definitions = vec![ModelToolDefinition::finalize(output_schema.clone())];
+        let compaction_request = ModelRequest {
+            agent_name: format!("{}__context_compaction", compaction_agent.name),
+            provider_config,
+            model_name,
+            inference,
+            context: Some(source_context),
+            prompt: instruction.clone(),
+            prompt_content: vec![ModelPromptContent::text(instruction)],
+            output_schema,
+            tools: tool_definitions,
+            event_sender: request.event_sender.cloned(),
+            mcp_pool: self.mcp_pool.clone(),
+            tool_call_tracker: request.tool_call_tracker.clone(),
+        };
+        let compaction_response = request.model_provider.generate(compaction_request).await?;
+
+        Ok(compaction_response.context)
+    }
+
+    fn compaction_agent<'a>(
+        &'a self,
+        agent_context: &AgentContext,
+        target_agent: Option<&'a PlannedAgent>,
+    ) -> Result<&'a PlannedAgent, ExecutorError> {
+        if let Some(target_agent) = target_agent {
+            return Ok(target_agent);
+        }
+
+        let Some(source_agent_name) = agent_context.agent_name() else {
+            return Err(ExecutorError::Other {
+                message: "context expression must include a source agent name".to_string(),
+            });
+        };
+
+        self.execution_plan
+            .planned_agents
+            .get(source_agent_name)
+            .ok_or_else(|| ExecutorError::Other {
+                message: format!("context expression references unknown agent `{source_agent_name}`"),
+            })
     }
 
     fn source_agent_context(
@@ -598,16 +764,13 @@ impl WorkflowExecutor {
         &self,
         agent_context: &AgentContext,
         evaluation_context: &EvaluationContext,
-        agent_execution_context: &AgentExecutionContext,
+        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+        tool_call_tracker: &ToolCallTracker,
     ) -> Result<String, ExecutorError> {
         let Some(instruction_expression) = agent_context.instruction() else {
             return Ok(Self::DEFAULT_CONTEXT_COMPACTION_INSTRUCTION.to_string());
         };
-        let tool_call_execution_context = ToolCallExecutionContext::new(
-            evaluation_context,
-            agent_execution_context.event_sender.as_ref(),
-            &agent_execution_context.tool_call_tracker,
-        );
+        let tool_call_execution_context = ToolCallExecutionContext::new(evaluation_context, event_sender, tool_call_tracker);
         let rendered_instruction = self.evaluate_prompt_expression(
             instruction_expression,
             tool_call_execution_context,

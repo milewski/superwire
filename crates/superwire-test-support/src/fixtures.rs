@@ -51,6 +51,9 @@ pub const ARRAY_PLUCK_MODES: &str = include_str!("../fixtures/042_array_pluck_mo
 pub const ARRAY_PLUCK_VARIANT_CASE_FIELDS: &str = include_str!("../fixtures/043_array_pluck_variant_case_fields.wire");
 pub const AGENT_CONTEXT_SHARING: &str = include_str!("../fixtures/044_agent_context_sharing.wire");
 pub const AGENT_CONTEXT_COMPACTION: &str = include_str!("../fixtures/045_agent_context_compaction.wire");
+pub const AGENT_CONTEXT_EXPRESSION_OUTPUT: &str = include_str!("../fixtures/046_agent_context_expression_output.wire");
+pub const AGENT_CONTEXT_EXPRESSION_COMPACTION: &str = include_str!("../fixtures/047_agent_context_expression_compaction.wire");
+pub const AGENT_CONTEXT_EXPRESSION_PROMPT: &str = include_str!("../fixtures/048_agent_context_expression_prompt.wire");
 
 pub const MCP_TOOL_OUTPUT_SCHEMA_OVERRIDE_NON_ITERABLE: &str =
     include_str!("../fixtures/negative/001_mcp_tool_output_schema_non_iterable_negative.wire");

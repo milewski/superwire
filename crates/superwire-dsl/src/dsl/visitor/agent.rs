@@ -223,7 +223,7 @@ impl AstVisitor {
 
     pub(super) fn visit_agent_context_value(&self, context_value_pair: Pair<'_, Rule>) -> Result<AgentContext, DslParseError> {
         match context_value_pair.as_rule() {
-            Rule::agent_context_value => {
+            Rule::agent_context_value | Rule::agent_context_expression => {
                 let inner_pair = self.first_inner_pair(context_value_pair, "agent context value")?;
 
                 self.visit_agent_context_value(inner_pair)

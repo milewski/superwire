@@ -98,15 +98,19 @@ fn suggests_only_agent_and_input_roots_inside_interpolation_expression() {
         }
     };
 
-    assert_completion_contains_labels!(&completion_suggestions, ReferenceKeyword::Agent, ReferenceKeyword::Input);
+    assert_completion_contains_labels!(
+        &completion_suggestions,
+        ReferenceKeyword::Agent,
+        ReferenceKeyword::Input,
+        ExpressionKeyword::Context,
+        ExpressionKeyword::Compact
+    );
 
     assert_completion_excludes_labels!(
         &completion_suggestions,
         ReferenceKeyword::Secrets,
         ReferenceKeyword::Tool,
-        "context",
         BuiltinFunctionName::Template,
-        "compact",
         DeclarationKeyword::Schema,
         DeclarationKeyword::Provider,
         "string",

@@ -128,7 +128,9 @@ impl WorkflowExecutor {
             }
         }
 
-        let output = self.evaluate_workflow_output(&runtime_state, event_sender.as_ref(), &tool_call_tracker)?;
+        let output = self
+            .evaluate_workflow_output(&runtime_state, event_sender.as_ref(), &tool_call_tracker, model_provider)
+            .await?;
         self.validate_workflow_output_value(&output)?;
 
         log::info!("workflow runtime completed");

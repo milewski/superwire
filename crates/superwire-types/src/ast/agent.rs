@@ -299,6 +299,19 @@ impl AgentContext {
         !runtime_dependencies.is_empty()
     }
 
+    pub fn collect_runtime_dependencies<HashBuilder: BuildHasher>(
+        &self,
+        runtime_dependencies: &mut HashSet<ReferenceKeyword, HashBuilder>,
+    ) {
+        self.reference().collect_runtime_dependency(runtime_dependencies);
+
+        if let Self::Compact(compact_agent_context) = self {
+            for property in &compact_agent_context.properties {
+                property.value.collect_runtime_dependencies(runtime_dependencies);
+            }
+        }
+    }
+
     pub fn collect_dynamic_dependencies(&self, referenced_dynamic_fields: &mut HashSet<String>) {
         self.reference().collect_dynamic_dependency(referenced_dynamic_fields);
 
@@ -307,6 +320,15 @@ impl AgentContext {
                 property.value.collect_dynamic_dependencies(referenced_dynamic_fields);
             }
         }
+    }
+
+    #[must_use]
+    pub fn references_secret(&self) -> bool {
+        self.reference().is_secret_reference()
+            || matches!(self, Self::Compact(compact_agent_context) if compact_agent_context
+                .properties
+                .iter()
+                .any(|property| property.value.references_secret()))
     }
 }
 

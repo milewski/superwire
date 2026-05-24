@@ -158,6 +158,7 @@ fallback_expression = { expression_primary ~ ("??" ~ expression_primary)? }
 expression_primary = _{
     match_expression
     | variant_projection_expression
+    | agent_context_expression
     | asset_expression
     | tool_call_expression
     | mcp_call_expression
@@ -176,6 +177,7 @@ match_fallback_branch = { "_" ~ expression }
 match_variant_branch = { variant_case_label ~ ("." ~ identifier)* }
 variant_projection_expression = { reference ~ "#" ~ identifier ~ ("." ~ identifier)* }
 
+agent_context_expression = { explicit_agent_context | compact_agent_context }
 asset_expression = { "asset" ~ expression_primary ~ asset_block? }
 asset_block = { "{" ~ asset_property* ~ "}" }
 asset_property = _{ object_field }

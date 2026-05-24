@@ -4,8 +4,8 @@ use crate::semantic::WorkflowSemanticError;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use superwire_types::ast::{
-    Asset, AssetPropertyName, Expression, MatchBranch, ModelAssetKind, Reference, ReferenceAccess, ReferenceKeyword, ReferenceRoot,
-    StringTemplatePart,
+    AgentContext, Asset, AssetPropertyName, Expression, MatchBranch, ModelAssetKind, Reference, ReferenceAccess, ReferenceKeyword,
+    ReferenceRoot, StringTemplatePart,
 };
 
 #[derive(Debug, Clone)]
@@ -60,6 +60,7 @@ impl ExpressionEvaluationExt for Expression {
                     expression.evaluate(evaluation_context, context)
                 })
             }
+            Self::AgentContext(agent_context) => agent_context.evaluate(evaluation_context, context),
             Self::Asset(asset) => asset.evaluate(evaluation_context, context),
             Self::ToolCall(_) => Err(WorkflowSemanticError::UnsupportedFeature {
                 feature: "deterministic tool calls must be executed by the workflow runtime".to_string(),
@@ -122,6 +123,54 @@ impl ExpressionEvaluationExt for Expression {
                 Ok(Value::Object(evaluated_fields))
             }
         }
+    }
+}
+
+trait AgentContextEvaluationExt {
+    fn evaluate(&self, evaluation_context: &EvaluationContext, context: &str) -> Result<Value, WorkflowSemanticError>;
+    fn evaluate_source_context(&self, evaluation_context: &EvaluationContext, context: &str) -> Result<Value, WorkflowSemanticError>;
+}
+
+impl AgentContextEvaluationExt for AgentContext {
+    fn evaluate(&self, evaluation_context: &EvaluationContext, context: &str) -> Result<Value, WorkflowSemanticError> {
+        match self {
+            Self::Direct(_) => self.evaluate_source_context(evaluation_context, context),
+            Self::Compact(_) => Err(WorkflowSemanticError::UnsupportedFeature {
+                feature: "`compact` context expressions require the workflow runtime".to_string(),
+            }),
+        }
+    }
+
+    fn evaluate_source_context(&self, evaluation_context: &EvaluationContext, context: &str) -> Result<Value, WorkflowSemanticError> {
+        if !self.reference().is_agent_root() {
+            return Err(WorkflowSemanticError::ExpressionEvaluation {
+                context: context.to_string(),
+                message: "context expression must reference `agent.<name>`".to_string(),
+            });
+        }
+
+        if !self.reference().has_single_access() {
+            return Err(WorkflowSemanticError::ExpressionEvaluation {
+                context: context.to_string(),
+                message: "context expression must reference a whole agent, not an output field".to_string(),
+            });
+        }
+
+        let Some(source_agent_name) = self.agent_name() else {
+            return Err(WorkflowSemanticError::ExpressionEvaluation {
+                context: context.to_string(),
+                message: "context expression must include a source agent name".to_string(),
+            });
+        };
+
+        evaluation_context
+            .agent_contexts
+            .get(source_agent_name)
+            .cloned()
+            .ok_or_else(|| WorkflowSemanticError::ExpressionEvaluation {
+                context: context.to_string(),
+                message: format!("context for agent `{source_agent_name}` is not available yet"),
+            })
     }
 }
 

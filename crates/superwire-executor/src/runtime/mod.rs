@@ -10,7 +10,7 @@ mod schema;
 pub mod state;
 mod tools;
 
-pub(in crate::runtime) use agent::AgentRunContext;
+pub(in crate::runtime) use agent::{AgentContextExpressionRequest, AgentRunContext};
 pub use cache::{
     AgentCacheConfig, AgentCacheDriver, AgentCacheOptions, AgentCacheSession, AgentCacheTimeToLive, RedisAgentCacheConfig,
     DEFAULT_AGENT_CACHE_TIME_TO_LIVE,
@@ -19,10 +19,11 @@ pub(in crate::runtime) use configuration::RuntimeValidationContext;
 pub use error::ExecutorError;
 pub(in crate::runtime) use schema::value_object;
 
-use crate::model::ToolCallTracker;
+use crate::model::{ModelProvider, ToolCallTracker};
 use crate::runtime::mcp::normalize_prompt;
 use crate::runtime::state::RuntimeState;
 use crate::runtime::tools::ExpressionMcpExecutionPlanExt;
+use futures::future::{BoxFuture, FutureExt};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::future::Future;
@@ -315,6 +316,7 @@ impl WorkflowExecutor {
             | Expression::NullLiteral
             | Expression::Reference(_)
             | Expression::FunctionCall(_)
+            | Expression::AgentContext(_)
             | Expression::Asset(_)
             | Expression::VariantProjection(_)
             | Expression::Match(_) => Ok(evaluate_expression(
@@ -353,6 +355,120 @@ impl WorkflowExecutor {
                 Ok(Value::Object(evaluated_fields))
             }
         }
+    }
+
+    pub(in crate::runtime) fn evaluate_runtime_expression_with_model<'a, ModelProviderType>(
+        &'a self,
+        expression: &'a Expression,
+        tool_call_execution_context: ToolCallExecutionContext<'a>,
+        context: &'a str,
+        model_provider: &'a ModelProviderType,
+    ) -> BoxFuture<'a, Result<Value, ExecutorError>>
+    where
+        ModelProviderType: ModelProvider + 'a,
+    {
+        async move {
+            match expression {
+                Expression::StringLiteral(string_literal) => Ok(Value::String(string_literal.clone())),
+                Expression::StringTemplate(string_template) => {
+                    let mut rendered_template = String::new();
+
+                    for string_template_part in &string_template.parts {
+                        match string_template_part {
+                            superwire_dsl::StringTemplatePart::Text(template_text) => rendered_template.push_str(template_text),
+                            superwire_dsl::StringTemplatePart::Interpolation(interpolation_expression) => {
+                                let interpolation_value = self
+                                    .evaluate_runtime_expression_with_model(
+                                        interpolation_expression,
+                                        tool_call_execution_context,
+                                        context,
+                                        model_provider,
+                                    )
+                                    .await?;
+                                rendered_template.push_str(&normalize_prompt(&interpolation_value));
+                            }
+                        }
+                    }
+
+                    Ok(Value::String(rendered_template))
+                }
+                Expression::AgentContext(agent_context) => {
+                    self.resolve_agent_context_expression(
+                        agent_context,
+                        AgentContextExpressionRequest {
+                            evaluation_context: tool_call_execution_context.evaluation_context,
+                            event_sender: tool_call_execution_context.event_sender,
+                            tool_call_tracker: tool_call_execution_context.tool_call_tracker,
+                            model_provider,
+                            target_agent: None,
+                        },
+                    )
+                    .await
+                }
+                Expression::NumberLiteral(_)
+                | Expression::BooleanLiteral(_)
+                | Expression::NullLiteral
+                | Expression::Reference(_)
+                | Expression::FunctionCall(_)
+                | Expression::Asset(_)
+                | Expression::VariantProjection(_)
+                | Expression::Match(_) => Ok(evaluate_expression(
+                    expression,
+                    tool_call_execution_context.evaluation_context,
+                    context,
+                )?),
+                Expression::NullFallback(null_fallback) => {
+                    let value = self
+                        .evaluate_runtime_expression_with_model(&null_fallback.value, tool_call_execution_context, context, model_provider)
+                        .await?;
+
+                    if value.is_null() {
+                        return self
+                            .evaluate_runtime_expression_with_model(
+                                &null_fallback.fallback,
+                                tool_call_execution_context,
+                                context,
+                                model_provider,
+                            )
+                            .await;
+                    }
+
+                    Ok(value)
+                }
+                Expression::ToolCall(tool_call) => self.execute_deterministic_tool_call(tool_call, tool_call_execution_context),
+                Expression::McpCall(mcp_call) => self.execute_mcp_call(mcp_call, tool_call_execution_context.into()),
+                Expression::ArrayLiteral(array_items) => {
+                    let mut evaluated_items = Vec::with_capacity(array_items.len());
+
+                    for array_item in array_items {
+                        evaluated_items.push(
+                            self.evaluate_runtime_expression_with_model(array_item, tool_call_execution_context, context, model_provider)
+                                .await?,
+                        );
+                    }
+
+                    Ok(Value::Array(evaluated_items))
+                }
+                Expression::ObjectLiteral(object_fields) => {
+                    let mut evaluated_fields = Map::new();
+
+                    for object_field in object_fields {
+                        let field_value = self
+                            .evaluate_runtime_expression_with_model(
+                                &object_field.value,
+                                tool_call_execution_context,
+                                context,
+                                model_provider,
+                            )
+                            .await?;
+                        evaluated_fields.insert(object_field.name.clone(), field_value);
+                    }
+
+                    Ok(Value::Object(evaluated_fields))
+                }
+            }
+        }
+        .boxed()
     }
 }
 

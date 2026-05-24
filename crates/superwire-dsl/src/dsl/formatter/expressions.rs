@@ -1,5 +1,6 @@
 use crate::dsl::ast::{
-    Asset, CallArgument, Expression, FunctionCall, MatchBranch, ObjectField, Reference, StringTemplate, StringTemplatePart,
+    AgentContext, Asset, CallArgument, Expression, ExpressionKeyword, FunctionCall, MatchBranch, ObjectField, Reference, StringTemplate,
+    StringTemplatePart,
 };
 
 use super::mcp::McpCallMcpExt;
@@ -132,6 +133,7 @@ impl ExpressionExpressionsExt for Expression {
             Self::NullLiteral => formatter.output.push_str("null"),
             Self::Reference(reference) => reference.push_to_formatter(formatter),
             Self::FunctionCall(function_call) => function_call.push_to_formatter(formatter),
+            Self::AgentContext(agent_context) => agent_context.push_to_formatter(formatter),
             Self::Asset(asset) => asset.push_to_formatter(formatter),
             Self::ToolCall(tool_call) => tool_call.push_to_formatter(formatter),
             Self::McpCall(mcp_call) => mcp_call.push_to_formatter(formatter),
@@ -338,6 +340,7 @@ impl ExpressionExpressionsExt for Expression {
             | Self::NullLiteral
             | Self::Reference(_)
             | Self::FunctionCall(_)
+            | Self::AgentContext(_)
             | Self::Asset(_)
             | Self::ToolCall(_)
             | Self::McpCall(_)
@@ -391,6 +394,43 @@ impl ExpressionExpressionsExt for Expression {
             object_field.name,
             formatter.inline_expression(&object_field.value)
         ))
+    }
+}
+
+pub(super) trait AgentContextExpressionsExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl AgentContextExpressionsExt for AgentContext {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        match self {
+            Self::Direct(agent_context_reference) => {
+                formatter.output.push_str(ExpressionKeyword::Context.as_str());
+                formatter.output.push(' ');
+                agent_context_reference.reference.push_to_formatter(formatter);
+            }
+            Self::Compact(compact_agent_context) => {
+                formatter.output.push_str(ExpressionKeyword::Compact.as_str());
+                formatter.output.push(' ');
+                compact_agent_context.reference.push_to_formatter(formatter);
+
+                if compact_agent_context.properties.is_empty() {
+                    return;
+                }
+
+                formatter.output.push_str(" {");
+                formatter.push_newline();
+                formatter.indentation_depth += 1;
+
+                for property in &compact_agent_context.properties {
+                    property.push_to_formatter(formatter);
+                }
+
+                formatter.indentation_depth -= 1;
+                formatter.push_indent();
+                formatter.output.push('}');
+            }
+        }
     }
 }
 
@@ -644,6 +684,7 @@ impl ExpressionExpressionsExt2 for Expression {
             | Self::NullLiteral
             | Self::Reference(_)
             | Self::FunctionCall(_)
+            | Self::AgentContext(_)
             | Self::Asset(_)
             | Self::ToolCall(_)
             | Self::McpCall(_)

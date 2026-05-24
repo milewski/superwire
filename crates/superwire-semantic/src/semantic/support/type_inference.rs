@@ -61,6 +61,15 @@ impl ExpressionTypeInferenceExt for Expression {
                     expression.infer_type(type_inference_context, context)
                 })
             }
+            Self::AgentContext(agent_context) => {
+                if let superwire_types::ast::AgentContext::Compact(compact_agent_context) = agent_context {
+                    for property in &compact_agent_context.properties {
+                        let _ = property.value.infer_type(type_inference_context, context)?;
+                    }
+                }
+
+                Ok(WorkflowType::AnyObject)
+            }
             Self::Asset(asset) => asset.infer_type(type_inference_context, context),
             Self::ToolCall(tool_call) => tool_call.infer_type(type_inference_context, context),
             Self::McpCall(mcp_call) => {

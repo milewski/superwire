@@ -340,6 +340,8 @@ fn suggests_value_producing_expressions_for_dynamic_field_values() {
         ReferenceKeyword::Dynamic,
         ReferenceKeyword::Input,
         ReferenceKeyword::Secrets,
+        ExpressionKeyword::Context,
+        ExpressionKeyword::Compact,
         BuiltinFunctionName::Template
     );
 }

@@ -14,6 +14,9 @@ impl AstVisitor {
             Rule::variant_projection_expression => Ok(Expression::VariantProjection(
                 self.visit_variant_projection_expression(expression_pair)?,
             )),
+            Rule::agent_context_expression | Rule::explicit_agent_context | Rule::compact_agent_context => {
+                Ok(Expression::AgentContext(self.visit_agent_context_value(expression_pair)?))
+            }
             Rule::asset_expression => Ok(Expression::Asset(self.visit_asset_expression(expression_pair)?)),
             Rule::function_call => Ok(Expression::FunctionCall(self.visit_function_call(expression_pair)?)),
             Rule::tool_call_expression => Ok(Expression::ToolCall(self.visit_tool_call_expression(expression_pair)?)),
@@ -251,6 +254,9 @@ impl AstVisitor {
             Rule::fallback_expression
             | Rule::match_expression
             | Rule::variant_projection_expression
+            | Rule::agent_context_expression
+            | Rule::explicit_agent_context
+            | Rule::compact_agent_context
             | Rule::asset_expression
             | Rule::function_call
             | Rule::mcp_call_expression

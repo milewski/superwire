@@ -1203,6 +1203,7 @@ impl ExpressionExecutionGraphExt for Expression {
 
                 format!("{}({arguments})", function_call.callee.render_path())
             }
+            Self::AgentContext(agent_context) => agent_context.graph_label(),
             Self::Asset(asset) => format!("asset {}", asset.source.graph_label()),
             Self::ToolCall(tool_call) => format!("{}(...)", tool_call.callee.render_path()),
             Self::McpCall(mcp_call) => format!("{}({})", mcp_call.operation.as_str(), mcp_call.callee.render_path()),

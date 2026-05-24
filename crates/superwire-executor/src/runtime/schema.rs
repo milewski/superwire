@@ -321,18 +321,24 @@ impl TypeExpressionOutputInjectionExt for TypeExpression {
 }
 
 impl WorkflowExecutor {
-    pub(super) fn evaluate_workflow_output(
+    pub(super) async fn evaluate_workflow_output<ModelProviderType>(
         &self,
         runtime_state: &RuntimeState,
         event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
         tool_call_tracker: &ToolCallTracker,
-    ) -> Result<Value, ExecutorError> {
+        model_provider: &ModelProviderType,
+    ) -> Result<Value, ExecutorError>
+    where
+        ModelProviderType: crate::model::ModelProvider,
+    {
         let mut output_fields = Map::new();
         let evaluation_context = runtime_state.evaluation_context();
         let tool_call_execution_context = ToolCallExecutionContext::new(&evaluation_context, event_sender, tool_call_tracker);
 
         for output_field in &self.execution_plan.output_declaration.fields {
-            let output_value = self.evaluate_runtime_expression(&output_field.value, tool_call_execution_context, "workflow output")?;
+            let output_value = self
+                .evaluate_runtime_expression_with_model(&output_field.value, tool_call_execution_context, "workflow output", model_provider)
+                .await?;
             output_fields.insert(output_field.name.clone(), output_value);
         }
 

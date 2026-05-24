@@ -698,6 +698,15 @@ impl ExpressionMcpExecutionPlanCollectorExt for Expression {
                         .collect_planned_mcp_calls(executor, evaluation_context, planned_calls)?;
                 }
             }
+            Self::AgentContext(agent_context) => {
+                if let superwire_dsl::AgentContext::Compact(compact_agent_context) = agent_context {
+                    for property in &compact_agent_context.properties {
+                        property
+                            .value
+                            .collect_planned_mcp_calls(executor, evaluation_context, planned_calls)?;
+                    }
+                }
+            }
             Self::Asset(asset) => {
                 asset
                     .source

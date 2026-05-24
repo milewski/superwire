@@ -142,6 +142,7 @@ impl SemanticIndex {
 
     pub fn output_value_suggestions(&self, value_prefix: &str) -> Vec<CompletionSuggestion> {
         let mut completion_suggestions = self.output_value_root_suggestions(value_prefix);
+        completion_suggestions.extend(self.context_expression_suggestions(value_prefix));
         let literal_suggestion_specs = [
             ("\"\"", "String literal"),
             ("0", "Number literal"),
@@ -190,7 +191,21 @@ impl SemanticIndex {
         let resource_read_insert_text = format!("{} {}.", McpCallOperation::Read.as_str(), ReferenceKeyword::Resource.as_str());
         let prompt_render_insert_text = format!("{} {}.", McpCallOperation::Render.as_str(), ReferenceKeyword::Prompt.as_str());
         let template_insert_text = format!("{}($1)", BuiltinFunctionName::Template.as_str());
+        let context_insert_text = format!("{} {}.", ExpressionKeyword::Context.as_str(), ReferenceKeyword::Agent.as_str());
+        let compact_insert_text = format!("{} {}.", ExpressionKeyword::Compact.as_str(), ReferenceKeyword::Agent.as_str());
         let function_suggestion_specs = [
+            (
+                ExpressionKeyword::Context.as_str(),
+                "Agent context expression",
+                "Serializes a prior agent context.",
+                context_insert_text,
+            ),
+            (
+                ExpressionKeyword::Compact.as_str(),
+                "Agent context compaction expression",
+                "Summarizes a prior agent context.",
+                compact_insert_text,
+            ),
             (
                 ToolCallKeyword::Call.as_str(),
                 "Tool call expression",
@@ -251,6 +266,7 @@ impl SemanticIndex {
 
     pub fn prompt_interpolation_root_suggestions(&self, root_prefix: &str, position: Position) -> Vec<CompletionSuggestion> {
         let mut completion_suggestions = self.prompt_value_root_suggestions(root_prefix);
+        completion_suggestions.extend(self.context_expression_suggestions(root_prefix));
 
         if let Some(for_loop_binding_names) = self.for_loop_binding_names_at_position(position) {
             for for_loop_binding_name in for_loop_binding_names {
@@ -301,7 +317,21 @@ impl SemanticIndex {
 
         let resource_read_insert_text = format!("{} {}.", McpCallOperation::Read.as_str(), ReferenceKeyword::Resource.as_str());
         let prompt_render_insert_text = format!("{} {}.", McpCallOperation::Render.as_str(), ReferenceKeyword::Prompt.as_str());
+        let context_insert_text = format!("{} {}.", ExpressionKeyword::Context.as_str(), ReferenceKeyword::Agent.as_str());
+        let compact_insert_text = format!("{} {}.", ExpressionKeyword::Compact.as_str(), ReferenceKeyword::Agent.as_str());
         let mcp_call_suggestion_specs = [
+            (
+                ExpressionKeyword::Context.as_str(),
+                "Agent context expression",
+                "Serializes a prior agent context as prompt text.",
+                context_insert_text,
+            ),
+            (
+                ExpressionKeyword::Compact.as_str(),
+                "Agent context compaction expression",
+                "Summarizes a prior agent context as prompt text.",
+                compact_insert_text,
+            ),
             (
                 McpCallOperation::Read.as_str(),
                 "MCP resource read expression",
@@ -359,6 +389,8 @@ impl SemanticIndex {
         })
         .collect::<Vec<_>>();
 
+        completion_suggestions.extend(self.context_expression_suggestions(root_prefix));
+
         if let Some(for_loop_binding_names) = self.for_loop_binding_names_at_position(position) {
             for for_loop_binding_name in for_loop_binding_names {
                 if !for_loop_binding_name.starts_with(root_prefix) {
@@ -376,6 +408,33 @@ impl SemanticIndex {
         }
 
         completion_suggestions
+    }
+
+    fn context_expression_suggestions(&self, value_prefix: &str) -> Vec<CompletionSuggestion> {
+        [
+            (
+                ExpressionKeyword::Context.as_str(),
+                "Agent context expression",
+                "Serializes a prior agent context.",
+                format!("{} {}.", ExpressionKeyword::Context.as_str(), ReferenceKeyword::Agent.as_str()),
+            ),
+            (
+                ExpressionKeyword::Compact.as_str(),
+                "Agent context compaction expression",
+                "Summarizes a prior agent context.",
+                format!("{} {}.", ExpressionKeyword::Compact.as_str(), ReferenceKeyword::Agent.as_str()),
+            ),
+        ]
+        .into_iter()
+        .filter(|(label, _, _, _)| label.starts_with(value_prefix))
+        .map(|(label, detail, documentation, insert_text)| CompletionSuggestion {
+            label: label.to_string(),
+            kind: CompletionItemKind::FUNCTION,
+            detail: detail.to_string(),
+            documentation: documentation.to_string(),
+            insert_text,
+        })
+        .collect()
     }
 
     pub fn agent_context_value_suggestions(&self, value_prefix: &str) -> Vec<CompletionSuggestion> {
