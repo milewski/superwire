@@ -11,5 +11,5 @@ export default function OutputBox({ runState, outputJson }: OutputBoxProps) {
     return <div className="empty-state compact">{runState === 'running' ? 'Waiting for workflow output...' : 'Run a workflow to see output.'}</div>;
   }
 
-  return <JsonCodeEditor value={outputJson} readOnly className="workflow-output__json" />;
+  return <JsonCodeEditor value={outputJson} readOnly fullEditor uncappedHeight className="workflow-output__json" />;
 }

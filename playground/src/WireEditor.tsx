@@ -552,6 +552,12 @@ function createEditorState(
 
 function wireFoldRange(editorState: EditorState, lineStart: number) {
   const source = editorState.doc.toString();
+  const multilineStringRange = findMultilineStringFoldRange(editorState, source, lineStart);
+
+  if (multilineStringRange) {
+    return multilineStringRange;
+  }
+
   const openingBraceIndex = findOpeningBraceOnLine(source, lineStart);
 
   if (openingBraceIndex === null) {
@@ -577,25 +583,133 @@ function wireFoldRange(editorState: EditorState, lineStart: number) {
   };
 }
 
-function findOpeningBraceOnLine(source: string, lineStart: number) {
+function findMultilineStringFoldRange(editorState: EditorState, source: string, lineStart: number) {
+  const openingDelimiterIndex = findOpeningMultilineStringDelimiterOnLine(source, lineStart);
+
+  if (openingDelimiterIndex === null) {
+    return null;
+  }
+
+  const closingDelimiterIndex = source.indexOf('"""', openingDelimiterIndex + 3);
+
+  if (closingDelimiterIndex < 0) {
+    return null;
+  }
+
+  const openingLine = editorState.doc.lineAt(openingDelimiterIndex);
+  const closingLine = editorState.doc.lineAt(closingDelimiterIndex);
+
+  if (openingLine.number === closingLine.number) {
+    return null;
+  }
+
+  return {
+    from: openingLine.to,
+    to: closingLine.from,
+  };
+}
+
+function findOpeningMultilineStringDelimiterOnLine(source: string, lineStart: number) {
+  if (isInsideMultilineStringBefore(source, lineStart)) {
+    return null;
+  }
+
   const lineEnd = source.indexOf('\n', lineStart);
   const searchEnd = lineEnd === -1 ? source.length : lineEnd;
-  let insideString = false;
+  let insideQuotedString = false;
   let escaping = false;
 
   for (let characterIndex = lineStart; characterIndex < searchEnd; characterIndex += 1) {
     const character = source[characterIndex];
     const nextCharacter = source[characterIndex + 1];
 
-    if (!insideString && character === '/' && nextCharacter === '/') {
+    if (!insideQuotedString && character === '/' && nextCharacter === '/') {
       return null;
     }
 
-    if (character === '"' && !escaping) {
-      insideString = !insideString;
+    if (!insideQuotedString && source.startsWith('"""', characterIndex)) {
+      return characterIndex;
     }
 
-    if (!insideString && character === '{') {
+    if (character === '"' && !escaping) {
+      insideQuotedString = !insideQuotedString;
+    }
+
+    escaping = character === '\\' && !escaping;
+  }
+
+  return null;
+}
+
+function isInsideMultilineStringBefore(source: string, offset: number) {
+  let insideMultilineString = false;
+  let insideQuotedString = false;
+  let escaping = false;
+  let insideLineComment = false;
+
+  for (let characterIndex = 0; characterIndex < offset; characterIndex += 1) {
+    const character = source[characterIndex];
+    const nextCharacter = source[characterIndex + 1];
+
+    if (insideLineComment) {
+      if (character === '\n') {
+        insideLineComment = false;
+      }
+
+      continue;
+    }
+
+    if (!insideQuotedString && !insideMultilineString && character === '/' && nextCharacter === '/') {
+      insideLineComment = true;
+      characterIndex += 1;
+
+      continue;
+    }
+
+    if (!insideQuotedString && source.startsWith('"""', characterIndex)) {
+      insideMultilineString = !insideMultilineString;
+      characterIndex += 2;
+
+      continue;
+    }
+
+    if (!insideMultilineString && character === '"' && !escaping) {
+      insideQuotedString = !insideQuotedString;
+    }
+
+    escaping = character === '\\' && !escaping;
+  }
+
+  return insideMultilineString;
+}
+
+function findOpeningBraceOnLine(source: string, lineStart: number) {
+  const lineEnd = source.indexOf('\n', lineStart);
+  const searchEnd = lineEnd === -1 ? source.length : lineEnd;
+  let insideMultilineString = isInsideMultilineStringBefore(source, lineStart);
+  let insideQuotedString = false;
+  let escaping = false;
+
+  for (let characterIndex = lineStart; characterIndex < searchEnd; characterIndex += 1) {
+    const character = source[characterIndex];
+    const nextCharacter = source[characterIndex + 1];
+
+    if (!insideQuotedString && !insideMultilineString && character === '/' && nextCharacter === '/') {
+      return null;
+    }
+
+    if (!insideQuotedString && source.startsWith('"""', characterIndex)) {
+      insideMultilineString = !insideMultilineString;
+      characterIndex += 2;
+
+      continue;
+    }
+
+    if (!insideMultilineString && character === '"' && !escaping) {
+      insideQuotedString = !insideQuotedString;
+    }
+
+    if (!insideQuotedString && !insideMultilineString && character === '{') {
       return characterIndex;
     }
 
@@ -607,7 +721,8 @@ function findOpeningBraceOnLine(source: string, lineStart: number) {
 
 function findMatchingClosingBrace(source: string, openingBraceIndex: number) {
   let braceDepth = 0;
-  let insideString = false;
+  let insideMultilineString = false;
+  let insideQuotedString = false;
   let escaping = false;
   let insideLineComment = false;
 
@@ -623,22 +738,29 @@ function findMatchingClosingBrace(source: string, openingBraceIndex: number) {
       continue;
     }
 
-    if (!insideString && character === '/' && nextCharacter === '/') {
+    if (!insideQuotedString && !insideMultilineString && character === '/' && nextCharacter === '/') {
       insideLineComment = true;
       characterIndex += 1;
 
       continue;
     }
 
-    if (character === '"' && !escaping) {
-      insideString = !insideString;
+    if (!insideQuotedString && source.startsWith('"""', characterIndex)) {
+      insideMultilineString = !insideMultilineString;
+      characterIndex += 2;
+
+      continue;
     }
 
-    if (!insideString && character === '{') {
+    if (!insideMultilineString && character === '"' && !escaping) {
+      insideQuotedString = !insideQuotedString;
+    }
+
+    if (!insideQuotedString && !insideMultilineString && character === '{') {
       braceDepth += 1;
     }
 
-    if (!insideString && character === '}') {
+    if (!insideQuotedString && !insideMultilineString && character === '}') {
       braceDepth -= 1;
 
       if (braceDepth === 0) {

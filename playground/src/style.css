@@ -690,16 +690,33 @@ textarea {
   color: var(--muted-foreground);
 }
 
-.panel-card__trigger,
 .panel-card__header {
   @apply flex h-auto min-h-[4rem] w-full items-center justify-between gap-4 rounded-none px-4 py-3 text-left;
   white-space: normal;
   border-bottom: 1px solid var(--border);
 }
 
+.panel-card__header--collapsible {
+  @apply p-0;
+}
+
+.panel-card__trigger {
+  @apply flex h-auto min-h-[4rem] min-w-0 flex-1 items-center justify-between gap-4 rounded-none px-4 py-3 text-left;
+  white-space: normal;
+}
+
 .panel-card__trigger > span:first-child,
-.panel-card__header > div {
+.panel-card__header > .panel-card__title-block {
   @apply min-w-0 flex-1;
+}
+
+.panel-card__header-actions {
+  @apply flex min-w-fit shrink-0 items-center gap-1 pr-3;
+}
+
+.panel-card__header-actions button svg {
+  width: 15px !important;
+  height: 15px !important;
 }
 
 .panel-card__title-block {
@@ -726,7 +743,7 @@ textarea {
   transform: rotate(180deg);
 }
 
-.panel-card[data-state="closed"] .panel-card__trigger {
+.panel-card[data-state="closed"] .panel-card__header {
   border-bottom-color: transparent;
 }
 
@@ -798,11 +815,39 @@ textarea {
 }
 
 .workflow-layout__bottom {
-  @apply grid gap-5 xl:grid-cols-2;
+  @apply grid items-start gap-5 xl:grid-cols-2;
+  transition: grid-template-columns 260ms ease;
+}
+
+.workflow-layout__bottom[data-maximized="output"] {
+  @apply xl:grid-cols-[minmax(0,1fr)_minmax(0,0fr)];
+  column-gap: 0;
+}
+
+.workflow-layout__bottom[data-maximized="events"] {
+  @apply xl:grid-cols-[minmax(0,0fr)_minmax(0,1fr)];
+  column-gap: 0;
 }
 
 .workflow-log-panel {
   border-radius: 16px;
+  transition: opacity 220ms ease, transform 260ms ease, max-height 260ms ease;
+}
+
+.workflow-layout__bottom[data-maximized="output"] .workflow-log-panel--events,
+.workflow-layout__bottom[data-maximized="events"] .workflow-log-panel--output {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.workflow-layout__bottom[data-maximized="output"] .workflow-log-panel--events {
+  transform: translateX(2rem);
+}
+
+.workflow-layout__bottom[data-maximized="events"] .workflow-log-panel--output {
+  transform: translateX(-2rem);
 }
 
 .workflow-log-panel__body {
@@ -831,6 +876,18 @@ textarea {
 
 .json-code-editor--full {
   min-height: auto;
+}
+
+.json-code-editor--uncapped {
+  overflow: visible;
+}
+
+.json-code-editor--uncapped .cm-editor {
+  height: auto !important;
+}
+
+.json-code-editor--uncapped .cm-scroller {
+  overflow: visible !important;
 }
 
 .json-code-editor .cm-editor,
@@ -914,7 +971,6 @@ textarea {
 }
 
 .workflow-output__json {
-  @apply min-h-20;
   background: color-mix(in srgb, var(--card) 97%, var(--foreground) 3%);
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -924,6 +980,19 @@ textarea {
 .workflow-output__json .cm-content {
   padding: 1rem 1.1rem;
   line-height: 1.65;
+}
+
+.workflow-output__json,
+.workflow-output__json .cm-editor,
+.workflow-output__json .cm-scroller {
+  overflow: visible !important;
+}
+
+.playground-toast {
+  @apply fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg border px-4 py-2 text-sm font-medium shadow-lg;
+  border-color: color-mix(in srgb, var(--superwire-accent) 38%, var(--border));
+  background: color-mix(in srgb, var(--card) 92%, var(--superwire-accent) 8%);
+  color: var(--foreground);
 }
 
 .events-log {

@@ -1,4 +1,4 @@
-import { CheckCircle2, Copy, Database, DatabaseZap, Download, GitBranch, Moon, Pencil, Play, Plus, RefreshCcw, Square, Sun, Trash2, Workflow } from 'lucide-react';
+import { CheckCircle2, Copy, Database, DatabaseZap, GitBranch, Maximize2, Minimize2, Moon, Pencil, Play, Plus, RefreshCcw, Square, Sun, Trash2, Workflow } from 'lucide-react';
 import type { ReactElement } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -39,6 +39,8 @@ type RenameDialogTarget =
   | { kind: 'workflow'; tabId: string }
   | { kind: 'codeFragment'; tabId: string; fragmentId: string };
 
+type MaximizedWorkflowPanel = 'output' | 'events' | null;
+
 interface EditorJumpTarget {
   tabId: string;
   fragmentId: string;
@@ -57,6 +59,7 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(true);
   const [outputOpen, setOutputOpen] = useState(true);
   const [eventsOpen, setEventsOpen] = useState(true);
+  const [maximizedWorkflowPanel, setMaximizedWorkflowPanel] = useState<MaximizedWorkflowPanel>(null);
   const [eventGroupingMode, setEventGroupingMode] = useState<EventGroupingMode>(EventGroupingMode.Chronological);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [currentRunIdentifier, setCurrentRunIdentifier] = useState<string | null>(null);
@@ -69,6 +72,7 @@ export default function App() {
   const [editorJumpTarget, setEditorJumpTarget] = useState<EditorJumpTarget | null>(null);
   const [playgroundControlsSentinelElement, setPlaygroundControlsSentinelElement] = useState<HTMLDivElement | null>(null);
   const [playgroundControlsStuck, setPlaygroundControlsStuck] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
   const validationDebounceTimeoutRef = useRef<number | null>(null);
   const graphDebounceTimeoutRef = useRef<number | null>(null);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
@@ -106,6 +110,16 @@ export default function App() {
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
+
+  useEffect(() => {
+    if (!toastMessage) {
+      return;
+    }
+
+    const timeoutIdentifier = window.setTimeout(() => setToastMessage(''), 2600);
+
+    return () => window.clearTimeout(timeoutIdentifier);
+  }, [toastMessage]);
 
   useEffect(() => {
     if (!playgroundControlsSentinelElement) {
@@ -574,14 +588,18 @@ export default function App() {
 
   async function validateWorkflow() {
     const currentTab = requireActiveTab(activeTab);
-    await validateWorkflowByTabId(currentTab.id);
+    const valid = await validateWorkflowByTabId(currentTab.id);
+
+    if (valid) {
+      setToastMessage('Workflow is valid.');
+    }
   }
 
   async function validateWorkflowByTabId(tabId: string) {
     const currentTab = tabs.find((tab) => tab.id === tabId);
 
     if (!currentTab) {
-      return;
+      return false;
     }
 
     updateTab(currentTab.id, (tab) => ({ ...tab, validationState: 'running', message: 'Validating workflow...' }));
@@ -597,12 +615,14 @@ export default function App() {
       if (!response.ok || !payload.valid) {
         updateTab(currentTab.id, (tab) => ({ ...tab, validationState: 'invalid', message: payload.details ?? payload.error ?? 'Workflow is invalid.' }));
 
-        return;
+        return false;
       }
 
       updateTab(currentTab.id, (tab) => ({ ...tab, validationState: 'valid', message: 'Workflow is valid.' }));
+      return true;
     } catch (error) {
       updateTab(currentTab.id, (tab) => ({ ...tab, validationState: 'invalid', message: errorMessage(error) }));
+      return false;
     }
   }
 
@@ -646,6 +666,7 @@ export default function App() {
         graphData: null,
         updatedAt: Date.now(),
       }));
+      setToastMessage('Workflow formatted.');
     } catch (error) {
       updateTab(currentTab.id, (tab) => ({ ...tab, validationState: 'invalid', message: errorMessage(error) }));
     }
@@ -750,6 +771,10 @@ export default function App() {
     }));
   }
 
+  function toggleMaximizedWorkflowPanel(panel: Exclude<MaximizedWorkflowPanel, null>) {
+    setMaximizedWorkflowPanel((currentPanel) => (currentPanel === panel ? null : panel));
+  }
+
   function formatRuntimeJson(fieldName: 'inputJson' | 'secretsJson') {
     const currentTab = requireActiveTab(activeTab);
 
@@ -763,6 +788,7 @@ export default function App() {
         message: `${fieldName === 'inputJson' ? 'Input' : 'Secrets'} JSON formatted.`,
         updatedAt: Date.now(),
       }));
+      setToastMessage(`${fieldName === 'inputJson' ? 'Input' : 'Secrets'} JSON formatted.`);
     } catch (error) {
       updateTab(currentTab.id, (tab) => ({
         ...tab,
@@ -816,8 +842,59 @@ export default function App() {
     const currentTab = requireActiveTab(activeTab);
 
     try {
-      await navigator.clipboard.writeText(workflowSourceWithMetadata(currentTab.source, currentTab.name, currentTab.inputJson, currentTab.secretsJson));
-      updateTab(currentTab.id, (tab) => ({ ...tab, message: 'Workflow source copied to clipboard.' }));
+      updateTab(currentTab.id, (tab) => ({ ...tab, message: 'Formatting workflow before copying...' }));
+
+      const response = await fetch('/format', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ workflow_source: workflowSourceWithoutMetadata(currentTab.source) }),
+      });
+      const payload = await responsePayload(response);
+      const formattedWorkflowSource = stringPayloadValue(payload.formatted_workflow_source);
+
+      if (!response.ok || !formattedWorkflowSource) {
+        throw new Error(stringPayloadValue(payload.error) ?? 'Unable to format workflow before copying.');
+      }
+
+      const parsedResult = parseWorkflowSourceFragments(formattedWorkflowSource, currentTab.name);
+      const formattedCodeFragments = preserveWorkflowCodeFragmentIdentities(parsedResult.fragments, currentTab.codeFragments);
+      const activeCodeFragmentId =
+        formattedCodeFragments.find((fragment) => fragment.id === currentTab.activeCodeFragmentId)?.id
+        ?? formattedCodeFragments[0]?.id
+        ?? currentTab.activeCodeFragmentId;
+      const formattedSource = workflowSourceFromCodeFragments(formattedCodeFragments, parsedResult.useMarkers);
+
+      await navigator.clipboard.writeText(workflowSourceWithMetadata(formattedSource, currentTab.name, currentTab.inputJson, currentTab.secretsJson));
+      setToastMessage('Workflow copied to clipboard.');
+      updateTab(currentTab.id, (tab) => ({
+        ...tab,
+        source: formattedSource,
+        codeFragments: formattedCodeFragments,
+        activeCodeFragmentId,
+        codeFragmentsUseMarkers: parsedResult.useMarkers,
+        validationState: 'valid',
+        message: 'Workflow copied to clipboard.',
+        graphState: 'idle',
+        graphMessage: 'Graph needs to be regenerated after formatting.',
+        graphData: null,
+        updatedAt: Date.now(),
+      }));
+    } catch (error) {
+      updateTab(currentTab.id, (tab) => ({ ...tab, validationState: 'invalid', message: errorMessage(error) }));
+    }
+  }
+
+  async function copyWorkflowOutput() {
+    const currentTab = requireActiveTab(activeTab);
+
+    if (!currentTab.outputJson) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(currentTab.outputJson);
+      setToastMessage('Output copied to clipboard.');
+      updateTab(currentTab.id, (tab) => ({ ...tab, message: 'Output copied to clipboard.' }));
     } catch (error) {
       updateTab(currentTab.id, (tab) => ({ ...tab, validationState: 'invalid', message: errorMessage(error) }));
     }
@@ -1031,13 +1108,13 @@ export default function App() {
                                 </div>
                                 <div className="workflow-fragment-actions">
                                   <ActionTooltip label="Copy this workflow, input, and secrets as portable source">
-                                    <Button variant="ghost" size="sm" onClick={exportWorkflowSource}><Download /> Export</Button>
+                                    <Button variant="ghost" size="sm" onClick={exportWorkflowSource}><Copy /> Copy to clipboard</Button>
                                   </ActionTooltip>
-                                  <ActionTooltip label="Format the active workflow, input, or secrets editor">
-                                    <Button variant="ghost" size="sm" onClick={formatActiveEditor}><RefreshCcw /> Format</Button>
+                                  <ActionTooltip label="Format the active editor contents">
+                                    <Button variant="ghost" size="sm" aria-label="Format active editor" onClick={formatActiveEditor}><RefreshCcw /> Format</Button>
                                   </ActionTooltip>
                                   <ActionTooltip label="Validate the workflow without running agents">
-                                    <Button variant="ghost" size="sm" onClick={validateWorkflow}><CheckCircle2 /> Validate</Button>
+                                    <Button variant="ghost" size="sm" aria-label="Validate workflow" onClick={validateWorkflow}><CheckCircle2 /> Validate</Button>
                                   </ActionTooltip>
                                   <ActionTooltip label="Add a new workflow code fragment">
                                     <Button variant="outline" size="sm" onClick={addCodeFragment}><Plus /> Fragment</Button>
@@ -1146,11 +1223,48 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="workflow-layout__bottom">
-                          <PanelCard collapsible open={outputOpen} title="Output" description="Final workflow output payload." className="workflow-log-panel" bodyClassName="workflow-log-panel__body" onToggle={() => setOutputOpen((currentValue) => !currentValue)}>
+                        <div className="workflow-layout__bottom" data-maximized={maximizedWorkflowPanel ?? 'none'}>
+                          <PanelCard
+                            collapsible
+                            open={outputOpen}
+                            title="Output"
+                            description="Final workflow output payload."
+                            className="workflow-log-panel workflow-log-panel--output"
+                            bodyClassName="workflow-log-panel__body"
+                            onToggle={() => setOutputOpen((currentValue) => !currentValue)}
+                            actions={(
+                              <>
+                                <ActionTooltip label="Copy output to clipboard">
+                                  <Button variant="ghost" size="icon" aria-label="Copy output to clipboard" disabled={!activeTab.outputJson} onClick={copyWorkflowOutput}>
+                                    <Copy />
+                                  </Button>
+                                </ActionTooltip>
+                                <ActionTooltip label={maximizedWorkflowPanel === 'output' ? 'Restore output panel size' : 'Maximize output panel'}>
+                                  <Button variant="ghost" size="icon" aria-label={maximizedWorkflowPanel === 'output' ? 'Restore output panel size' : 'Maximize output panel'} onClick={() => toggleMaximizedWorkflowPanel('output')}>
+                                    {maximizedWorkflowPanel === 'output' ? <Minimize2 /> : <Maximize2 />}
+                                  </Button>
+                                </ActionTooltip>
+                              </>
+                            )}
+                          >
                             <OutputBox runState={activeTab.runState} outputJson={activeTab.outputJson} />
                           </PanelCard>
-                          <PanelCard collapsible open={eventsOpen} title="Server events" description={`${activeTab.eventLog.length} streamed events.`} className="workflow-log-panel" bodyClassName="workflow-log-panel__body" onToggle={() => setEventsOpen((currentValue) => !currentValue)}>
+                          <PanelCard
+                            collapsible
+                            open={eventsOpen}
+                            title="Server events"
+                            description={`${activeTab.eventLog.length} streamed events.`}
+                            className="workflow-log-panel workflow-log-panel--events"
+                            bodyClassName="workflow-log-panel__body"
+                            onToggle={() => setEventsOpen((currentValue) => !currentValue)}
+                            actions={(
+                              <ActionTooltip label={maximizedWorkflowPanel === 'events' ? 'Restore server events panel size' : 'Maximize server events panel'}>
+                                <Button variant="ghost" size="icon" aria-label={maximizedWorkflowPanel === 'events' ? 'Restore server events panel size' : 'Maximize server events panel'} onClick={() => toggleMaximizedWorkflowPanel('events')}>
+                                  {maximizedWorkflowPanel === 'events' ? <Minimize2 /> : <Maximize2 />}
+                                </Button>
+                              </ActionTooltip>
+                            )}
+                          >
                             <EventLog events={activeTab.eventLog} eventGroupingMode={eventGroupingMode} onEventGroupingModeChange={setEventGroupingMode} />
                           </PanelCard>
                         </div>
@@ -1212,6 +1326,8 @@ export default function App() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {toastMessage ? <div className="playground-toast" role="status">{toastMessage}</div> : null}
 
     </TooltipProvider>
   );

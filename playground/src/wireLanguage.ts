@@ -1,4 +1,4 @@
-import { HighlightStyle, LanguageSupport, StreamLanguage, syntaxHighlighting } from '@codemirror/language';
+import { HighlightStyle, LanguageSupport, StreamLanguage, syntaxHighlighting, type StringStream } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 import textMateGrammarSource from '../../editors/textmate/syntaxes/wire.tmLanguage.json?raw';
 
@@ -53,12 +53,75 @@ const keywords = tokenSets.keywords;
 const types = tokenSets.types;
 const constants = new Set(['false', 'true']);
 
+class WireStreamState {
+  multilineString = false;
+  quotedString = false;
+  stringInterpolation = false;
+
+  copy() {
+    const state = new WireStreamState();
+    state.multilineString = this.multilineString;
+    state.quotedString = this.quotedString;
+    state.stringInterpolation = this.stringInterpolation;
+
+    return state;
+  }
+
+  enterMultilineString() {
+    this.multilineString = true;
+    this.stringInterpolation = false;
+  }
+
+  leaveMultilineString() {
+    this.multilineString = false;
+    this.stringInterpolation = false;
+  }
+
+  enterQuotedString() {
+    this.quotedString = true;
+    this.stringInterpolation = false;
+  }
+
+  leaveQuotedString() {
+    this.quotedString = false;
+    this.stringInterpolation = false;
+  }
+
+  enterStringInterpolation() {
+    this.stringInterpolation = true;
+  }
+
+  leaveStringInterpolation() {
+    this.stringInterpolation = false;
+  }
+}
+
 const wireStreamLanguage = StreamLanguage.define({
   languageData: {
     commentTokens: { line: '//' },
   },
 
-  token(stream) {
+  startState() {
+    return new WireStreamState();
+  },
+
+  copyState(state) {
+    return state.copy();
+  },
+
+  token(stream, state) {
+    if (state.stringInterpolation) {
+      return tokenStringInterpolation(stream, state);
+    }
+
+    if (state.multilineString) {
+      return tokenMultilineString(stream, state);
+    }
+
+    if (state.quotedString) {
+      return tokenQuotedString(stream, state);
+    }
+
     if (stream.match('//')) {
       stream.skipToEnd();
 
@@ -66,94 +129,156 @@ const wireStreamLanguage = StreamLanguage.define({
     }
 
     if (stream.match('"""')) {
-      while (!stream.eol()) {
-        if (stream.match('"""')) {
-          break;
-        }
-
-        stream.next();
-      }
+      state.enterMultilineString();
 
       return 'string';
     }
 
     if (stream.match('"')) {
-      let escaping = false;
-
-      while (!stream.eol()) {
-        const character = stream.next();
-
-        if (character === '"' && !escaping) {
-          break;
-        }
-
-        escaping = character === '\\' && !escaping;
-      }
+      state.enterQuotedString();
 
       return 'string';
     }
 
-    if (stream.eatSpace()) {
-      return null;
+    return tokenDsl(stream);
+  },
+});
+
+function tokenMultilineString(stream: StringStream, state: WireStreamState) {
+  if (stream.match('"""')) {
+    state.leaveMultilineString();
+
+    return 'string';
+  }
+
+  if (stream.match('{{')) {
+    state.enterStringInterpolation();
+
+    return 'operator';
+  }
+
+  eatStringText(stream, ['{{', '"""']);
+
+  return 'string';
+}
+
+function tokenStringInterpolation(stream: StringStream, state: WireStreamState) {
+  if (stream.match('}}')) {
+    state.leaveStringInterpolation();
+
+    return 'operator';
+  }
+
+  return tokenDsl(stream);
+}
+
+function tokenQuotedString(stream: StringStream, state: WireStreamState) {
+  if (stream.match('{{')) {
+    state.enterStringInterpolation();
+
+    return 'operator';
+  }
+
+  if (stream.match('"')) {
+    state.leaveQuotedString();
+
+    return 'string';
+  }
+
+  let escaping = false;
+
+  while (!stream.eol()) {
+    if (!escaping && stream.match('{{', false)) {
+      return 'string';
     }
 
-    if (stream.match(/\d(?:[\d_]*\d)?(?:\.\d(?:[\d_]*\d)?)?/)) {
-      return 'number';
+    const character = stream.next();
+
+    if (character === '"' && !escaping) {
+      state.leaveQuotedString();
+
+      break;
     }
 
-    if (stream.match(/[{}()[\],:;|]/)) {
-      return 'punctuation';
-    }
+    escaping = character === '\\' && !escaping;
+  }
 
-    if (stream.match(/\.\*{1,3}\.|\?\.|\?\?|\./)) {
-      return 'operator';
-    }
+  state.leaveQuotedString();
 
-    if (stream.match(/#[A-Za-z_][A-Za-z0-9_]*/)) {
-      return 'typeName';
-    }
+  return 'string';
+}
 
-    const identifier = stream.match(/[A-Za-z_][A-Za-z0-9_]*/);
-
-    if (identifier && typeof identifier !== 'boolean') {
-      const value = identifier[0];
-
-      if (value === '_') {
-        return 'keyword';
-      }
-
-      const currentPosition = stream.pos;
-
-      stream.eatSpace();
-
-      const isPropertyAssignment = stream.peek() === ':';
-
-      stream.pos = currentPosition;
-
-      if (isPropertyAssignment) {
-        return 'propertyName';
-      }
-
-      if (keywords.has(value)) {
-        return 'keyword';
-      }
-
-      if (types.has(value)) {
-        return 'typeName';
-      }
-
-      if (constants.has(value)) {
-        return 'bool';
-      }
-
-      return 'variableName';
+function eatStringText(stream: StringStream, terminators: string[]) {
+  while (!stream.eol()) {
+    if (terminators.some((terminator) => stream.match(terminator, false))) {
+      return;
     }
 
     stream.next();
+  }
+}
 
+function tokenDsl(stream: StringStream) {
+  if (stream.eatSpace()) {
     return null;
-  },
-});
+  }
+
+  if (stream.match(/\d(?:[\d_]*\d)?(?:\.\d(?:[\d_]*\d)?)?/)) {
+    return 'number';
+  }
+
+  if (stream.match(/[{}()[\],:;|]/)) {
+    return 'punctuation';
+  }
+
+  if (stream.match(/\.\*{1,3}\.|\?\.|\?\?|\./)) {
+    return 'operator';
+  }
+
+  if (stream.match(/#[A-Za-z_][A-Za-z0-9_]*/)) {
+    return 'typeName';
+  }
+
+  const identifier = stream.match(/[A-Za-z_][A-Za-z0-9_]*/);
+
+  if (identifier && typeof identifier !== 'boolean') {
+    const value = identifier[0];
+
+    if (value === '_') {
+      return 'keyword';
+    }
+
+    const currentPosition = stream.pos;
+
+    stream.eatSpace();
+
+    const isPropertyAssignment = stream.peek() === ':';
+
+    stream.pos = currentPosition;
+
+    if (isPropertyAssignment) {
+      return 'propertyName';
+    }
+
+    if (keywords.has(value)) {
+      return 'keyword';
+    }
+
+    if (types.has(value)) {
+      return 'typeName';
+    }
+
+    if (constants.has(value)) {
+      return 'bool';
+    }
+
+    return 'variableName';
+  }
+
+  stream.next();
+
+  return null;
+}
 
 const wireHighlightStyle = HighlightStyle.define([
   { tag: tags.keyword, color: 'var(--syntax-keyword)', fontWeight: '650' },
