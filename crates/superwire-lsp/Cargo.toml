@@ -11,7 +11,7 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-superwire-core = { path = "../core" }
+superwire-core = { path = "../superwire-core" }
 lsp-server = "0.7"
 lsp-types = "0.97"
 serde = { workspace = true }

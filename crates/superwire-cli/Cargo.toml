@@ -15,8 +15,8 @@ clap = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-superwire-core = { path = "../core" }
-superwire-executor = { path = "../executor" }
+superwire-core = { path = "../superwire-core" }
+superwire-executor = { path = "../superwire-executor" }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 jsonschema = { workspace = true }

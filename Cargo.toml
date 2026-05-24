@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/lsp", "crates/cli", "crates/executor"]
+members = ["crates/superwire-core", "crates/superwire-lsp", "crates/superwire-cli", "crates/superwire-executor"]
 exclude = ["vendor/cersei-provider"]
 resolver = "2"
 

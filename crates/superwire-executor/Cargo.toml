@@ -22,8 +22,8 @@ redis = "1.2.1"
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-superwire-core = { path = "../core" }
-superwire-lsp = { path = "../lsp" }
+superwire-core = { path = "../superwire-core" }
+superwire-lsp = { path = "../superwire-lsp" }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = "0.1"

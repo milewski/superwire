@@ -19,19 +19,19 @@ WORKDIR /workspace
 
 COPY Cargo.toml Cargo.lock ./
 
-COPY crates/core/Cargo.toml crates/core/Cargo.toml
-COPY crates/lsp/Cargo.toml crates/lsp/Cargo.toml
-COPY crates/cli/Cargo.toml crates/cli/Cargo.toml
-COPY crates/executor/Cargo.toml crates/executor/Cargo.toml
+COPY crates/superwire-core/Cargo.toml crates/superwire-core/Cargo.toml
+COPY crates/superwire-lsp/Cargo.toml crates/superwire-lsp/Cargo.toml
+COPY crates/superwire-cli/Cargo.toml crates/superwire-cli/Cargo.toml
+COPY crates/superwire-executor/Cargo.toml crates/superwire-executor/Cargo.toml
 COPY vendor/ vendor/
 
-RUN mkdir -p crates/core/src && echo "" > crates/core/src/lib.rs \
-    && mkdir -p crates/lsp/src && echo "" > crates/lsp/src/lib.rs \
-    && echo "" > crates/lsp/src/main.rs \
-    && mkdir -p crates/lsp/benches && echo "" > crates/lsp/benches/completion_filtering.rs \
-    && mkdir -p crates/cli/src && echo "" > crates/cli/src/main.rs \
-    && mkdir -p crates/executor/src && echo "" > crates/executor/src/lib.rs \
-    && mkdir -p crates/executor/benches && echo "" > crates/executor/benches/runtime.rs \
+RUN mkdir -p crates/superwire-core/src && echo "" > crates/superwire-core/src/lib.rs \
+    && mkdir -p crates/superwire-lsp/src && echo "" > crates/superwire-lsp/src/lib.rs \
+    && echo "" > crates/superwire-lsp/src/main.rs \
+    && mkdir -p crates/superwire-lsp/benches && echo "" > crates/superwire-lsp/benches/completion_filtering.rs \
+    && mkdir -p crates/superwire-cli/src && echo "" > crates/superwire-cli/src/main.rs \
+    && mkdir -p crates/superwire-executor/src && echo "" > crates/superwire-executor/src/lib.rs \
+    && mkdir -p crates/superwire-executor/benches && echo "" > crates/superwire-executor/benches/runtime.rs \
     && cargo fetch \
     && rm -rf crates/*/src crates/*/benches
 

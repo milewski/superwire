@@ -4,10 +4,10 @@ on:
   push:
     branches: [main]
     paths:
-      - 'crates/executor/**'
-      - 'crates/core/**'
-      - 'crates/cli/**'
-      - 'crates/lsp/**'
+      - 'crates/superwire-executor/**'
+      - 'crates/superwire-core/**'
+      - 'crates/superwire-cli/**'
+      - 'crates/superwire-lsp/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/superwire-executor.yml'
@@ -15,10 +15,10 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'crates/executor/**'
-      - 'crates/core/**'
-      - 'crates/cli/**'
-      - 'crates/lsp/**'
+      - 'crates/superwire-executor/**'
+      - 'crates/superwire-core/**'
+      - 'crates/superwire-cli/**'
+      - 'crates/superwire-lsp/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/superwire-executor.yml'

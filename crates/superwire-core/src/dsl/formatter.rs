@@ -216,7 +216,7 @@ mod tests {
 
     impl FormatterFixtureCase {
         fn discover_all() -> Vec<Self> {
-            let formatter_fixture_directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("../cli/tests/fixtures/formatter");
+            let formatter_fixture_directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("../superwire-cli/tests/fixtures/formatter");
             let directory_entries = fs::read_dir(&formatter_fixture_directory).unwrap_or_else(|read_error| {
                 panic!(
                     "failed to read formatter fixture directory {}: {read_error}",
