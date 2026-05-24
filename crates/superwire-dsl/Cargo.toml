@@ -1,0 +1,15 @@
+[package]
+name = "superwire-dsl"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+ariadne = "0.6.0"
+pest = { workspace = true }
+pest_derive = { workspace = true }
+serde_json = { workspace = true }
+superwire-types = { path = "../superwire-types" }
+thiserror = { workspace = true }

@@ -2483,6 +2483,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "superwire-dsl"
+version = "0.1.0"
+dependencies = [
+ "ariadne",
+ "pest",
+ "pest_derive",
+ "serde_json",
+ "superwire-types",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "superwire-executor"
 version = "0.1.0"
 dependencies = [

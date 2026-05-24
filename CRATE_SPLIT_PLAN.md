@@ -15,7 +15,7 @@ Split the unpublished workspace into smaller publishable crates while preserving
 ## Checklist
 
 - [x] Create `superwire-types` and move pure shared data types into it. Rationale: every crate should be able to depend on AST/domain DTOs without pulling parser, semantic analysis, executor, LSP, server, MCP HTTP, or provider dependencies.
-- [ ] Create `superwire-dsl` and move parser, formatter, validation, DSL diagnostics, structure metadata, and visitors into it. Rationale: language implementation is publishable and reusable, but it should be separate from pure data definitions.
+- [x] Create `superwire-dsl` and move parser, formatter, validation, DSL diagnostics, structure metadata, and visitors into it. Rationale: language implementation is publishable and reusable, but it should be separate from pure data definitions.
 - [ ] Create `superwire-test-support` and move workflow source templates, fake MCP utilities, schema helpers, and snapshot helpers into it. Rationale: shared test infrastructure is valuable across crates but should not be part of production runtime APIs.
 - [ ] Create `superwire-macros` and move exported workflow source macros into it. Rationale: macros are already a first-class testing and authoring API, and isolating them keeps macro expansion dependencies explicit.
 - [ ] Create `superwire-semantic` and move semantic index, resolver, type inference, execution planning, graph construction, tooling snapshots, provider config semantics, and workflow type schema conversion into it. Rationale: CLI, LSP, executor, and external tooling need semantic analysis without inheriting unrelated runtime or server code.
@@ -29,7 +29,7 @@ Split the unpublished workspace into smaller publishable crates while preserving
 
 ## Missing or pending tasks
 
-- Owning item: Create `superwire-types` and move pure shared data types into it. Reason: this first pass moved the clean leaf shared surfaces (`SourcePosition`, `SourceSpan`, DSL keyword/property enums, and DSL property metadata) into `superwire-types`, but the larger AST structs/enums still have formatter, validation, MCP lock, and semantic behavior implemented as inherent methods in `superwire-core`. Moving those AST owners now would either force unrelated implementation logic into `superwire-types` or require broad extension-trait rewrites. Follow-up: move the remaining AST/domain DTOs together with the relevant parser/formatter/validation and semantic implementation during the `superwire-dsl` and `superwire-semantic` checklist items.
+- Owning item: Create `superwire-dsl` and move parser, formatter, validation, DSL diagnostics, structure metadata, and visitors into it. Reason: `superwire-dsl` now exists as a publishable DSL implementation crate with parser, formatter, AST, diagnostics, structure re-exports, visitor code, and local DSL test helpers. Validation and the original `superwire-core` DSL implementation remain temporarily because semantic analysis and MCP lock modules still attach inherent methods to AST owner types. Removing that copy before the semantic and MCP split would either create illegal cross-crate inherent impls or force extension-trait rewrites that violate the method-locality rule. Follow-up: when `superwire-semantic` and `superwire-mcp` are extracted, move those remaining owner methods and validation with the AST owners, then delete the temporary core copy.
 
 ## Final acceptance checks
 
