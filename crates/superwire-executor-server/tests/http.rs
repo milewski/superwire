@@ -1,14 +1,14 @@
-use super::fixtures;
-use super::support;
-use super::support::{ConcurrentTrackingModelProvider, TrackingModelProvider};
-use super::tools::TestMcpHttpServer;
-use crate::server::{executor_router_with_service, executor_router_with_service_and_playground_dist};
-use crate::service::ExecutorService;
+mod support;
+
 use base64::prelude::{Engine as _, BASE64_STANDARD};
 use serde_json::json;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use superwire_executor::ExecutorService;
+use superwire_executor_server::{executor_router_with_service, executor_router_with_service_and_playground_dist};
 use superwire_protocol::{ExecutionOptions, ExecutionRequest};
+use support::fixtures;
+use support::{ConcurrentTrackingModelProvider, TestMcpHttpServer, TrackingModelProvider};
 use tower::util::ServiceExt;
 
 #[tokio::test]
@@ -51,7 +51,8 @@ async fn rejects_invalid_base64_source() {
 
 #[tokio::test]
 async fn base64_source_executes_successfully() {
-    let output = execute!(fixtures::MINIMUM, output: { "value": "ok" }).await;
+    let output = support::execute(fixtures::MINIMUM, vec![json!({ "value": "ok" })]).await;
+
     assert_eq!(output, json!({ "greeting": "ok" }));
 }
 
@@ -547,6 +548,47 @@ async fn playground_serves_logo_and_built_assets() {
     let asset_response = router.oneshot(asset_request).await.expect("request should execute");
 
     assert_eq!(asset_response.status(), axum::http::StatusCode::OK);
+}
+
+#[tokio::test]
+async fn http_cache_invalidation_purges_session_entries() {
+    let model_provider = TrackingModelProvider::new(vec![json!({ "value": "first" }), json!({ "value": "second" })]);
+    let service = ExecutorService::new(model_provider.clone());
+    let router = executor_router_with_service(service, true);
+    let request_body = json!({
+        "workflow_source": fixtures::MINIMUM,
+        "options": { "cache_key": "browser-a" }
+    });
+    let first_request = axum::http::Request::builder()
+        .method("POST")
+        .uri("/execute")
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(request_body.to_string()))
+        .expect("request should build");
+    let first_response = router.clone().oneshot(first_request).await.expect("request should execute");
+
+    assert_eq!(first_response.status(), axum::http::StatusCode::OK);
+
+    let purge_request = axum::http::Request::builder()
+        .method("POST")
+        .uri("/cache/invalidate")
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(json!({ "cache_key": "browser-a" }).to_string()))
+        .expect("request should build");
+    let purge_response = router.clone().oneshot(purge_request).await.expect("request should execute");
+
+    assert_eq!(purge_response.status(), axum::http::StatusCode::OK);
+
+    let second_request = axum::http::Request::builder()
+        .method("POST")
+        .uri("/execute")
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(request_body.to_string()))
+        .expect("request should build");
+    let second_response = router.oneshot(second_request).await.expect("request should execute");
+
+    assert_eq!(second_response.status(), axum::http::StatusCode::OK);
+    assert_eq!(model_provider.recorded_count(), 2);
 }
 
 fn create_playground_dist_fixture() -> PathBuf {

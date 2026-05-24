@@ -6,7 +6,6 @@ mod cache;
 mod dynamic;
 mod execution;
 mod for_loop;
-mod http;
 mod input_handling;
 mod output;
 mod parallel;

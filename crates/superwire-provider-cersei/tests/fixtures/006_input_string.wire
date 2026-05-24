@@ -1,0 +1,24 @@
+provider openai from openai {
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
+
+input {
+    topic: string
+}
+
+agent writer {
+    model: model.openai_model
+    instruction: "Write about {{ input.topic }}."
+    output {
+        value: string
+    }
+}
+
+output {
+    content: agent.writer.value
+}

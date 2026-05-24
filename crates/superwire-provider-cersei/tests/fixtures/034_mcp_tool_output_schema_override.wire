@@ -1,0 +1,39 @@
+provider openai from openai {
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
+
+secrets {
+    mcp_endpoint: string
+}
+
+mcp local {
+    endpoint: secrets.mcp_endpoint
+}
+
+tool fetch_numbers from mcp.local.tool.fetch_numbers {
+    output {
+        values: [number]
+    }
+}
+
+dynamic {
+    result: call tool.fetch_numbers {
+    }
+}
+
+agent number_note for number in dynamic.result.values {
+    model: model.openai_model
+    instruction: "Write a note for {{ number }}."
+    output {
+        value: string
+    }
+}
+
+output {
+    notes: agent.number_note
+}

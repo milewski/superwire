@@ -8,9 +8,6 @@ workspace = true
 
 [dependencies]
 async-trait = "0.1"
-axum = { version = "0.8", features = ["ws"] }
-clap = { workspace = true }
-colog = { workspace = true }
 futures = "0.3"
 humantime = { workspace = true }
 jsonschema = { workspace = true }
@@ -21,17 +18,12 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 superwire-core = { path = "../superwire-core" }
 superwire-dsl = { path = "../superwire-dsl" }
-superwire-lsp = { path = "../superwire-lsp" }
 superwire-mcp = { path = "../superwire-mcp" }
 superwire-model = { path = "../superwire-model" }
-superwire-provider-cersei = { path = "../superwire-provider-cersei" }
 superwire-protocol = { path = "../superwire-protocol" }
 superwire-semantic = { path = "../superwire-semantic" }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-tokio-stream = "0.1"
-tower = { version = "0.5", features = ["util"] }
-tower-http = { version = "0.6", features = ["fs"] }
 
 [dev-dependencies]
 base64 = "0.22"

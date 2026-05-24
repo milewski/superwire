@@ -1,7 +1,7 @@
-use crate::service::SequencedExecutorEvent;
 use axum::response::sse::Event;
 use serde_json::json;
 use std::convert::Infallible;
+use superwire_executor::service::SequencedExecutorEvent;
 
 pub fn event_to_sse_result(sequenced_event: SequencedExecutorEvent) -> Result<Event, Infallible> {
     let event_name = sequenced_event.event.kind.as_str();

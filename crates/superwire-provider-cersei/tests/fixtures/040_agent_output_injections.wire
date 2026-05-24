@@ -1,0 +1,59 @@
+provider openai from openai {
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+}
+
+model qwen_plus from openai {
+    id: "model-a"
+}
+
+input {
+    details: {
+        enabled: boolean
+        tags: [string]
+    }
+}
+
+dynamic {
+    something: {
+        value: 42
+        active: true
+    }
+}
+
+agent joker for subject in ["a cat", "a dog"] {
+    model: model.qwen_plus
+
+    dynamic {
+        local_number: 7
+        local_object: {
+            flag: input.details.enabled
+            tags: input.details.tags
+        }
+    }
+
+    instruction: """
+        Please create a joke about {{ subject }}
+    """
+
+    output {
+        joke: string
+        subject: {
+            theme: string
+            something: "hardcoded"
+            dynamic: subject
+            nested: {
+                example: number
+                property: dynamic.something.value
+                enabled: input.details.enabled
+                local_object: dynamic.local_object
+            }
+        }
+        input_copy: input.details
+        dynamic_number: dynamic.local_number
+    }
+}
+
+output {
+    example: agent.joker
+}

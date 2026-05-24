@@ -1,8 +1,5 @@
-use crate::model::ModelProvider;
-use crate::runtime::{AgentCacheConfig, AgentCacheDriver, AgentCacheSession};
 use crate::server::error::ExecutorHttpError;
 use crate::server::sse::event_to_sse_result;
-use crate::service::ExecutorService;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::Path;
 use axum::extract::Query;
@@ -18,6 +15,9 @@ use serde::Deserialize;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
+use superwire_executor::model::ModelProvider;
+use superwire_executor::runtime::{AgentCacheConfig, AgentCacheDriver, AgentCacheSession, DEFAULT_AGENT_CACHE_TIME_TO_LIVE};
+use superwire_executor::ExecutorService;
 use superwire_lsp::server::LanguageServer;
 use superwire_protocol::api::{CacheInvalidationRequest, ExecutionRequest, FormatRequest, GraphRequest, ValidationRequest};
 use superwire_provider_cersei::CerseiModelProvider;
@@ -44,7 +44,7 @@ where
     executor_router_with_service_and_playground_dist(service, disable_playground, default_playground_dist_directory())
 }
 
-pub(crate) fn executor_router_with_service_and_playground_dist<ModelProviderType>(
+pub fn executor_router_with_service_and_playground_dist<ModelProviderType>(
     service: ExecutorService<ModelProviderType>,
     disable_playground: bool,
     playground_dist_directory: PathBuf,
@@ -90,7 +90,7 @@ pub async fn serve_executor(address: SocketAddr, disable_playground: bool) -> Re
         address,
         disable_playground,
         AgentCacheDriver::InMemory,
-        crate::runtime::DEFAULT_AGENT_CACHE_TIME_TO_LIVE,
+        DEFAULT_AGENT_CACHE_TIME_TO_LIVE,
     )
     .await
 }

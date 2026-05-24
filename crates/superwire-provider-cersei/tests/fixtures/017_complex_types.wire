@@ -1,0 +1,42 @@
+provider openai from openai {
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
+
+schema all_types {
+    /// A string
+    string_value: string
+    /// A number
+    number_value: number
+    /// A boolean
+    boolean_value: boolean
+    /// A nullable string
+    nullable_string: maybe string
+    /// An array of strings
+    array: [string]
+    /// Exactly three strings
+    fixed_array: [string; 3]
+    /// A status enum
+    enum_value: enum { draft, ready, published }
+}
+
+agent typed_example {
+    model: model.openai_model
+    instruction: "Generate a typed object."
+    output {
+        value: schema.all_types
+    }
+}
+
+output {
+    result: agent.typed_example.value
+    string_value: agent.typed_example.value.string_value
+    number_value: agent.typed_example.value.number_value
+    boolean_value: agent.typed_example.value.boolean_value
+    array: agent.typed_example.value.array
+    enum_value: agent.typed_example.value.enum_value
+}

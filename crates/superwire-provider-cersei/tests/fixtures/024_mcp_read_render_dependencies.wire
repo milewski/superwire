@@ -1,0 +1,37 @@
+secrets {
+    mcp_endpoint: string
+}
+
+mcp local {
+    endpoint: secrets.mcp_endpoint
+}
+
+input {
+    workspace_id: string
+}
+
+resource project_readme from mcp.local.resource.project_readme {
+    bindings {
+        workspace_id: input.workspace_id
+    }
+}
+
+prompt system_prompt from mcp.local.prompt.system_prompt
+
+dynamic {
+    readme: read resource.project_readme {
+        bindings {
+            section: "setup"
+        }
+    }
+    instructions: render prompt.system_prompt {
+        bindings {
+            readme: dynamic.readme
+        }
+    }
+}
+
+output {
+    readme: dynamic.readme
+    instructions: dynamic.instructions
+}

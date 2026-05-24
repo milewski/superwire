@@ -1,7 +1,7 @@
-use crate::runtime::ExecutorError;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde_json::json;
+use superwire_executor::runtime::ExecutorError;
 
 pub struct ExecutorHttpError(pub ExecutorError);
 

@@ -1,0 +1,32 @@
+[package]
+name = "superwire-executor-server"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "superwire-executor"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+axum = { version = "0.8", features = ["ws"] }
+clap = { workspace = true }
+colog = { workspace = true }
+futures = "0.3"
+log = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+superwire-executor = { path = "../superwire-executor" }
+superwire-lsp = { path = "../superwire-lsp" }
+superwire-provider-cersei = { path = "../superwire-provider-cersei" }
+superwire-protocol = { path = "../superwire-protocol" }
+tokio = { workspace = true }
+tokio-stream = "0.1"
+
+[dev-dependencies]
+async-trait = "0.1"
+base64 = "0.22"
+superwire-macros = { path = "../superwire-macros" }
+tower = { version = "0.5", features = ["util"] }

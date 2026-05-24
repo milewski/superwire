@@ -1,0 +1,26 @@
+provider openai from openai {
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
+
+agent data {
+    model: model.openai_model
+    instruction: "Generate data with a nullable nested object."
+    output {
+        label: string
+        details: maybe {
+            score: number
+            tags: [string]
+        }
+    }
+}
+
+output {
+    label: agent.data.label
+    score: agent.data.details?.score
+    tags: agent.data.details?.tags
+}

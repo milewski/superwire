@@ -1,0 +1,37 @@
+provider openai from openai {
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
+
+input {
+    topic: string
+}
+
+dynamic {
+    max_bullets: 3
+    audience: "engineering"
+}
+
+dynamic {
+    prompt_prefix: "Write a concise update"
+}
+
+agent writer {
+    model: model.openai_model
+    instruction: "{{ dynamic.prompt_prefix }} for {{ dynamic.audience }} about {{ input.topic }}. Limit to {{ dynamic.max_bullets }} bullets."
+    output {
+        summary: string
+    }
+}
+
+output {
+    topic: input.topic
+    audience: dynamic.audience
+    max_bullets: dynamic.max_bullets
+    prompt_prefix: dynamic.prompt_prefix
+    summary: agent.writer.summary
+}

@@ -15,7 +15,6 @@ use superwire_protocol::api::{
     ValidationRequest, ValidationResponse,
 };
 use superwire_protocol::event::ExecutorEvent;
-use superwire_provider_cersei::CerseiModelProvider;
 use tokio::sync::mpsc;
 use tokio::task::AbortHandle;
 
@@ -23,17 +22,11 @@ const EVENT_BUFFER_SIZE: usize = 64;
 const COMPLETED_STREAM_RETENTION: Duration = Duration::from_secs(20 * 60);
 
 #[derive(Debug, Clone)]
-pub struct ExecutorService<ModelProviderType = CerseiModelProvider> {
+pub struct ExecutorService<ModelProviderType> {
     model_provider: ModelProviderType,
     streamed_executions: StreamedExecutionRegistry,
     agent_cache_store: Arc<dyn AgentCacheStore>,
     agent_cache_time_to_live: Duration,
-}
-
-impl Default for ExecutorService<CerseiModelProvider> {
-    fn default() -> Self {
-        Self::new(CerseiModelProvider)
-    }
 }
 
 impl<ModelProviderType> ExecutorService<ModelProviderType> {

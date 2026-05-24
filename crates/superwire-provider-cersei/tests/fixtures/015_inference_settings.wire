@@ -1,0 +1,26 @@
+provider openai from openai {
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
+
+agent analyst {
+    model: model.openai_model {
+        inference {
+            temperature: 0.2
+            max_tokens: 4000
+        }
+    }
+
+    instruction: "Analyze the current release readiness."
+    output {
+        value: string
+    }
+}
+
+output {
+    analysis: agent.analyst.value
+}
