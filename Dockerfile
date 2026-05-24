@@ -23,6 +23,7 @@ COPY crates/core/Cargo.toml crates/core/Cargo.toml
 COPY crates/lsp/Cargo.toml crates/lsp/Cargo.toml
 COPY crates/cli/Cargo.toml crates/cli/Cargo.toml
 COPY crates/executor/Cargo.toml crates/executor/Cargo.toml
+COPY vendor/ vendor/
 
 RUN mkdir -p crates/core/src && echo "" > crates/core/src/lib.rs \
     && mkdir -p crates/lsp/src && echo "" > crates/lsp/src/lib.rs \
