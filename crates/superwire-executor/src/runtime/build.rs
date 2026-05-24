@@ -5,9 +5,9 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Instant;
 use superwire_core::mcp::{HttpMcpClientFactory, McpClientFactory, McpClientPool, McpLock, McpServerConfig};
-use superwire_core::semantic::support::expression::EvaluationContext;
-use superwire_core::semantic::{build_dynamic_typed_workflow_ir, build_execution_plan, ExecutionPlan, WorkflowSemanticError};
 use superwire_dsl::{parse_workflow, validate_workflow, Declaration, Workflow};
+use superwire_semantic::support::expression::EvaluationContext;
+use superwire_semantic::{build_dynamic_typed_workflow_ir, build_execution_plan, ExecutionPlan, WorkflowSemanticError};
 use tokio::sync::mpsc;
 
 struct RuntimeBuildContext<'a> {
@@ -86,7 +86,7 @@ impl WorkflowExecutor {
             let details = parse_error.render_for_output_target(workflow_source, "<workflow>");
 
             WorkflowSemanticError::ParseFailed {
-                source: parse_error,
+                source: Box::new(parse_error),
                 details,
             }
         })?;
@@ -159,7 +159,7 @@ impl WorkflowExecutor {
             let details = parse_error.render_for_output_target(workflow_source, "<workflow>");
 
             WorkflowSemanticError::ParseFailed {
-                source: parse_error,
+                source: Box::new(parse_error),
                 details,
             }
         })?;

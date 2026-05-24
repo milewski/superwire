@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 
 use lsp_types::Position;
-use superwire_core::semantic::{ReferenceResolutionScope, SemanticDeclarationKey, SemanticFieldRoot};
 use superwire_dsl::{Reference, ReferenceAccess, ReferenceKeyword, ReferenceRoot, SourceSpan, TypeExpression, TypeExpressionFieldCache};
+use superwire_semantic::{ReferenceResolutionScope, SemanticDeclarationKey, SemanticFieldRoot};
 
 use super::super::reference::ReferenceCompletionPath;
 use super::types::SemanticIndex;

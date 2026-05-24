@@ -2,7 +2,7 @@ use crate::model::ToolCallTracker;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
-use superwire_core::semantic::support::expression::EvaluationContext;
+use superwire_semantic::support::expression::EvaluationContext;
 
 #[derive(Debug, Clone)]
 pub struct RuntimeState {

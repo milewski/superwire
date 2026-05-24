@@ -3,12 +3,12 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::hint::black_box;
 use std::time::Instant;
-use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
-use superwire_core::semantic::support::types::WorkflowSchemaCache;
-use superwire_core::semantic::{build_dynamic_typed_workflow_ir, build_execution_plan, ExecutionPlan};
 use superwire_dsl::{parse_workflow, validate_workflow, AgentExpressionPropertyName, Workflow};
 use superwire_executor::model::{ModelProvider, ModelRequest, ModelResponse};
 use superwire_executor::{ExecutorError, WorkflowExecutor};
+use superwire_semantic::support::expression::{evaluate_expression, EvaluationContext};
+use superwire_semantic::support::types::WorkflowSchemaCache;
+use superwire_semantic::{build_dynamic_typed_workflow_ir, build_execution_plan, ExecutionPlan};
 use tokio::runtime::{Builder, Runtime};
 
 const DEFAULT_ITERATIONS: usize = 50;

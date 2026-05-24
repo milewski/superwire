@@ -3,9 +3,9 @@ use superwire_core::diagnostic::{
     Diagnostic as CoreDiagnostic, DiagnosticCode as CoreDiagnosticCode, DiagnosticSeverity as CoreDiagnosticSeverity,
 };
 use superwire_core::mcp::McpLock;
-use superwire_core::semantic::build_dynamic_typed_workflow_ir;
 use superwire_core::WorkflowDocument;
 use superwire_dsl::DslParseError;
+use superwire_semantic::build_dynamic_typed_workflow_ir;
 
 use crate::diagnostic_code::DiagnosticCode;
 

@@ -1,5 +1,6 @@
+use superwire_core::dsl::ModelAssetKindSupportError;
 use superwire_core::mcp::McpError;
-use superwire_core::semantic::WorkflowSemanticError;
+use superwire_semantic::WorkflowSemanticError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -30,6 +31,12 @@ pub enum ExecutorError {
 
     #[error("{message}")]
     Other { message: String },
+}
+
+impl From<ModelAssetKindSupportError> for ExecutorError {
+    fn from(error: ModelAssetKindSupportError) -> Self {
+        Self::Semantic(WorkflowSemanticError::from(error))
+    }
 }
 
 impl ExecutorError {

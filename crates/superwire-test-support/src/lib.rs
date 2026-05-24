@@ -12,8 +12,8 @@ use superwire_core::mcp::{
     McpClientBackend, McpClientFactory, McpError, McpLock, McpPromptArgumentLock, McpServerConfig, McpServerLock, McpToolLock,
     ProjectMcpLock, PROJECT_MCP_LOCK_FILE_NAME,
 };
-use superwire_core::semantic::support::types::WorkflowType;
-use superwire_core::semantic::{
+use superwire_semantic::support::types::WorkflowType;
+use superwire_semantic::{
     ReferenceResolution, ReferenceResolutionError, ReferenceResolutionRoot, ReferenceResolutionScope, WorkflowExecutionGraph,
     WorkflowSemanticIndex,
 };
@@ -1445,8 +1445,8 @@ mod tests {
     use std::collections::BTreeMap;
     use superwire_core::dsl::ReferenceKeyword;
     use superwire_core::mcp::{McpLock, McpServerLock, ProjectMcpLock};
-    use superwire_core::semantic::support::types::WorkflowType;
-    use superwire_core::semantic::{ReferenceResolutionError, ReferenceResolutionRoot, WorkflowExecutionGraph, WorkflowSemanticIndex};
+    use superwire_semantic::support::types::WorkflowType;
+    use superwire_semantic::{ReferenceResolutionError, ReferenceResolutionRoot, WorkflowExecutionGraph, WorkflowSemanticIndex};
 
     #[test]
     fn inline_cursor_layout_normalizes_cursor_before_block_close() {

@@ -1,11 +1,11 @@
-pub mod diagnostic;
 pub mod document;
 pub mod dsl;
 pub mod mcp;
-pub mod semantic;
 pub mod testing;
 
 pub use document::{WorkflowDocument, WorkflowDocumentMcpEnrichment};
+pub use superwire_semantic as semantic;
+pub use superwire_types::diagnostic;
 
 #[cfg(test)]
 macro_rules! parse_inline_workflow {

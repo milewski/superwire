@@ -1,5 +1,6 @@
 use super::super::ast::{AgentDeclaration, Expression, ObjectField, SourceSpan};
-use super::report::ValidationReport;
+use super::issues::AgentDeclarationIssuesExt;
+use super::ValidationReport;
 use crate::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
 use crate::semantic::support::types::{ensure_type_matches, WorkflowType};
 use crate::semantic::WorkflowSemanticIndex as ValidationIndex;
@@ -219,7 +220,11 @@ impl AgentToolBindingValidator<'_> {
     }
 }
 
-impl Expression {
+trait ExpressionToolsExt {
+    fn is_literal_compatible_with_type(&self, expected_type: &WorkflowType) -> bool;
+}
+
+impl ExpressionToolsExt for Expression {
     fn is_literal_compatible_with_type(&self, expected_type: &WorkflowType) -> bool {
         match (self, expected_type) {
             (Self::StringLiteral(string_literal), WorkflowType::StringEnum(enum_values)) => enum_values.contains(string_literal),

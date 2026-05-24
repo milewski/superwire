@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, HashMap};
 
 use schemars::Schema;
-use superwire_core::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
-use superwire_core::semantic::support::types::{workflow_type_from_dsl, WorkflowSchemaCache, WorkflowType};
 use superwire_dsl::{Declaration, ObjectField, TypeExpression, Workflow};
+use superwire_semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
+use superwire_semantic::support::types::{workflow_type_from_dsl, WorkflowSchemaCache, WorkflowType};
 
 use crate::diagnostics::CommandError;
 

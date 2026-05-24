@@ -3,11 +3,11 @@ use crate::diagnostic_code::DiagnosticCode;
 use lsp_types::CompletionItemKind;
 use std::collections::BTreeMap;
 use superwire_core::mcp::{McpLock, McpPromptArgumentLock, McpServerLock, McpToolLock};
-use superwire_core::semantic::InferenceSetting;
 use superwire_dsl::{
     AgentExpressionPropertyName, BuiltinFunctionName, DeclarationKeyword, ForClauseKeyword, McpCallOperation, ReferenceKeyword,
     SingletonDeclarationKind, ToolCallKeyword,
 };
+use superwire_semantic::InferenceSetting;
 use superwire_test_support::WorkflowSourceTemplate;
 
 macro_rules! inline_completion_suggestions {

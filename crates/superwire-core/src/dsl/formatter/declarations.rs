@@ -4,7 +4,13 @@ use crate::dsl::ast::{
 };
 use crate::dsl::structure::{self, DslProperty};
 
-use super::expressions::ExpressionFormat;
+use super::expressions::{ExpressionExpressionsExt, ExpressionFormat, ObjectFieldExpressionsExt, ReferenceExpressionsExt};
+use super::mcp::{
+    McpBatchImportDeclarationMcpExt, McpPromptBatchImportDeclarationMcpExt, McpPromptImportDeclarationMcpExt,
+    McpResourceBatchImportDeclarationMcpExt, McpResourceImportDeclarationMcpExt, McpToolBatchImportDeclarationMcpExt,
+};
+use super::tools::{ToolCallToolsExt, ToolDeclarationToolsExt};
+use super::types::TypedFieldTypesExt;
 use super::DslFormatter;
 
 impl DslFormatter {
@@ -45,8 +51,12 @@ impl DslFormatter {
     }
 }
 
-impl Declaration {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+trait DeclarationDeclarationsExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl DeclarationDeclarationsExt for Declaration {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         match self {
             Self::Provider(provider_declaration) => {
                 formatter.push_declaration_block_start(&format!(
@@ -136,8 +146,12 @@ impl Declaration {
     }
 }
 
-impl AgentDeclaration {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+trait AgentDeclarationDeclarationsExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl AgentDeclarationDeclarationsExt for AgentDeclaration {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         let mut declaration_header = format!("{} {}", DeclarationKeyword::Agent.as_str(), self.name);
 
         if let Some(loop_declaration) = &self.for_loop {
@@ -176,7 +190,11 @@ impl AgentDeclaration {
     }
 }
 
-impl AgentForLoopPattern {
+trait AgentForLoopPatternDeclarationsExt {
+    fn render_for_clause(&self) -> String;
+}
+
+impl AgentForLoopPatternDeclarationsExt for AgentForLoopPattern {
     fn render_for_clause(&self) -> String {
         match self {
             Self::Identifier(identifier) => identifier.clone(),
@@ -185,8 +203,18 @@ impl AgentForLoopPattern {
     }
 }
 
-impl AgentProperty {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+trait AgentPropertyDeclarationsExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+
+    fn push_agent_binding_list_property(&self, formatter: &mut DslFormatter, property_name: &str, expression: &Expression);
+
+    fn inline_agent_tool_bindings(&self, formatter: &DslFormatter, tool_bindings: &[Expression]) -> Option<String>;
+
+    fn render_for_agent_block(&self, indentation_depth: usize) -> RenderedAgentProperty;
+}
+
+impl AgentPropertyDeclarationsExt for AgentProperty {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         match self {
             Self::Dynamic(dynamic_block) => dynamic_block.push_to_formatter(formatter),
             Self::Model(model_usage) => model_usage.push_to_formatter(formatter),
@@ -313,8 +341,12 @@ impl AgentProperty {
     }
 }
 
-impl DynamicBlock {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+trait DynamicBlockDeclarationsExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl DynamicBlockDeclarationsExt for DynamicBlock {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         formatter.push_indent();
         formatter.output.push_str(structure::Agent::new().dynamic[0].definition().name);
         formatter.output.push(' ');
@@ -333,8 +365,12 @@ impl DynamicBlock {
     }
 }
 
-impl ModelUsage {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+trait ModelUsageDeclarationsExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl ModelUsageDeclarationsExt for ModelUsage {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         formatter.push_indent();
         formatter.output.push_str(structure::Agent::new().model.definition().name);
         formatter.output.push_str(": ");

@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use lsp_types::CompletionItemKind;
-use superwire_core::semantic::ToolingReferencePath;
 use superwire_dsl::TypeExpression;
+use superwire_semantic::ToolingReferencePath;
 
 use super::super::reference::ReferenceCompletionPath;
 use super::super::text_utils::trailing_identifier;

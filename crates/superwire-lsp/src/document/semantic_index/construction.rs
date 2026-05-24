@@ -1,13 +1,13 @@
 use std::collections::{BTreeMap, HashMap};
 
 use superwire_core::mcp::McpLock;
-use superwire_core::semantic::{ProviderDriver, SemanticToolingSnapshot, ToolingSymbolCategory, WorkflowSemanticIndex};
 use superwire_core::WorkflowDocument;
 use superwire_dsl::{
-    AgentForLoopPattern, AgentProperty, Declaration, DeclarationKeyword, Expression, ModelDeclaration, ModelDeclarationPropertyName,
-    ModelUsagePropertyName, ObjectField, ProviderDeclaration, ReferenceKeyword, SingletonDeclarationKind, SourceSpan, ToolSource,
-    TypeExpression, TypedField, Workflow,
+    parse_workflow, AgentForLoopPattern, AgentProperty, Declaration, DeclarationKeyword, Expression, ModelDeclaration,
+    ModelDeclarationPropertyName, ModelUsagePropertyName, ObjectField, ProviderDeclaration, ReferenceKeyword, SingletonDeclarationKind,
+    SourceSpan, ToolSource, TypeExpression, TypedField, Workflow,
 };
+use superwire_semantic::{ProviderDriver, SemanticToolingSnapshot, ToolingSymbolCategory, WorkflowSemanticIndex};
 
 use super::types::{AgentSummary, FieldMetadata, ModelSummary, NamedSpan, ProviderSummary, SchemaSummary, SemanticIndex, ToolSummary};
 
@@ -355,7 +355,9 @@ impl SemanticIndex {
     }
 
     pub fn from_text_fallback(source_text: &str) -> Self {
-        let tooling_snapshot = SemanticToolingSnapshot::from_source_tolerant(source_text);
+        let tooling_snapshot = SemanticToolingSnapshot::from_source_tolerant_with_parser(source_text, |source_text| {
+            parse_workflow(source_text).map_err(|parse_error| parse_error.span())
+        });
         let mut semantic_index = Self::from_tooling_snapshot(&tooling_snapshot);
 
         semantic_index.has_input_declaration = semantic_index.has_input_declaration

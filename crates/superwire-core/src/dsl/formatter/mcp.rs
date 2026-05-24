@@ -7,10 +7,16 @@ use crate::dsl::ast::{
     McpToolBatchImportPropertyName, ObjectField, ToolPropertyName,
 };
 
+use super::expressions::{ObjectFieldExpressionsExt, ReferenceExpressionsExt};
+use super::types::TypedFieldTypesExt;
 use super::DslFormatter;
 
-impl McpToolBatchImportDeclaration {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+pub(super) trait McpToolBatchImportDeclarationMcpExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl McpToolBatchImportDeclarationMcpExt for McpToolBatchImportDeclaration {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         let header = format!(
             "{} mcp.{}.{}",
             ImportKeyword::From.as_str(),
@@ -82,8 +88,12 @@ impl McpToolBatchImportDeclaration {
     }
 }
 
-impl McpBatchImportDeclaration {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+pub(super) trait McpBatchImportDeclarationMcpExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl McpBatchImportDeclarationMcpExt for McpBatchImportDeclaration {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         let header = format!("{} mcp.{}", ImportKeyword::From.as_str(), self.server_name);
 
         formatter.push_declaration_block_start(&header);
@@ -169,8 +179,12 @@ impl McpBatchImportDeclaration {
     }
 }
 
-impl McpResourceBatchImportDeclaration {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+pub(super) trait McpResourceBatchImportDeclarationMcpExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl McpResourceBatchImportDeclarationMcpExt for McpResourceBatchImportDeclaration {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         let header = format!(
             "{} mcp.{}.{}",
             ImportKeyword::From.as_str(),
@@ -202,8 +216,12 @@ impl McpResourceBatchImportDeclaration {
     }
 }
 
-impl McpPromptBatchImportDeclaration {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+pub(super) trait McpPromptBatchImportDeclarationMcpExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl McpPromptBatchImportDeclarationMcpExt for McpPromptBatchImportDeclaration {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         let header = format!(
             "{} mcp.{}.{}",
             ImportKeyword::From.as_str(),
@@ -235,8 +253,12 @@ impl McpPromptBatchImportDeclaration {
     }
 }
 
-impl McpResourceBatchImportItem {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+pub(super) trait McpResourceBatchImportItemMcpExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl McpResourceBatchImportItemMcpExt for McpResourceBatchImportItem {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         let mut header = format!("{} {}", DeclarationKeyword::Resource.as_str(), self.source_name);
 
         if let Some(alias) = &self.alias {
@@ -261,8 +283,12 @@ impl McpResourceBatchImportItem {
     }
 }
 
-impl McpPromptBatchImportItem {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+pub(super) trait McpPromptBatchImportItemMcpExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl McpPromptBatchImportItemMcpExt for McpPromptBatchImportItem {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         let mut header = format!("{} {}", DeclarationKeyword::Prompt.as_str(), self.source_name);
 
         if let Some(alias) = &self.alias {
@@ -287,8 +313,12 @@ impl McpPromptBatchImportItem {
     }
 }
 
-impl McpToolBatchImportItem {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+pub(super) trait McpToolBatchImportItemMcpExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl McpToolBatchImportItemMcpExt for McpToolBatchImportItem {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         let wire_tool_name = self.source_name.replace('-', "_");
         let header = if let Some(alias) = &self.alias {
             format!(
@@ -361,8 +391,12 @@ impl McpToolBatchImportItem {
     }
 }
 
-impl McpResourceImportDeclaration {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+pub(super) trait McpResourceImportDeclarationMcpExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl McpResourceImportDeclarationMcpExt for McpResourceImportDeclaration {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         let header = format!(
             "{} {} {} {}",
             DeclarationKeyword::Resource.as_str(),
@@ -375,8 +409,12 @@ impl McpResourceImportDeclaration {
     }
 }
 
-impl McpPromptImportDeclaration {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+pub(super) trait McpPromptImportDeclarationMcpExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl McpPromptImportDeclarationMcpExt for McpPromptImportDeclaration {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         let header = format!(
             "{} {} {} {}",
             DeclarationKeyword::Prompt.as_str(),
@@ -407,8 +445,12 @@ fn push_mcp_import_with_parameters(formatter: &mut DslFormatter, header: &str, p
     formatter.push_declaration_block_end();
 }
 
-impl McpCall {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+pub(super) trait McpCallMcpExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl McpCallMcpExt for McpCall {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         formatter.output.push_str(self.operation.as_str());
         formatter.output.push(' ');
         self.callee.push_to_formatter(formatter);

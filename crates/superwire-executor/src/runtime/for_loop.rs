@@ -5,10 +5,10 @@ use crate::runtime::state::RuntimeState;
 use futures::stream::{FuturesUnordered, StreamExt};
 use serde_json::{Map, Value};
 use std::time::Instant;
-use superwire_core::semantic::support::expression::evaluate_expression;
-use superwire_core::semantic::support::types::value_kind_name;
-use superwire_core::semantic::PlannedAgent;
 use superwire_dsl::AgentForLoopPattern;
+use superwire_semantic::support::expression::evaluate_expression;
+use superwire_semantic::support::types::value_kind_name;
+use superwire_semantic::PlannedAgent;
 
 impl WorkflowExecutor {
     pub(in crate::runtime) async fn execute_for_loop_agent<ModelProviderType>(

@@ -4,10 +4,10 @@ use crate::model::{normalize_mcp_tool_result, ModelSchema, ModelToolDefinition, 
 use serde_json::{Map, Value};
 use std::time::Instant;
 use superwire_core::mcp::McpServerConfig;
-use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
-use superwire_core::semantic::support::types::WorkflowType;
-use superwire_core::semantic::{PlannedAgent, TypedToolIr};
 use superwire_dsl::{AgentExpressionPropertyName, Declaration, Expression, ObjectField, ReferenceKeyword, ToolCall, ToolSource, Workflow};
+use superwire_semantic::support::expression::{evaluate_expression, EvaluationContext};
+use superwire_semantic::support::types::WorkflowType;
+use superwire_semantic::{PlannedAgent, TypedToolIr};
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone, Copy)]

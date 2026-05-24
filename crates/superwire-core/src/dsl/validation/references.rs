@@ -2,10 +2,11 @@ use super::super::ast::{
     AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, Declaration, Expression, MatchBranch, ObjectField, Reference,
     ReferenceAccess, ReferenceKeyword, SourceSpan, StringTemplatePart, TypeExpression, TypeExpressionFieldCache, Workflow,
 };
-use super::report::{ValidationContext, ValidationReport};
+use super::issues::{AgentDeclarationIssuesExt, ReferenceIssuesExt};
 use super::tools::validate_agent_tool_bindings;
+use super::{ValidationContext, ValidationReport};
 use crate::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
-use crate::semantic::support::types::WorkflowType;
+use crate::semantic::support::types::{TypeExpressionWorkflowTypeExt, WorkflowType};
 use crate::semantic::WorkflowSemanticIndex as ValidationIndex;
 use std::collections::{HashMap, HashSet};
 
@@ -1159,7 +1160,11 @@ struct ForLoopBindingResolution {
     invalid_binding_names: Vec<String>,
 }
 
-impl AgentForLoop {
+trait AgentForLoopReferencesExt {
+    fn resolve_binding_types(&self, iterable_item_type: &WorkflowType) -> ForLoopBindingResolution;
+}
+
+impl AgentForLoopReferencesExt for AgentForLoop {
     fn resolve_binding_types(&self, iterable_item_type: &WorkflowType) -> ForLoopBindingResolution {
         let mut binding_types = HashMap::new();
         let mut invalid_binding_names = Vec::new();

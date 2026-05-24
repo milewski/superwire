@@ -3,20 +3,19 @@ mod agents;
 mod duplicates;
 mod dynamic;
 mod issues;
-mod names;
 mod references;
-mod report;
 mod schemas;
 mod tools;
 
 use agents::{validate_agent_inference_settings, validate_agent_model_bindings, validate_agent_tool_references};
+use duplicates::WorkflowDuplicateValidationExt;
 use dynamic::{validate_agent_dependency_cycles, validate_dynamic_dependency_cycles};
 use references::validate_agent_references;
 use schemas::validate_schema_references;
 
 use crate::semantic::WorkflowSemanticIndex;
 
-pub use report::{SingletonDeclarationKind, ValidationContext, ValidationIssue, ValidationReport};
+pub use superwire_semantic::{SingletonDeclarationKind, ValidationContext, ValidationIssue, ValidationReport};
 
 #[derive(Debug, Clone)]
 pub struct WorkflowValidation {
@@ -46,9 +45,12 @@ impl WorkflowValidation {
     }
 }
 
-impl Workflow {
-    #[must_use]
-    pub fn validate_with_semantic_index(&self) -> WorkflowValidation {
+pub trait WorkflowValidationExt {
+    fn validate_with_semantic_index(&self) -> WorkflowValidation;
+}
+
+impl WorkflowValidationExt for Workflow {
+    fn validate_with_semantic_index(&self) -> WorkflowValidation {
         let mut validation_report = ValidationReport::default();
         let semantic_index = WorkflowSemanticIndex::build_for_validation(self, &mut validation_report);
 

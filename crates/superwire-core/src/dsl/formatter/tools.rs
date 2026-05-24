@@ -1,10 +1,18 @@
 use crate::dsl::ast::{DeclarationKeyword, ImportKeyword, ToolCall, ToolCallPropertyName, ToolDeclaration, ToolPropertyName, ToolSource};
 
+use super::expressions::{ObjectFieldExpressionsExt, ReferenceExpressionsExt};
+use super::types::TypedFieldTypesExt;
 use super::wrapping::render_plain_string_literal;
 use super::DslFormatter;
 
-impl ToolDeclaration {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+pub(super) trait ToolDeclarationToolsExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+
+    fn push_import_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl ToolDeclarationToolsExt for ToolDeclaration {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         if self.imported {
             self.push_import_to_formatter(formatter);
 
@@ -166,8 +174,16 @@ impl ToolDeclaration {
     }
 }
 
-impl ToolCall {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+pub(super) trait ToolCallToolsExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+
+    fn has_body(&self) -> bool;
+
+    fn push_agent_binding_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl ToolCallToolsExt for ToolCall {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         formatter.output.push_str("call ");
         self.callee.push_to_formatter(formatter);
 
@@ -220,7 +236,7 @@ impl ToolCall {
         !self.input_fields.is_empty() || !self.binding_fields.is_empty() || self.max_calls.is_some()
     }
 
-    pub(super) fn push_agent_binding_to_formatter(&self, formatter: &mut DslFormatter) {
+    fn push_agent_binding_to_formatter(&self, formatter: &mut DslFormatter) {
         self.callee.push_to_formatter(formatter);
 
         if self.binding_fields.is_empty() && self.max_calls.is_none() {

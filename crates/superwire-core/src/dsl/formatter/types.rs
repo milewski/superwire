@@ -1,10 +1,15 @@
 use crate::dsl::ast::{TypeExpression, TypedField};
 
+use super::expressions::ReferenceExpressionsExt;
 use super::wrapping::render_plain_string_literal;
 use super::DslFormatter;
 
-impl TypedField {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+pub(super) trait TypedFieldTypesExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl TypedFieldTypesExt for TypedField {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         if let Some(description) = &self.description {
             for description_line in description.lines() {
                 formatter.push_indent();
@@ -28,8 +33,24 @@ impl TypedField {
     }
 }
 
-impl TypeExpression {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+pub(super) trait TypeExpressionTypesExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+
+    fn push_nullable_union_to_formatter(union_members: &[Self], formatter: &mut DslFormatter) -> bool
+    where
+        Self: Sized;
+
+    fn push_string_enum_union_to_formatter(union_members: &[Self], formatter: &mut DslFormatter) -> bool
+    where
+        Self: Sized;
+
+    fn push_string_enum_members_to_formatter(enum_members: &[&Self], formatter: &mut DslFormatter);
+
+    fn should_break_inside_array(&self) -> bool;
+}
+
+impl TypeExpressionTypesExt for TypeExpression {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         match self {
             Self::String => formatter.output.push_str("string"),
             Self::Number => formatter.output.push_str("number"),

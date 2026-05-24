@@ -2,6 +2,8 @@ use crate::dsl::ast::{
     Asset, CallArgument, Expression, FunctionCall, MatchBranch, ObjectField, Reference, StringTemplate, StringTemplatePart,
 };
 
+use super::mcp::McpCallMcpExt;
+use super::tools::ToolCallToolsExt;
 use super::wrapping::{
     escape_multiline_string_text, escape_quoted_string_text, render_expression_string_literal, render_object_field_name,
 };
@@ -15,8 +17,14 @@ impl DslFormatter {
     }
 }
 
-impl ObjectField {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+pub(super) trait ObjectFieldExpressionsExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+
+    fn push_config_property_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl ObjectFieldExpressionsExt for ObjectField {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         formatter.push_indent();
         formatter.output.push_str(&render_object_field_name(&self.name));
         formatter.output.push_str(": ");
@@ -24,7 +32,7 @@ impl ObjectField {
         formatter.push_newline();
     }
 
-    pub(super) fn push_config_property_to_formatter(&self, formatter: &mut DslFormatter) {
+    fn push_config_property_to_formatter(&self, formatter: &mut DslFormatter) {
         let Expression::ObjectLiteral(fields) = &self.value else {
             self.push_to_formatter(formatter);
 
@@ -41,8 +49,12 @@ impl ObjectField {
     }
 }
 
-impl MatchBranch {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+pub(super) trait MatchBranchExpressionsExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl MatchBranchExpressionsExt for MatchBranch {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         formatter.push_indent();
 
         match self {
@@ -74,8 +86,36 @@ pub(super) enum ExpressionFormat {
     Inline,
 }
 
-impl Expression {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter, expression_format: ExpressionFormat) {
+pub(super) trait ExpressionExpressionsExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter, expression_format: ExpressionFormat);
+
+    fn push_agent_tool_binding_to_formatter(&self, formatter: &mut DslFormatter);
+
+    fn push_string_literal_to_formatter(&self, formatter: &mut DslFormatter, string_value: &str, expression_format: ExpressionFormat);
+
+    fn push_array_literal_to_formatter(
+        &self,
+        formatter: &mut DslFormatter,
+        array_items: &[Expression],
+        expression_format: ExpressionFormat,
+    );
+
+    fn push_object_literal_to_formatter(
+        &self,
+        formatter: &mut DslFormatter,
+        object_fields: &[ObjectField],
+        expression_format: ExpressionFormat,
+    );
+
+    fn is_inline_friendly(&self) -> bool;
+
+    fn inline_array_literal(&self, formatter: &DslFormatter) -> Option<String>;
+
+    fn inline_object_literal(&self, formatter: &DslFormatter) -> Option<String>;
+}
+
+impl ExpressionExpressionsExt for Expression {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter, expression_format: ExpressionFormat) {
         match self {
             Self::StringLiteral(string_value) => {
                 self.push_string_literal_to_formatter(formatter, string_value, expression_format);
@@ -134,7 +174,7 @@ impl Expression {
         }
     }
 
-    pub(super) fn push_agent_tool_binding_to_formatter(&self, formatter: &mut DslFormatter) {
+    fn push_agent_tool_binding_to_formatter(&self, formatter: &mut DslFormatter) {
         match self {
             Self::Reference(reference) => reference.push_to_formatter(formatter),
             Self::ToolCall(tool_call) => tool_call.push_agent_binding_to_formatter(formatter),
@@ -354,8 +394,12 @@ impl Expression {
     }
 }
 
-impl Asset {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+pub(super) trait AssetExpressionsExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl AssetExpressionsExt for Asset {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         formatter.output.push_str("asset ");
         self.source.push_to_formatter(formatter, ExpressionFormat::Inline);
 
@@ -377,8 +421,18 @@ impl Asset {
     }
 }
 
-impl StringTemplate {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+pub(super) trait StringTemplateExpressionsExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+
+    fn render_multiline_contents(&self, formatter: &DslFormatter) -> String;
+
+    fn is_multiline(&self) -> bool;
+
+    fn render_inline_contents(&self, formatter: &DslFormatter) -> String;
+}
+
+impl StringTemplateExpressionsExt for StringTemplate {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         let is_multiline = self.is_multiline();
 
         if is_multiline {
@@ -446,14 +500,24 @@ impl StringTemplate {
     }
 }
 
-impl Reference {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+pub(super) trait ReferenceExpressionsExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl ReferenceExpressionsExt for Reference {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         formatter.output.push_str(&self.render_path());
     }
 }
 
-impl FunctionCall {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+pub(super) trait FunctionCallExpressionsExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+
+    fn inline_argument_list(&self, formatter: &DslFormatter) -> String;
+}
+
+impl FunctionCallExpressionsExt for FunctionCall {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         self.callee.push_to_formatter(formatter);
 
         if self.arguments.is_empty() {
@@ -519,8 +583,18 @@ impl FunctionCall {
     }
 }
 
-impl CallArgument {
-    pub(super) fn push_to_formatter(&self, formatter: &mut DslFormatter, expression_format: ExpressionFormat) {
+pub(super) trait CallArgumentExpressionsExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter, expression_format: ExpressionFormat);
+
+    fn is_inline_friendly(&self) -> bool;
+
+    fn render_inline(&self, formatter: &DslFormatter) -> String;
+
+    fn is_multiline_object_literal_argument(&self) -> bool;
+}
+
+impl CallArgumentExpressionsExt for CallArgument {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter, expression_format: ExpressionFormat) {
         match self {
             Self::Positional(expression) => expression.push_to_formatter(formatter, expression_format),
             Self::Named(named_argument) => {
@@ -555,7 +629,11 @@ impl CallArgument {
     }
 }
 
-impl Expression {
+pub(super) trait ExpressionExpressionsExt2 {
+    fn is_multiline_object_literal(&self) -> bool;
+}
+
+impl ExpressionExpressionsExt2 for Expression {
     fn is_multiline_object_literal(&self) -> bool {
         match self {
             Self::ObjectLiteral(object_fields) => object_fields.len() > 1,

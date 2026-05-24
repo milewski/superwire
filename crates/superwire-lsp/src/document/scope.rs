@@ -1,10 +1,10 @@
 use lsp_types::CompletionItemKind;
-use superwire_core::semantic::InferenceSetting;
 use superwire_dsl::{
     structure, AssetPropertyName, DeclarationKeyword, ExpressionKeyword, ForClauseKeyword, ImportKeyword, McpImportPropertyName,
     McpServerPropertyName, ModelDeclarationPropertyName, ModelUsagePropertyName, ReferenceKeyword, SingletonDeclarationKind,
     ToolPropertyName,
 };
+use superwire_semantic::InferenceSetting;
 
 use super::text_utils::{is_identifier, trailing_identifier};
 use super::CompletionSuggestion;

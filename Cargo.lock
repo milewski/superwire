@@ -2456,6 +2456,7 @@ dependencies = [
  "superwire-dsl",
  "superwire-executor",
  "superwire-macros",
+ "superwire-semantic",
  "superwire-test-support",
  "thiserror 2.0.18",
  "tokio",
@@ -2465,7 +2466,6 @@ dependencies = [
 name = "superwire-core"
 version = "0.1.0"
 dependencies = [
- "ariadne",
  "async-trait",
  "futures",
  "jsonschema",
@@ -2479,6 +2479,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "strsim",
+ "superwire-semantic",
  "superwire-types",
  "thiserror 2.0.18",
  "tokio",
@@ -2516,6 +2517,7 @@ dependencies = [
  "superwire-dsl",
  "superwire-lsp",
  "superwire-macros",
+ "superwire-semantic",
  "superwire-test-support",
  "thiserror 2.0.18",
  "tokio",
@@ -2537,6 +2539,7 @@ dependencies = [
  "superwire-core",
  "superwire-dsl",
  "superwire-macros",
+ "superwire-semantic",
  "superwire-test-support",
  "thiserror 2.0.18",
  "tokio",
@@ -2551,18 +2554,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "superwire-semantic"
+version = "0.1.0"
+dependencies = [
+ "jsonschema",
+ "petgraph",
+ "schemars",
+ "serde",
+ "serde_json",
+ "superwire-core",
+ "superwire-macros",
+ "superwire-types",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "superwire-test-support"
 version = "0.1.0"
 dependencies = [
  "schemars",
  "serde_json",
  "superwire-core",
+ "superwire-semantic",
 ]
 
 [[package]]
 name = "superwire-types"
 version = "0.1.0"
 dependencies = [
+ "ariadne",
+ "serde_json",
  "strsim",
 ]
 

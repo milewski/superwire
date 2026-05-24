@@ -1,0 +1,20 @@
+[package]
+name = "superwire-semantic"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+jsonschema = { workspace = true }
+petgraph = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+superwire-types = { path = "../superwire-types" }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+superwire-core = { path = "../superwire-core" }
+superwire-macros = { path = "../superwire-macros" }

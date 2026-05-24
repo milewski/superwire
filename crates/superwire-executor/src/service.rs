@@ -567,8 +567,8 @@ where
         .map(|import| crate::event::PlannedMcpImportEvent {
             name: import.name.clone(),
             kind: match import.kind {
-                superwire_core::semantic::PlannedMcpImportKind::Prompt => "prompt".to_string(),
-                superwire_core::semantic::PlannedMcpImportKind::Resource => "resource".to_string(),
+                superwire_semantic::PlannedMcpImportKind::Prompt => "prompt".to_string(),
+                superwire_semantic::PlannedMcpImportKind::Resource => "resource".to_string(),
             },
             server_name: import.server_name.clone(),
             item_name: import.item_name.clone(),

@@ -1,5 +1,6 @@
 use super::super::ast::{AgentProperty, Declaration, Reference, ReferenceKeyword, SourceSpan, TypeExpression, Workflow};
-use super::report::{ValidationContext, ValidationIssue, ValidationReport};
+use super::issues::ReferenceIssuesExt;
+use super::{ValidationContext, ValidationIssue, ValidationReport};
 use crate::semantic::WorkflowSemanticIndex as ValidationIndex;
 use std::collections::HashSet;
 
@@ -124,7 +125,11 @@ impl<'validation> SchemaValidationState<'validation> {
     }
 }
 
-impl TypeExpression {
+trait TypeExpressionSchemasExt {
+    fn validate_for_schemas(&self, context: ValidationContext, span: Option<SourceSpan>, validation_state: &mut SchemaValidationState);
+}
+
+impl TypeExpressionSchemasExt for TypeExpression {
     fn validate_for_schemas(&self, context: ValidationContext, span: Option<SourceSpan>, validation_state: &mut SchemaValidationState) {
         match self {
             Self::SchemaReference(referenced_schema_name) => {
@@ -169,7 +174,16 @@ impl TypeExpression {
     }
 }
 
-impl Reference {
+trait ReferenceSchemasExt {
+    fn validate_type_expression_string_enum_reference(&self, context: ValidationContext, validation_state: &mut SchemaValidationState);
+
+    fn validate_schema_string_enum_type_reference(&self, context: &ValidationContext, validation_state: &mut SchemaValidationState)
+        -> bool;
+
+    fn push_invalid_type_expression_reference(&self, context: ValidationContext, validation_state: &mut SchemaValidationState);
+}
+
+impl ReferenceSchemasExt for Reference {
     fn validate_type_expression_string_enum_reference(&self, context: ValidationContext, validation_state: &mut SchemaValidationState) {
         if self.validate_schema_string_enum_type_reference(&context, validation_state) {
             return;

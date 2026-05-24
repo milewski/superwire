@@ -1,7 +1,7 @@
 use base64::prelude::{Engine as _, BASE64_STANDARD};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use superwire_core::semantic::WorkflowExecutionGraph;
+use superwire_semantic::WorkflowExecutionGraph;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ExecutionRequest {

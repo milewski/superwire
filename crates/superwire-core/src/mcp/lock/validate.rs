@@ -63,8 +63,11 @@ impl McpLock {
     }
 }
 
-impl McpPromptImportDeclaration {
-    #[must_use]
+trait McpPromptImportDeclarationValidateExt {
+    fn required_binding_messages(&self, prompt_arguments: &[McpPromptArgumentLock]) -> Vec<String>;
+}
+
+impl McpPromptImportDeclarationValidateExt for McpPromptImportDeclaration {
     fn required_binding_messages(&self, prompt_arguments: &[McpPromptArgumentLock]) -> Vec<String> {
         let mut messages = Vec::new();
 

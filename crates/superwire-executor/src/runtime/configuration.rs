@@ -1,8 +1,8 @@
 use super::{ExecutorError, WorkflowExecutor};
 use serde_json::{Map, Value};
 use std::collections::HashSet;
-use superwire_core::semantic::support::types::{validate_value_against_type, value_kind_name, WorkflowType};
 use superwire_dsl::{Expression, ReferenceKeyword};
+use superwire_semantic::support::types::{validate_value_against_type, value_kind_name, WorkflowType};
 
 #[derive(Debug, Clone, Copy)]
 pub(in crate::runtime) struct RuntimeValidationContext<'a> {

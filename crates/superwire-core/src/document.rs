@@ -1,4 +1,4 @@
-use crate::dsl::{parse_workflow, DslParseError, ValidationReport, Workflow};
+use crate::dsl::{parse_workflow, DslParseError, ValidationReport, Workflow, WorkflowValidationExt};
 use crate::mcp::McpLock;
 use crate::semantic::WorkflowSemanticIndex;
 

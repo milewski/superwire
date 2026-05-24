@@ -16,7 +16,7 @@ use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
 use superwire_core::mcp::McpServerConfig;
-use superwire_core::semantic::support::provider::{ProviderApiFormat, ProviderConfig, ProviderDriver};
+use superwire_semantic::support::provider::{ProviderApiFormat, ProviderConfig, ProviderDriver};
 
 const MAX_TOOL_CALL_ROUNDS: usize = 8;
 const DEFAULT_MAX_TOKENS: u32 = 16_384;

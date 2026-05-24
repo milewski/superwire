@@ -3,9 +3,9 @@ use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use superwire_core::mcp::McpClientPool;
-use superwire_core::semantic::support::provider::ProviderConfig;
-use superwire_core::semantic::support::types::{WorkflowSchemaCache, WorkflowType};
 use superwire_dsl::ModelAssetKind;
+use superwire_semantic::support::provider::ProviderConfig;
+use superwire_semantic::support::types::{WorkflowSchemaCache, WorkflowType};
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]

@@ -12,10 +12,10 @@ use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
 use superwire_core::mcp::McpClientPool;
-use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
-use superwire_core::semantic::support::provider::ProviderConfig;
-use superwire_core::semantic::{PlannedAgent, WorkflowSemanticError};
 use superwire_dsl::{AgentExpressionPropertyName, AgentProperty, Expression, ModelAssetKind};
+use superwire_semantic::support::expression::{evaluate_expression, EvaluationContext};
+use superwire_semantic::support::provider::ProviderConfig;
+use superwire_semantic::{PlannedAgent, WorkflowSemanticError};
 use tokio::sync::mpsc;
 
 pub(in crate::runtime) struct AgentRunContext<'a, ModelProviderType> {

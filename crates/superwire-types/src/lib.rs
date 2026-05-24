@@ -1,4 +1,5 @@
 pub mod ast;
+pub mod diagnostic;
 pub mod structure;
 
 pub use ast::{
@@ -7,4 +8,5 @@ pub use ast::{
     ModelAssetKind, ModelCallArgumentName, ModelDeclarationPropertyName, ModelUsagePropertyName, ReferenceKeyword, SourcePosition,
     SourceSpan, ToolCallKeyword, ToolCallPropertyName, ToolPropertyName,
 };
+pub use diagnostic::{should_render_rich_diagnostics, Diagnostic, DiagnosticCode, DiagnosticLabel, DiagnosticSeverity};
 pub use structure::{DslProperty, PropertyDefinition, PropertyValueKind};

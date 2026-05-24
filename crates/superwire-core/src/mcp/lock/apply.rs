@@ -115,7 +115,11 @@ impl McpLock {
     }
 }
 
-impl ToolDeclaration {
+trait ToolDeclarationApplyExt {
+    fn apply_mcp_schema(&mut self, mcp_tool: &McpToolLock);
+}
+
+impl ToolDeclarationApplyExt for ToolDeclaration {
     fn apply_mcp_schema(&mut self, mcp_tool: &McpToolLock) {
         if self.description.is_none() {
             self.description.clone_from(&mcp_tool.description);

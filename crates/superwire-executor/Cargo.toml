@@ -25,6 +25,7 @@ sha2 = { workspace = true }
 superwire-core = { path = "../superwire-core" }
 superwire-dsl = { path = "../superwire-dsl" }
 superwire-lsp = { path = "../superwire-lsp" }
+superwire-semantic = { path = "../superwire-semantic" }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = "0.1"

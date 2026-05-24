@@ -391,7 +391,13 @@ impl AstVisitor {
     }
 }
 
-impl TypeExpression {
+trait TypeExpressionToolExt {
+    fn fixed_binding_literal_expression(self) -> Option<Expression>;
+
+    fn fixed_binding_array_item_expression(self) -> Option<Expression>;
+}
+
+impl TypeExpressionToolExt for TypeExpression {
     fn fixed_binding_literal_expression(self) -> Option<Expression> {
         match self {
             Self::StringEnum(string_value) => Some(Expression::StringLiteral(string_value)),

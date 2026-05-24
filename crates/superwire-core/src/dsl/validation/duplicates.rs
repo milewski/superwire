@@ -2,12 +2,17 @@ use super::super::ast::{
     AgentProperty, Asset, Declaration, Expression, MatchBranch, ObjectField, SourceSpan, StringTemplatePart, TypeExpression, TypedField,
     Workflow,
 };
-use super::report::{ValidationContext, ValidationReport};
+use super::issues::{AgentDeclarationIssuesExt, AgentPropertyIssuesExt, ObjectFieldIssuesExt, TypedFieldIssuesExt, VariantCaseIssuesExt};
+use super::{ValidationContext, ValidationReport};
 use std::collections::HashSet;
 
-impl Workflow {
+pub(super) trait WorkflowDuplicateValidationExt {
+    fn validate_duplicate_properties(&self, validation_report: &mut ValidationReport);
+}
+
+impl WorkflowDuplicateValidationExt for Workflow {
     #[allow(clippy::too_many_lines)]
-    pub(super) fn validate_duplicate_properties(&self, validation_report: &mut ValidationReport) {
+    fn validate_duplicate_properties(&self, validation_report: &mut ValidationReport) {
         let mut seen_workflow_dynamic_field_names = HashSet::<String>::new();
 
         for declaration in self.declarations() {
@@ -441,7 +446,11 @@ fn report_duplicate_typed_field_names(typed_fields: &[TypedField], context: Vali
     }
 }
 
-impl TypeExpression {
+trait TypeExpressionDuplicateValidationExt {
+    fn report_duplicate_fields(&self, context: ValidationContext, validation_report: &mut ValidationReport);
+}
+
+impl TypeExpressionDuplicateValidationExt for TypeExpression {
     fn report_duplicate_fields(&self, context: ValidationContext, validation_report: &mut ValidationReport) {
         match self {
             Self::Array {
@@ -491,7 +500,16 @@ impl TypeExpression {
     }
 }
 
-impl Expression {
+trait ExpressionDuplicateValidationExt {
+    fn report_duplicate_object_fields(
+        &self,
+        context: ValidationContext,
+        duplicate_span: Option<SourceSpan>,
+        validation_report: &mut ValidationReport,
+    );
+}
+
+impl ExpressionDuplicateValidationExt for Expression {
     fn report_duplicate_object_fields(
         &self,
         context: ValidationContext,
@@ -601,7 +619,16 @@ impl Expression {
     }
 }
 
-impl Asset {
+trait AssetDuplicateValidationExt {
+    fn report_duplicate_object_fields(
+        &self,
+        context: ValidationContext,
+        duplicate_span: Option<SourceSpan>,
+        validation_report: &mut ValidationReport,
+    );
+}
+
+impl AssetDuplicateValidationExt for Asset {
     fn report_duplicate_object_fields(
         &self,
         context: ValidationContext,

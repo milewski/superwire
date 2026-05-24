@@ -7,7 +7,6 @@ edition = "2021"
 workspace = true
 
 [dependencies]
-ariadne = "0.6.0"
 async-trait = "0.1"
 futures = "0.3"
 jsonschema = { workspace = true }
@@ -22,6 +21,7 @@ serde_json = { workspace = true }
 sha2 = "0.10"
 strsim = "0.11"
 superwire-types = { path = "../superwire-types" }
+superwire-semantic = { path = "../superwire-semantic" }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 ureq = { version = "3.3.0", default-features = false, features = ["json", "rustls"] }

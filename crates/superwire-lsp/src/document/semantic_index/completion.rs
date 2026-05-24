@@ -1,9 +1,9 @@
 use lsp_types::{CompletionItemKind, Position};
-use superwire_core::semantic::ProviderDriver;
 use superwire_dsl::{
     BuiltinFunctionName, DeclarationKeyword, ImportKeyword, McpCallOperation, ReferenceKeyword, SingletonDeclarationKind, ToolCallKeyword,
     ToolPropertyName,
 };
+use superwire_semantic::ProviderDriver;
 
 use super::super::completion_context::{ModelCallCompletionContext, ValueCompletionContext};
 use super::super::hover::builtin_symbol_suggestions;
@@ -524,7 +524,7 @@ impl SemanticIndex {
     ) -> Vec<CompletionSuggestion> {
         let mut completion_suggestions = ProviderDriver::all()
             .into_iter()
-            .map(superwire_core::semantic::ProviderDriver::as_str)
+            .map(superwire_semantic::ProviderDriver::as_str)
             .filter(|driver_name| driver_name.starts_with(driver_prefix))
             .map(|driver_name| CompletionSuggestion {
                 label: driver_name.to_string(),

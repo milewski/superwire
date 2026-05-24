@@ -29,11 +29,11 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
 use superwire_core::mcp::McpClientPool;
-use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
-use superwire_core::semantic::{ExecutionPlan, WorkflowExecutionGraph};
 use superwire_dsl::{
     AgentProperty, Declaration, Expression, McpPromptImportDeclaration, McpResourceImportDeclaration, McpServerDeclaration, Workflow,
 };
+use superwire_semantic::support::expression::{evaluate_expression, EvaluationContext};
+use superwire_semantic::{ExecutionPlan, WorkflowExecutionGraph};
 use tokio::sync::{mpsc, Semaphore};
 
 #[derive(Debug, Clone)]
@@ -183,7 +183,7 @@ impl WorkflowExecutor {
     }
 
     #[must_use]
-    pub fn mcp_imports(&self) -> &[superwire_core::semantic::PlannedMcpImport] {
+    pub fn mcp_imports(&self) -> &[superwire_semantic::PlannedMcpImport] {
         &self.execution_plan.mcp_imports
     }
 
@@ -360,7 +360,7 @@ trait PlannedAgentRuntimePlanningExt {
     fn iteration_count(&self, evaluation_context: &EvaluationContext) -> Result<usize, ExecutorError>;
 }
 
-impl PlannedAgentRuntimePlanningExt for superwire_core::semantic::PlannedAgent {
+impl PlannedAgentRuntimePlanningExt for superwire_semantic::PlannedAgent {
     fn iteration_count(&self, evaluation_context: &EvaluationContext) -> Result<usize, ExecutorError> {
         let Some(agent_for_loop) = &self.declaration.for_loop else {
             return Ok(1);

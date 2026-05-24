@@ -10,3 +10,4 @@ workspace = true
 schemars = { workspace = true }
 serde_json = { workspace = true }
 superwire-core = { path = "../superwire-core" }
+superwire-semantic = { path = "../superwire-semantic" }

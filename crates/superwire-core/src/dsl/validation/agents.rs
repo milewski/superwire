@@ -1,7 +1,8 @@
 use super::super::ast::{
     AgentDeclaration, AgentProperty, Declaration, ModelUsage, ModelUsagePropertyName, ObjectField, ReferenceKeyword, SourceSpan, Workflow,
 };
-use super::report::{ValidationIssue, ValidationReport};
+use super::issues::AgentDeclarationIssuesExt;
+use super::{ValidationIssue, ValidationReport};
 use crate::semantic::{InferenceSetting, WorkflowSemanticIndex as ValidationIndex};
 use std::collections::HashSet;
 
