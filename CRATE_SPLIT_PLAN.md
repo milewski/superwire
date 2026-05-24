@@ -25,19 +25,18 @@ Split the unpublished workspace into smaller publishable crates while preserving
 - [x] Create `superwire-provider-cersei` and move the Cersei provider implementation into it. Rationale: Cersei is one backend with its own dependencies and should be independently replaceable.
 - [x] Create `superwire-executor-server` and move Axum routes, SSE support, playground serving, `/lsp` websocket bridge, and `serve_executor*` into it. Rationale: server transport and playground hosting should not force runtime users to depend on web or LSP crates.
 - [x] Remove or empty `superwire-core` after all imports are migrated. Rationale: the project is unpublished, so a compatibility facade is unnecessary once narrower crates exist.
-- [ ] Run final workspace verification and ensure all checklist items are complete. Rationale: this confirms the split did not change behavior and the intended dependency boundaries actually hold.
+- [x] Run final workspace verification and ensure all checklist items are complete. Rationale: this confirms the split did not change behavior and the intended dependency boundaries actually hold.
 
 ## Missing or pending tasks
 
-- Owning item: Create `superwire-protocol` and move executor HTTP/API DTOs and event DTOs into it. Reason: executor-owned API request/response DTOs and event DTOs now live in `superwire-protocol`, and executor internals import those types directly from the protocol crate. `GraphResponse` still uses `superwire-semantic::WorkflowExecutionGraph`, so `superwire-protocol` temporarily depends on `superwire-semantic` for the graph wire payload shape while semantic still owns graph construction helpers and graph-specific inherent methods. Follow-up: when graph DTO ownership is revisited, split the graph wire shape from semantic graph construction without moving parser or executor implementation.
-- Owning item: Create `superwire-model` and move provider-neutral model interfaces, model schemas, prompt content/assets, tool definitions, finalize call types, and tool-call limits into it. Reason: provider-neutral model DTOs and the provider trait now live in `superwire-model`, but `ModelRequest` still carries MCP client and executor event handles so provider implementations can execute MCP-backed tools and emit executor events without changing behavior. Follow-up: revisit whether provider requests should expose slimmer model-owned tool/event abstractions instead of concrete executor integration handles.
-- Owning item: Create `superwire-executor-server` and move Axum routes, SSE support, playground serving, `/lsp` websocket bridge, and `serve_executor*` into it. Reason: server-owned Axum, LSP, default Cersei wiring, and serve helpers now live in `superwire-executor-server`, and provider-backed fixture integration tests moved under `superwire-provider-cersei`. `superwire-executor` no longer depends on `superwire-lsp`, Axum, `superwire-provider-cersei`, `cersei-provider`, or `cersei-types`, but `cargo tree -p superwire-executor -i tower` and `cargo tree -p superwire-executor -i tower-http` still resolve through `jsonschema -> reqwest`, not through server transport code. Follow-up: revisit the schema validation dependency path when slimming runtime/schema dependencies; this is separate from the server split.
+- None.
 
 ## Final acceptance checks
 
-- [ ] `cargo test --workspace --all-features` passes.
-- [ ] `cargo clippy --fix --allow-dirty --all-targets --all-features -- -D warnings` passes.
-- [ ] `cargo fmt` passes.
-- [ ] `cargo tree -p superwire-types` has no parser, executor, LSP, server, MCP HTTP, Axum, or Cersei dependencies.
-- [ ] `cargo tree -p superwire-executor` has no `superwire-lsp`, `axum`, `tower`, `tower-http`, `cersei-provider`, or `cersei-types`.
-- [ ] Only `superwire-provider-cersei` depends on `cersei-provider` and `cersei-types`.
+- [x] `cargo test --workspace --all-features` passes.
+- [x] `cargo clippy --fix --allow-dirty --all-targets --all-features -- -D warnings` passes.
+- [x] `cargo fmt` passes.
+- [x] `cargo tree -p superwire-types` has no parser, executor, LSP, server, MCP HTTP, Axum, or Cersei dependencies.
+- [x] `cargo tree -p superwire-executor` has no `superwire-lsp`, `axum`, `tower`, `tower-http`, `cersei-provider`, or `cersei-types`.
+- [x] Only `superwire-provider-cersei` depends on `cersei-provider` and `cersei-types`.
+- [x] `git diff --check` passes.
