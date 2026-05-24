@@ -2457,6 +2457,7 @@ dependencies = [
  "superwire-executor",
  "superwire-macros",
  "superwire-mcp",
+ "superwire-provider-cersei",
  "superwire-semantic",
  "superwire-test-support",
  "thiserror 2.0.18",
@@ -2499,8 +2500,6 @@ dependencies = [
  "async-trait",
  "axum",
  "base64",
- "cersei-provider",
- "cersei-types",
  "clap",
  "colog",
  "futures",
@@ -2519,6 +2518,7 @@ dependencies = [
  "superwire-mcp",
  "superwire-model",
  "superwire-protocol",
+ "superwire-provider-cersei",
  "superwire-semantic",
  "superwire-test-support",
  "thiserror 2.0.18",
@@ -2593,6 +2593,23 @@ dependencies = [
  "serde",
  "serde_json",
  "superwire-semantic",
+]
+
+[[package]]
+name = "superwire-provider-cersei"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "cersei-provider",
+ "cersei-types",
+ "jsonschema",
+ "log",
+ "serde_json",
+ "superwire-mcp",
+ "superwire-model",
+ "superwire-protocol",
+ "superwire-semantic",
+ "superwire-types",
 ]
 
 [[package]]

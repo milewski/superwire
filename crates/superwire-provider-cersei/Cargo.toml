@@ -1,0 +1,20 @@
+[package]
+name = "superwire-provider-cersei"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = "0.1"
+cersei-provider = { workspace = true }
+cersei-types = { workspace = true }
+jsonschema = { workspace = true }
+log = { workspace = true }
+serde_json = { workspace = true }
+superwire-mcp = { path = "../superwire-mcp" }
+superwire-model = { path = "../superwire-model" }
+superwire-protocol = { path = "../superwire-protocol" }
+superwire-semantic = { path = "../superwire-semantic" }
+superwire-types = { path = "../superwire-types" }

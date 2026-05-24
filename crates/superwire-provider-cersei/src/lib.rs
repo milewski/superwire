@@ -7,14 +7,14 @@ use jsonschema::ValidationError;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
-use superwire_dsl::ModelAssetKind;
 use superwire_mcp::{normalize_mcp_tool_result, render_mcp_prompt_text_result, render_mcp_resource_text_result, McpServerConfig};
 use superwire_model::{
-    FinalizeCallKind, ModelAsset, ModelAssetSource, ModelPromptContent, ModelProvider, ModelProviderError as ExecutorError, ModelRequest,
+    FinalizeCallKind, ModelAsset, ModelAssetSource, ModelPromptContent, ModelProvider, ModelProviderError as ProviderError, ModelRequest,
     ModelResponse, ModelSchemaCache, ModelToolDefinition, ModelToolSource,
 };
 use superwire_protocol::event::{ExecutorEvent, McpCallEventDetails};
 use superwire_semantic::support::provider::{ProviderApiFormat, ProviderConfig, ProviderDriver};
+use superwire_types::ModelAssetKind;
 
 const MAX_TOOL_CALL_ROUNDS: usize = 8;
 const DEFAULT_MAX_TOKENS: u32 = 16_384;
@@ -24,7 +24,7 @@ pub struct CerseiModelProvider;
 
 #[async_trait]
 impl ModelProvider for CerseiModelProvider {
-    async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ExecutorError> {
+    async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ProviderError> {
         let provider = request.provider_config.build_provider(&request)?;
         let mut schema_cache = ModelSchemaCache::new();
         let request_context = request.cersei_request_context(&mut schema_cache)?;
@@ -99,7 +99,7 @@ impl ModelProvider for CerseiModelProvider {
                 .or_else(|| Some("model response did not include finalize tool call".to_string()));
         }
 
-        Err(ExecutorError::Model {
+        Err(ProviderError::Model {
             agent_name: request.agent_name,
             message: last_error.unwrap_or_else(|| "model did not call finalize".to_string()),
         })
@@ -224,7 +224,7 @@ impl CerseiModelProvider {
         request: &ModelRequest,
         tool_calls: &[CerseiToolCall],
         schema_cache: &mut ModelSchemaCache,
-    ) -> Result<ToolCallRound, ExecutorError> {
+    ) -> Result<ToolCallRound, ProviderError> {
         let mut messages = Vec::new();
 
         for tool_call in tool_calls {
@@ -240,7 +240,7 @@ impl CerseiModelProvider {
             let ToolCallOutcome::Continue(tool_result) = tool_outcome else {
                 unreachable!("finalize outcome should return above");
             };
-            let tool_result_text = serde_json::to_string(&tool_result).map_err(|error| ExecutorError::Model {
+            let tool_result_text = serde_json::to_string(&tool_result).map_err(|error| ProviderError::Model {
                 agent_name: request.agent_name.clone(),
                 message: format!("failed to serialize tool result: {error}"),
             })?;
@@ -263,12 +263,12 @@ impl CerseiModelProvider {
         request: &ModelRequest,
         tool_call: &CerseiToolCall,
         schema_cache: &mut ModelSchemaCache,
-    ) -> Result<ToolCallOutcome, ExecutorError> {
+    ) -> Result<ToolCallOutcome, ProviderError> {
         let tool_definition = request
             .tools
             .iter()
             .find(|tool_definition| tool_definition.name == tool_call.name)
-            .ok_or_else(|| ExecutorError::Model {
+            .ok_or_else(|| ProviderError::Model {
                 agent_name: request.agent_name.clone(),
                 message: format!("model requested unknown tool `{}`", tool_call.name),
             })?;
@@ -292,7 +292,7 @@ impl CerseiModelProvider {
             request.send_mcp_tool_validation_started(&tool_definition.name, &arguments, &input_schema);
         }
 
-        if let Err(message) = validate_tool_arguments(&arguments, &input_schema) {
+        if let Err(message) = tool_definition.validate_arguments(&arguments, &input_schema) {
             let tool_error = tool_definition.argument_error(message, schema_cache);
 
             if matches!(tool_definition.source, ModelToolSource::Mcp { .. }) {
@@ -329,7 +329,7 @@ impl CerseiModelProvider {
         tool_definition.execute_external_tool(request, arguments, schema_cache)
     }
 
-    fn complete_generation(&self, request: &ModelRequest, finalize_result: FinalizeResult) -> Result<ModelResponse, ExecutorError> {
+    fn complete_generation(&self, request: &ModelRequest, finalize_result: FinalizeResult) -> Result<ModelResponse, ProviderError> {
         match finalize_result {
             FinalizeResult::Success(output) => {
                 log::info!(
@@ -347,7 +347,7 @@ impl CerseiModelProvider {
                     }),
                 })
             }
-            FinalizeResult::Fail(reason) => Err(ExecutorError::Model {
+            FinalizeResult::Fail(reason) => Err(ProviderError::Model {
                 agent_name: request.agent_name.clone(),
                 message: format!("agent finalized with failure: {reason}"),
             }),
@@ -420,7 +420,7 @@ struct McpImportTarget<'source> {
 }
 
 trait ModelRequestCerseiContextExt {
-    fn cersei_request_context(&self, schema_cache: &mut ModelSchemaCache) -> Result<CerseiRequestContext, ExecutorError>;
+    fn cersei_request_context(&self, schema_cache: &mut ModelSchemaCache) -> Result<CerseiRequestContext, ProviderError>;
     fn max_tokens(&self) -> u32;
     fn temperature(&self) -> Option<f32>;
     fn cersei_options(&self) -> HashMap<String, Value>;
@@ -428,11 +428,11 @@ trait ModelRequestCerseiContextExt {
 }
 
 impl ModelRequestCerseiContextExt for ModelRequest {
-    fn cersei_request_context(&self, schema_cache: &mut ModelSchemaCache) -> Result<CerseiRequestContext, ExecutorError> {
+    fn cersei_request_context(&self, schema_cache: &mut ModelSchemaCache) -> Result<CerseiRequestContext, ProviderError> {
         let output_schema_text = self
             .output_schema
             .json_string_with_cache(schema_cache)
-            .map_err(|error| ExecutorError::Model {
+            .map_err(|error| ProviderError::Model {
                 agent_name: self.agent_name.clone(),
                 message: format!("failed to serialize output schema: {error}"),
             })?;
@@ -499,7 +499,8 @@ impl ModelRequestCerseiContextExt for ModelRequest {
 
 trait ModelToolDefinitionCerseiExt {
     fn to_cersei_tool_definition(&self, schema_cache: &mut ModelSchemaCache) -> ToolDefinition;
-    fn parse_finalize_arguments(&self, arguments: Value) -> Result<FinalizeResult, ExecutorError>;
+    fn validate_arguments(&self, arguments: &Value, input_schema: &Value) -> Result<(), String>;
+    fn parse_finalize_arguments(&self, arguments: Value) -> Result<FinalizeResult, ProviderError>;
     fn argument_error(&self, message: String, schema_cache: &mut ModelSchemaCache) -> Value;
     fn call_limit_error(&self, message: String) -> Value;
     fn execute_external_tool(
@@ -507,28 +508,28 @@ trait ModelToolDefinitionCerseiExt {
         request: &ModelRequest,
         arguments: Value,
         schema_cache: &mut ModelSchemaCache,
-    ) -> Result<ToolCallOutcome, ExecutorError>;
+    ) -> Result<ToolCallOutcome, ProviderError>;
     fn execute_mcp_tool(
         &self,
         request: &ModelRequest,
         arguments: Value,
         target: McpToolTarget<'_>,
         schema_cache: &mut ModelSchemaCache,
-    ) -> Result<ToolCallOutcome, ExecutorError>;
+    ) -> Result<ToolCallOutcome, ProviderError>;
     fn execute_mcp_prompt(
         &self,
         request: &ModelRequest,
         arguments: Value,
         target: McpImportTarget<'_>,
         schema_cache: &mut ModelSchemaCache,
-    ) -> Result<ToolCallOutcome, ExecutorError>;
+    ) -> Result<ToolCallOutcome, ProviderError>;
     fn execute_mcp_resource(
         &self,
         request: &ModelRequest,
         arguments: Value,
         target: McpImportTarget<'_>,
         schema_cache: &mut ModelSchemaCache,
-    ) -> Result<ToolCallOutcome, ExecutorError>;
+    ) -> Result<ToolCallOutcome, ProviderError>;
 }
 
 impl ModelToolDefinitionCerseiExt for ModelToolDefinition {
@@ -540,7 +541,24 @@ impl ModelToolDefinitionCerseiExt for ModelToolDefinition {
         }
     }
 
-    fn parse_finalize_arguments(&self, arguments: Value) -> Result<FinalizeResult, ExecutorError> {
+    fn validate_arguments(&self, arguments: &Value, input_schema: &Value) -> Result<(), String> {
+        let validator = jsonschema::validator_for(input_schema).map_err(|error| format!("tool schema could not be compiled: {error}"))?;
+        let mut validation_issues = validator.iter_errors(arguments).map(format_validation_issue).collect::<Vec<_>>();
+
+        if validation_issues.is_empty() {
+            return Ok(());
+        }
+
+        validation_issues.sort();
+        validation_issues.dedup();
+
+        Err(format!(
+            "tool arguments do not match the declared schema: {}. Correct the arguments and call the tool again.",
+            validation_issues.join("; ")
+        ))
+    }
+
+    fn parse_finalize_arguments(&self, arguments: Value) -> Result<FinalizeResult, ProviderError> {
         match arguments
             .get("type")
             .and_then(Value::as_str)
@@ -554,7 +572,7 @@ impl ModelToolDefinitionCerseiExt for ModelToolDefinition {
                     .unwrap_or("agent failed without a reason")
                     .to_string(),
             )),
-            _ => Err(ExecutorError::Model {
+            _ => Err(ProviderError::Model {
                 agent_name: "unknown".to_string(),
                 message: "validated finalize arguments did not include a supported type".to_string(),
             }),
@@ -584,7 +602,7 @@ impl ModelToolDefinitionCerseiExt for ModelToolDefinition {
         request: &ModelRequest,
         arguments: Value,
         schema_cache: &mut ModelSchemaCache,
-    ) -> Result<ToolCallOutcome, ExecutorError> {
+    ) -> Result<ToolCallOutcome, ProviderError> {
         match &self.source {
             ModelToolSource::Mcp {
                 server_name,
@@ -635,7 +653,7 @@ impl ModelToolDefinitionCerseiExt for ModelToolDefinition {
                 schema_cache,
             ),
             ModelToolSource::Finalize => unreachable!("finalize tool calls should return before MCP dispatch"),
-            ModelToolSource::Local => Err(ExecutorError::Model {
+            ModelToolSource::Local => Err(ProviderError::Model {
                 agent_name: request.agent_name.clone(),
                 message: format!("tool `{}` is not backed by MCP", self.name),
             }),
@@ -648,7 +666,7 @@ impl ModelToolDefinitionCerseiExt for ModelToolDefinition {
         arguments: Value,
         target: McpToolTarget<'_>,
         schema_cache: &mut ModelSchemaCache,
-    ) -> Result<ToolCallOutcome, ExecutorError> {
+    ) -> Result<ToolCallOutcome, ProviderError> {
         let server_config = McpServerConfig {
             name: target.server_name.unwrap_or("default").to_string(),
             endpoint: target.endpoint.to_string(),
@@ -677,7 +695,7 @@ impl ModelToolDefinitionCerseiExt for ModelToolDefinition {
             Err(error) => {
                 request.send_mcp_call_failed(call_details, Value::String(error.to_string()), started_at.elapsed());
 
-                return Err(ExecutorError::Model {
+                return Err(ProviderError::Model {
                     agent_name: request.agent_name.clone(),
                     message: error.to_string(),
                 });
@@ -698,7 +716,7 @@ impl ModelToolDefinitionCerseiExt for ModelToolDefinition {
         arguments: Value,
         target: McpImportTarget<'_>,
         schema_cache: &mut ModelSchemaCache,
-    ) -> Result<ToolCallOutcome, ExecutorError> {
+    ) -> Result<ToolCallOutcome, ProviderError> {
         let server_config = McpServerConfig {
             name: target.server_name.to_string(),
             endpoint: target.endpoint.to_string(),
@@ -720,7 +738,7 @@ impl ModelToolDefinitionCerseiExt for ModelToolDefinition {
             Err(error) => {
                 request.send_mcp_call_failed(call_details, Value::String(error.to_string()), started_at.elapsed());
 
-                return Err(ExecutorError::Model {
+                return Err(ProviderError::Model {
                     agent_name: request.agent_name.clone(),
                     message: error.to_string(),
                 });
@@ -739,7 +757,7 @@ impl ModelToolDefinitionCerseiExt for ModelToolDefinition {
         arguments: Value,
         target: McpImportTarget<'_>,
         schema_cache: &mut ModelSchemaCache,
-    ) -> Result<ToolCallOutcome, ExecutorError> {
+    ) -> Result<ToolCallOutcome, ProviderError> {
         let server_config = McpServerConfig {
             name: target.server_name.to_string(),
             endpoint: target.endpoint.to_string(),
@@ -761,7 +779,7 @@ impl ModelToolDefinitionCerseiExt for ModelToolDefinition {
             Err(error) => {
                 request.send_mcp_call_failed(call_details, Value::String(error.to_string()), started_at.elapsed());
 
-                return Err(ExecutorError::Model {
+                return Err(ProviderError::Model {
                     agent_name: request.agent_name.clone(),
                     message: error.to_string(),
                 });
@@ -776,13 +794,13 @@ impl ModelToolDefinitionCerseiExt for ModelToolDefinition {
 }
 
 trait ProviderConfigCerseiExt {
-    fn build_provider(&self, request: &ModelRequest) -> Result<Box<dyn Provider>, ExecutorError>;
+    fn build_provider(&self, request: &ModelRequest) -> Result<Box<dyn Provider>, ProviderError>;
 
-    fn required_api_key(&self, request: &ModelRequest, api_key: Option<String>) -> Result<String, ExecutorError>;
+    fn required_api_key(&self, request: &ModelRequest, api_key: Option<String>) -> Result<String, ProviderError>;
 }
 
 impl ProviderConfigCerseiExt for ProviderConfig {
-    fn build_provider(&self, request: &ModelRequest) -> Result<Box<dyn Provider>, ExecutorError> {
+    fn build_provider(&self, request: &ModelRequest) -> Result<Box<dyn Provider>, ProviderError> {
         let endpoint = self.endpoint.clone().or_else(|| self.driver.default_endpoint().map(str::to_string));
         let api_key = self.api_key.clone().or_else(|| self.driver.api_key_from_environment());
 
@@ -806,7 +824,7 @@ impl ProviderConfigCerseiExt for ProviderConfig {
                 builder
                     .build()
                     .map(|provider| Box::new(provider) as Box<dyn Provider>)
-                    .map_err(|error| ExecutorError::Model {
+                    .map_err(|error| ProviderError::Model {
                         agent_name: request.agent_name.clone(),
                         message: format!("failed to build Anthropic provider: {error}"),
                     })
@@ -822,13 +840,13 @@ impl ProviderConfigCerseiExt for ProviderConfig {
                 builder
                     .build()
                     .map(|provider| Box::new(provider) as Box<dyn Provider>)
-                    .map_err(|error| ExecutorError::Model {
+                    .map_err(|error| ProviderError::Model {
                         agent_name: request.agent_name.clone(),
                         message: format!("failed to build Gemini provider: {error}"),
                     })
             }
             ProviderApiFormat::OpenAiCompatible => {
-                let endpoint = endpoint.ok_or_else(|| ExecutorError::Model {
+                let endpoint = endpoint.ok_or_else(|| ProviderError::Model {
                     agent_name: request.agent_name.clone(),
                     message: format!("provider `{}` requires an endpoint", self.driver.as_str()),
                 })?;
@@ -844,7 +862,7 @@ impl ProviderConfigCerseiExt for ProviderConfig {
                     .model(request.model_name.clone())
                     .build()
                     .map(|provider| Box::new(provider) as Box<dyn Provider>)
-                    .map_err(|error| ExecutorError::Model {
+                    .map_err(|error| ProviderError::Model {
                         agent_name: request.agent_name.clone(),
                         message: format!("failed to build OpenAI-compatible provider: {error}"),
                     })
@@ -852,12 +870,12 @@ impl ProviderConfigCerseiExt for ProviderConfig {
         }
     }
 
-    fn required_api_key(&self, request: &ModelRequest, api_key: Option<String>) -> Result<String, ExecutorError> {
+    fn required_api_key(&self, request: &ModelRequest, api_key: Option<String>) -> Result<String, ProviderError> {
         if !self.driver.requires_api_key() {
             return Ok(api_key.unwrap_or_else(|| "no-key".to_string()));
         }
 
-        api_key.ok_or_else(|| ExecutorError::Model {
+        api_key.ok_or_else(|| ProviderError::Model {
             agent_name: request.agent_name.clone(),
             message: format!(
                 "provider `{}` requires `api_key` or one of these environment variables: {}",
@@ -926,23 +944,6 @@ impl MessageExt for Message {
             metadata,
         }
     }
-}
-
-fn validate_tool_arguments(arguments: &Value, schema: &Value) -> Result<(), String> {
-    let validator = jsonschema::validator_for(schema).map_err(|error| format!("tool schema could not be compiled: {error}"))?;
-    let mut validation_issues = validator.iter_errors(arguments).map(format_validation_issue).collect::<Vec<_>>();
-
-    if validation_issues.is_empty() {
-        return Ok(());
-    }
-
-    validation_issues.sort();
-    validation_issues.dedup();
-
-    Err(format!(
-        "tool arguments do not match the declared schema: {}. Correct the arguments and call the tool again.",
-        validation_issues.join("; ")
-    ))
 }
 
 fn format_validation_issue(validation_error: ValidationError<'_>) -> String {

@@ -10,7 +10,7 @@ mod test_macros;
 #[cfg(test)]
 mod tests;
 
-pub use model::{CerseiModelProvider, ModelRequest, ModelResponse};
+pub use model::{ModelRequest, ModelResponse};
 pub use runtime::{
     AgentCacheConfig, AgentCacheDriver, AgentCacheOptions, AgentCacheSession, AgentCacheTimeToLive, ExecutorError, RedisAgentCacheConfig,
     WorkflowExecutor, DEFAULT_AGENT_CACHE_TIME_TO_LIVE,

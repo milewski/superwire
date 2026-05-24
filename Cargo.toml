@@ -8,6 +8,7 @@ members = [
     "crates/superwire-mcp",
     "crates/superwire-protocol",
     "crates/superwire-model",
+    "crates/superwire-provider-cersei",
     "crates/superwire-core",
     "crates/superwire-lsp",
     "crates/superwire-cli",

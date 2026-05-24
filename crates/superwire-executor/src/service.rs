@@ -1,4 +1,4 @@
-use crate::model::{CerseiModelProvider, ModelProvider};
+use crate::model::ModelProvider;
 use crate::runtime::cache::{
     AgentCacheConfig, AgentCacheDriver, AgentCacheOptions, AgentCacheSession, AgentCacheStore, DEFAULT_AGENT_CACHE_TIME_TO_LIVE,
 };
@@ -15,6 +15,7 @@ use superwire_protocol::api::{
     ValidationRequest, ValidationResponse,
 };
 use superwire_protocol::event::ExecutorEvent;
+use superwire_provider_cersei::CerseiModelProvider;
 use tokio::sync::mpsc;
 use tokio::task::AbortHandle;
 

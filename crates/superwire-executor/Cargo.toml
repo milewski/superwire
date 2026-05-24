@@ -9,8 +9,6 @@ workspace = true
 [dependencies]
 async-trait = "0.1"
 axum = { version = "0.8", features = ["ws"] }
-cersei-provider = { workspace = true }
-cersei-types = { workspace = true }
 clap = { workspace = true }
 colog = { workspace = true }
 futures = "0.3"
@@ -26,6 +24,7 @@ superwire-dsl = { path = "../superwire-dsl" }
 superwire-lsp = { path = "../superwire-lsp" }
 superwire-mcp = { path = "../superwire-mcp" }
 superwire-model = { path = "../superwire-model" }
+superwire-provider-cersei = { path = "../superwire-provider-cersei" }
 superwire-protocol = { path = "../superwire-protocol" }
 superwire-semantic = { path = "../superwire-semantic" }
 thiserror = { workspace = true }

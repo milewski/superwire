@@ -1,4 +1,4 @@
-use crate::model::{CerseiModelProvider, ModelProvider};
+use crate::model::ModelProvider;
 use crate::runtime::{AgentCacheConfig, AgentCacheDriver, AgentCacheSession};
 use crate::server::error::ExecutorHttpError;
 use crate::server::sse::event_to_sse_result;
@@ -20,6 +20,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use superwire_lsp::server::LanguageServer;
 use superwire_protocol::api::{CacheInvalidationRequest, ExecutionRequest, FormatRequest, GraphRequest, ValidationRequest};
+use superwire_provider_cersei::CerseiModelProvider;
 use tokio::fs;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::ReceiverStream;

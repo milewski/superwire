@@ -5,8 +5,8 @@ use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use superwire_executor::model::CerseiModelProvider;
 use superwire_executor::runtime::{ExecutorError, WorkflowExecutor};
+use superwire_provider_cersei::CerseiModelProvider;
 pub use superwire_test_support::FakeMcpRequest;
 use superwire_test_support::{FakeMcpClientFactory, WorkflowSource};
 

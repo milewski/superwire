@@ -19,6 +19,7 @@ superwire-core = { path = "../superwire-core" }
 superwire-dsl = { path = "../superwire-dsl" }
 superwire-executor = { path = "../superwire-executor" }
 superwire-mcp = { path = "../superwire-mcp" }
+superwire-provider-cersei = { path = "../superwire-provider-cersei" }
 superwire-semantic = { path = "../superwire-semantic" }
 thiserror = { workspace = true }
 tokio = { workspace = true }
