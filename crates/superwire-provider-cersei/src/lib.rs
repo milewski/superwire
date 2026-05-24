@@ -29,7 +29,8 @@ impl ModelProvider for CerseiModelProvider {
         let mut schema_cache = ModelSchemaCache::new();
         let request_context = request.cersei_request_context(&mut schema_cache)?;
         let mut last_error = None;
-        let mut messages = vec![request.cersei_user_message()];
+        let context_messages = request.cersei_context_messages()?;
+        let mut messages = context_messages.clone();
 
         log::info!(
             "starting Cersei generation: agent={}, provider={}, model={}, tools={}",
@@ -80,7 +81,7 @@ impl ModelProvider for CerseiModelProvider {
                 let tool_call_round = self.execute_tool_calls(&request, &tool_calls, &mut schema_cache)?;
 
                 if let Some(finalize_result) = tool_call_round.finalize_result {
-                    return self.complete_generation(&request, finalize_result);
+                    return self.complete_generation(&request, &context_messages, finalize_result);
                 }
 
                 messages.push(completion.message.without_empty_text_blocks());
@@ -114,6 +115,61 @@ struct CerseiRequestContext {
     options: HashMap<String, Value>,
 }
 
+struct CerseiAgentContext {
+    messages: Vec<Message>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CerseiAgentContextField {
+    Marker,
+    Messages,
+}
+
+impl CerseiAgentContextField {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Marker => "__superwire_cersei_context",
+            Self::Messages => "messages",
+        }
+    }
+}
+
+impl CerseiAgentContext {
+    fn from_value(value: &Value, agent_name: &str) -> Result<Self, ProviderError> {
+        if value.get(CerseiAgentContextField::Marker.as_str()).and_then(Value::as_bool) != Some(true) {
+            return Err(ProviderError::Model {
+                agent_name: agent_name.to_string(),
+                message: "agent context was not produced by the Cersei provider".to_string(),
+            });
+        }
+
+        let messages_value = value
+            .get(CerseiAgentContextField::Messages.as_str())
+            .cloned()
+            .ok_or_else(|| ProviderError::Model {
+                agent_name: agent_name.to_string(),
+                message: "agent context does not include messages".to_string(),
+            })?;
+        let messages = serde_json::from_value(messages_value).map_err(|error| ProviderError::Model {
+            agent_name: agent_name.to_string(),
+            message: format!("agent context messages are invalid: {error}"),
+        })?;
+
+        Ok(Self { messages })
+    }
+
+    fn into_value(self) -> Value {
+        let mut context_object = serde_json::Map::new();
+        context_object.insert(CerseiAgentContextField::Marker.as_str().to_string(), Value::Bool(true));
+        context_object.insert(
+            CerseiAgentContextField::Messages.as_str().to_string(),
+            serde_json::to_value(self.messages).unwrap_or(Value::Null),
+        );
+
+        Value::Object(context_object)
+    }
+}
+
 impl CerseiRequestContext {
     fn build_completion_request(&self, model_name: &str, messages: Vec<Message>) -> CompletionRequest {
         let mut completion_request = CompletionRequest::new(model_name.to_string());
@@ -133,11 +189,24 @@ impl CerseiRequestContext {
 }
 
 trait ModelRequestCerseiMessageExt {
+    fn cersei_context_messages(&self) -> Result<Vec<Message>, ProviderError>;
     fn cersei_user_message(&self) -> Message;
     fn cersei_content_blocks(&self) -> Vec<ContentBlock>;
 }
 
 impl ModelRequestCerseiMessageExt for ModelRequest {
+    fn cersei_context_messages(&self) -> Result<Vec<Message>, ProviderError> {
+        let mut messages = if let Some(context_value) = &self.context {
+            CerseiAgentContext::from_value(context_value, &self.agent_name)?.messages
+        } else {
+            Vec::new()
+        };
+
+        messages.push(self.cersei_user_message());
+
+        Ok(messages)
+    }
+
     fn cersei_user_message(&self) -> Message {
         if self.prompt_content.is_empty() {
             return Message::user(self.prompt.clone());
@@ -329,7 +398,12 @@ impl CerseiModelProvider {
         tool_definition.execute_external_tool(request, arguments, schema_cache)
     }
 
-    fn complete_generation(&self, request: &ModelRequest, finalize_result: FinalizeResult) -> Result<ModelResponse, ProviderError> {
+    fn complete_generation(
+        &self,
+        request: &ModelRequest,
+        context_messages: &[Message],
+        finalize_result: FinalizeResult,
+    ) -> Result<ModelResponse, ProviderError> {
         match finalize_result {
             FinalizeResult::Success(output) => {
                 log::info!(
@@ -339,12 +413,14 @@ impl CerseiModelProvider {
                     request.model_name
                 );
 
+                let mut messages = context_messages.to_vec();
+                let assistant_output = output.as_str().map_or_else(|| output.to_string(), str::to_string);
+
+                messages.push(Message::assistant(assistant_output));
+
                 Ok(ModelResponse {
                     output,
-                    context: json!({
-                        "provider": request.provider_config.driver.as_str(),
-                        "model": request.model_name,
-                    }),
+                    context: CerseiAgentContext { messages }.into_value(),
                 })
             }
             FinalizeResult::Fail(reason) => Err(ProviderError::Model {

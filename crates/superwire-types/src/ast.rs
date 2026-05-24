@@ -9,7 +9,10 @@ mod tool;
 mod types;
 mod workflow;
 
-pub use agent::{AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, ModelUsage};
+pub use agent::{
+    AgentContext, AgentContextReference, AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, CompactAgentContext,
+    ModelUsage,
+};
 pub use declaration::{
     Declaration, DynamicBlock, InputDeclaration, McpServerDeclaration, ModelAssetKindSupportError, ModelDeclaration, OutputDeclaration,
     ProviderDeclaration, SchemaDeclaration, SecretsDeclaration, ToolDeclarationIter,
@@ -19,10 +22,10 @@ pub use expression::{
     NullFallbackExpression, ObjectField, StringTemplate, StringTemplatePart, ToolCall, VariantProjectionExpression,
 };
 pub use keywords::{
-    AgentExpressionPropertyName, AssetPropertyName, BuiltinFunctionArgumentName, BuiltinFunctionName, DeclarationKeyword,
-    ExpressionKeyword, ForClauseKeyword, ImportKeyword, McpImportPropertyName, McpServerPropertyName, McpToolBatchImportPropertyName,
-    ModelAssetKind, ModelCallArgumentName, ModelDeclarationPropertyName, ModelUsagePropertyName, ReferenceKeyword, ToolCallKeyword,
-    ToolCallPropertyName, ToolPropertyName,
+    AgentContextPropertyName, AgentExpressionPropertyName, AssetPropertyName, BuiltinFunctionArgumentName, BuiltinFunctionName,
+    DeclarationKeyword, ExpressionKeyword, ForClauseKeyword, ImportKeyword, McpImportPropertyName, McpServerPropertyName,
+    McpToolBatchImportPropertyName, ModelAssetKind, ModelCallArgumentName, ModelDeclarationPropertyName, ModelUsagePropertyName,
+    ReferenceKeyword, ToolCallKeyword, ToolCallPropertyName, ToolPropertyName,
 };
 pub use mcp::{
     McpBatchImportDeclaration, McpImportBindingEvaluationKind, McpImportBindings, McpImportKind, McpImportSource,

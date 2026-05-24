@@ -1,0 +1,31 @@
+provider openai from openai {
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
+
+agent research {
+    model: model.openai_model
+    instruction: "Research the migration plan."
+    output {
+        value: string
+    }
+}
+
+agent summarize {
+    model: model.openai_model
+    context: compact agent.research {
+        instruction: "Compact this prior context for a short summary."
+    }
+    instruction: "Summarize the compacted context."
+    output {
+        value: string
+    }
+}
+
+output {
+    result: agent.summarize.value
+}

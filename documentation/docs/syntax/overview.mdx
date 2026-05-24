@@ -75,7 +75,7 @@ schema.shared.status
 call tool.fetch_context { bindings { task_id: input.task_id } }
 read resource.project_readme
 render prompt.instructions
-context(agent.investigate_task)
+context: agent.investigate_task
 ```
 
 References are how data moves through the workflow. For example, `agent.summarize.summary` uses a previous agent result, while `secrets.api_key` injects a credential into provider config.

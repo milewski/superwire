@@ -18,7 +18,7 @@ agent investigate_task {
 
 agent propose_solution {
     model: model.fast
-    context: context(agent.investigate_task)
+    context: agent.investigate_task
     instruction: "Continue from the previous investigation and propose a solution."
 
     output {
@@ -28,7 +28,7 @@ agent propose_solution {
 }
 ```
 
-`context(agent.investigate_task)` passes the whole message history of `investigate_task` into `propose_solution`. The second agent then appends its own instruction and continues the work.
+`context: agent.investigate_task` passes the whole message history of `investigate_task` into `propose_solution`. The second agent then appends its own instruction and continues the work.
 
 ## Context versus structured output
 
@@ -38,10 +38,10 @@ Use a structured reference when you need a value:
 {{ agent.investigate_task.issue }}
 ```
 
-Use `context(agent.name)` when you want the next agent to continue the prior conversation:
+Use `context: agent.name` when you want the next agent to continue the prior conversation:
 
 ```wire
-context: context(agent.investigate_task)
+context: agent.investigate_task
 ```
 
 These are different operations. Structured references read JSON-like output fields. Context continuation passes message history.

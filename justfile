@@ -21,7 +21,7 @@ build-docker tag="latest":
 playground:
     #!/usr/bin/env bash
     trap 'kill 0' EXIT
-    cargo run --release -p superwire-executor -- --address=0.0.0.0:3000 &
+    cargo run --release -p superwire-executor-server -- --address=0.0.0.0:3000 &
     cd playground && npm run dev
 
 # Commit and push all submodules, then commit and push the main repo

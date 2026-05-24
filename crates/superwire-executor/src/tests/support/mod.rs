@@ -135,6 +135,7 @@ impl ModelProvider for TrackingModelProvider {
                 provider_config: request.provider_config.clone(),
                 model_name: request.model_name.clone(),
                 inference: request.inference.clone(),
+                context: request.context.clone(),
                 prompt: request.prompt.clone(),
                 prompt_content: request.prompt_content.clone(),
                 output_schema: request.output_schema.clone(),

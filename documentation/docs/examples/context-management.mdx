@@ -33,7 +33,7 @@ agent investigate {
 
 agent solve {
     model: model.fast
-    context: context(agent.investigate)
+    context: agent.investigate
     instruction: "Continue from the investigation and propose a solution."
 
     output {

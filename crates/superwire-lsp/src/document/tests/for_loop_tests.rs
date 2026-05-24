@@ -217,13 +217,7 @@ fn suggests_only_valid_iterable_values_after_for_in_clause() {
         "[]"
     );
 
-    assert_completion_excludes_labels!(
-        &completion_suggestions,
-        "boolean",
-        "number",
-        ReferenceKeyword::Tool,
-        BuiltinFunctionName::Context
-    );
+    assert_completion_excludes_labels!(&completion_suggestions, "boolean", "number", ReferenceKeyword::Tool, "context");
 }
 
 #[test]

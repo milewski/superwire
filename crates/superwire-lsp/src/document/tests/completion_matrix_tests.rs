@@ -95,7 +95,7 @@ fn declaration_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
                 DeclarationKeyword::Resource.as_str(),
                 DeclarationKeyword::Prompt.as_str(),
             ],
-            expected_absent_labels: vec![BuiltinFunctionName::Context.as_str()],
+            expected_absent_labels: vec!["context"],
             expects_empty_suggestions: false,
         },
         CompletionMatrixCase {

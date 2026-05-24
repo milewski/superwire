@@ -626,7 +626,7 @@ impl DocumentState {
 
         match agent_property_value_completion_context.property_name {
             AgentExpressionPropertyName::Context => {
-                Some(semantic_index.context_function_suggestions(&agent_property_value_completion_context.value_prefix))
+                Some(semantic_index.agent_context_value_suggestions(&agent_property_value_completion_context.value_prefix))
             }
             AgentExpressionPropertyName::Model => {
                 if ReferenceCompletionPath::from_line_prefix(line_prefix)

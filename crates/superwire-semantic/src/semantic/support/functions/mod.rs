@@ -5,12 +5,8 @@ use crate::semantic::WorkflowSemanticError;
 use serde_json::Value;
 use superwire_types::ast::{BuiltinFunctionName, Expression, FunctionCall};
 
-mod compact;
-mod context;
 mod template;
 
-use compact::CompactFunction;
-use context::ContextFunction;
 use template::TemplateFunction;
 
 pub type ExpressionEvaluator = dyn Fn(&Expression, &EvaluationContext, &str) -> Result<Value, WorkflowSemanticError>;
@@ -38,33 +34,25 @@ pub trait BuiltinFunctionHandler {
 }
 
 enum RegisteredBuiltinFunction {
-    Context(ContextFunction),
     Template(TemplateFunction),
-    Compact(CompactFunction),
 }
 
 impl RegisteredBuiltinFunction {
     fn from_name(function_name: BuiltinFunctionName) -> Self {
         match function_name {
-            BuiltinFunctionName::Context => Self::Context(ContextFunction),
             BuiltinFunctionName::Template => Self::Template(TemplateFunction),
-            BuiltinFunctionName::Compact => Self::Compact(CompactFunction),
         }
     }
 
     fn evaluate(&self, request: &FunctionEvaluationRequest<'_>) -> Result<Value, WorkflowSemanticError> {
         match self {
-            Self::Context(function_handler) => function_handler.evaluate(request),
             Self::Template(function_handler) => function_handler.evaluate(request),
-            Self::Compact(function_handler) => function_handler.evaluate(request),
         }
     }
 
     fn infer_type(&self, request: &FunctionTypeInferenceRequest<'_>) -> Result<WorkflowType, WorkflowSemanticError> {
         match self {
-            Self::Context(function_handler) => function_handler.infer_type(request),
             Self::Template(function_handler) => function_handler.infer_type(request),
-            Self::Compact(function_handler) => function_handler.infer_type(request),
         }
     }
 }

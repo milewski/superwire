@@ -1,7 +1,7 @@
 use super::{source_span_from_pair, AstVisitor};
 use crate::dsl::ast::{
-    AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, Declaration, DynamicBlock, Expression, ModelUsage, SourceSpan,
-    ToolCall, ToolCallPropertyName,
+    AgentContext, AgentContextReference, AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, CompactAgentContext,
+    Declaration, DynamicBlock, Expression, ModelUsage, SourceSpan, ToolCall, ToolCallPropertyName,
 };
 use crate::dsl::parser::{DslParseError, Rule};
 use crate::dsl::structure;
@@ -96,6 +96,7 @@ impl AstVisitor {
         match property_pair.as_rule() {
             Rule::model_agent_property => self.visit_agent_model_property(property_pair),
             Rule::agent_output_property => self.visit_agent_output_property(property_pair),
+            Rule::named_agent_context_property => self.visit_agent_context_property(property_pair),
             Rule::named_object_property => self.visit_agent_object_property(property_pair, property_span),
             Rule::named_agent_value_property => self.visit_agent_value_property(property_pair, property_span),
             _ => unreachable!("agent block should contain only valid agent property rules"),
@@ -203,10 +204,6 @@ impl AstVisitor {
             ));
         }
 
-        if agent.property_is_context(property_name.as_str()) {
-            return Ok(AgentProperty::Context(self.visit_expression(value_pair)?));
-        }
-
         if agent.property_is_uses(property_name.as_str()) {
             return Ok(AgentProperty::Uses(self.visit_tools_expression(value_pair)?));
         }
@@ -216,6 +213,72 @@ impl AstVisitor {
             "agent value property",
             property_span,
         ))
+    }
+
+    pub(super) fn visit_agent_context_property(&self, property_pair: Pair<'_, Rule>) -> Result<AgentProperty, DslParseError> {
+        let value_pair = self.first_inner_pair(property_pair, "agent context property")?;
+
+        Ok(AgentProperty::Context(self.visit_agent_context_value(value_pair)?))
+    }
+
+    pub(super) fn visit_agent_context_value(&self, context_value_pair: Pair<'_, Rule>) -> Result<AgentContext, DslParseError> {
+        match context_value_pair.as_rule() {
+            Rule::agent_context_value => {
+                let inner_pair = self.first_inner_pair(context_value_pair, "agent context value")?;
+
+                self.visit_agent_context_value(inner_pair)
+            }
+            Rule::reference => Ok(AgentContext::Direct(AgentContextReference {
+                reference: self.visit_reference(context_value_pair.clone())?,
+                explicit: false,
+                span: source_span_from_pair(&context_value_pair),
+            })),
+            Rule::explicit_agent_context => {
+                let span = source_span_from_pair(&context_value_pair);
+                let reference_pair = self.first_inner_pair(context_value_pair, "explicit agent context")?;
+
+                Ok(AgentContext::Direct(AgentContextReference {
+                    reference: self.visit_reference(reference_pair)?,
+                    explicit: true,
+                    span,
+                }))
+            }
+            Rule::compact_agent_context => {
+                let span = source_span_from_pair(&context_value_pair);
+                let mut inner_pairs = context_value_pair.into_inner();
+                let reference_pair = self.next_pair(&mut inner_pairs, "compact context agent reference", "compact agent context")?;
+                let reference = self.visit_reference(reference_pair)?;
+                let properties = if let Some(block_pair) = inner_pairs.next() {
+                    self.visit_agent_context_block(block_pair)?
+                } else {
+                    Vec::new()
+                };
+
+                Ok(AgentContext::Compact(CompactAgentContext {
+                    reference,
+                    properties,
+                    span,
+                }))
+            }
+            _ => Err(DslParseError::unexpected_with_span(
+                context_value_pair.as_rule(),
+                "agent context value",
+                source_span_from_pair(&context_value_pair),
+            )),
+        }
+    }
+
+    pub(super) fn visit_agent_context_block(
+        &self,
+        context_block_pair: Pair<'_, Rule>,
+    ) -> Result<Vec<crate::dsl::ast::ObjectField>, DslParseError> {
+        let mut properties = Vec::new();
+
+        for property_pair in context_block_pair.into_inner() {
+            properties.push(self.visit_object_field(property_pair)?);
+        }
+
+        Ok(properties)
     }
 
     pub(super) fn visit_agent_output_property(&self, property_pair: Pair<'_, Rule>) -> Result<AgentProperty, DslParseError> {

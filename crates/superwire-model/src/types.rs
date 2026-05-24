@@ -14,6 +14,7 @@ pub struct ModelRequest {
     pub provider_config: ProviderConfig,
     pub model_name: String,
     pub inference: HashMap<String, Value>,
+    pub context: Option<Value>,
     pub prompt: String,
     pub prompt_content: Vec<ModelPromptContent>,
     pub output_schema: ModelSchema,

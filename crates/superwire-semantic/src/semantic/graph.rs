@@ -7,9 +7,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use superwire_types::ast::{
-    AgentExpressionPropertyName, AgentForLoop, AgentForLoopPattern, AgentProperty, CallArgument, DeclarationKeyword, Expression,
-    MatchBranch, McpPromptImportDeclaration, McpResourceImportDeclaration, ModelDeclaration, ModelDeclarationPropertyName, ObjectField,
-    OutputDeclaration, ProviderDeclaration, Reference, ReferenceKeyword, StringTemplatePart, ToolCall, ToolSource, Workflow,
+    AgentContext, AgentExpressionPropertyName, AgentForLoop, AgentForLoopPattern, AgentProperty, CallArgument, DeclarationKeyword,
+    Expression, MatchBranch, McpPromptImportDeclaration, McpResourceImportDeclaration, ModelDeclaration, ModelDeclarationPropertyName,
+    ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceKeyword, StringTemplatePart, ToolCall, ToolSource, Workflow,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -742,10 +742,10 @@ impl PlannedAgent {
                         expression: expression.graph_label(),
                     });
                 }
-                AgentProperty::Context(expression) => {
+                AgentProperty::Context(agent_context) => {
                     bindings.push(WorkflowExecutionGraphBinding {
                         name: AgentExpressionPropertyName::Context.as_str().to_string(),
-                        expression: expression.graph_label(),
+                        expression: agent_context.graph_label(),
                     });
                 }
                 AgentProperty::Uses(expression) => {
@@ -847,11 +847,13 @@ impl PlannedAgent {
 
         for agent_property in &self.declaration.properties {
             match agent_property {
-                AgentProperty::InvalidModel(expression)
-                | AgentProperty::Instruction(expression)
-                | AgentProperty::Context(expression)
-                | AgentProperty::Uses(expression) => {
+                AgentProperty::InvalidModel(expression) | AgentProperty::Instruction(expression) | AgentProperty::Uses(expression) => {
                     if expression.references_runtime() {
+                        return true;
+                    }
+                }
+                AgentProperty::Context(agent_context) => {
+                    if agent_context.references_runtime() {
                         return true;
                     }
                 }
@@ -882,11 +884,11 @@ impl PlannedAgent {
 
         for agent_property in &self.declaration.properties {
             match agent_property {
-                AgentProperty::InvalidModel(expression)
-                | AgentProperty::Instruction(expression)
-                | AgentProperty::Context(expression)
-                | AgentProperty::Uses(expression) => {
+                AgentProperty::InvalidModel(expression) | AgentProperty::Instruction(expression) | AgentProperty::Uses(expression) => {
                     expression.collect_dynamic_dependencies(&mut dependencies);
+                }
+                AgentProperty::Context(agent_context) => {
+                    agent_context.collect_dynamic_dependencies(&mut dependencies);
                 }
                 AgentProperty::Model(model_usage) => {
                     for model_property in &model_usage.properties {
@@ -1154,6 +1156,25 @@ impl WorkflowExecutionGraphNodeKind {
 
 trait ExpressionExecutionGraphExt {
     fn graph_label(&self) -> String;
+}
+
+trait AgentContextExecutionGraphExt {
+    fn graph_label(&self) -> String;
+}
+
+impl AgentContextExecutionGraphExt for AgentContext {
+    fn graph_label(&self) -> String {
+        match self {
+            Self::Direct(agent_context_reference) => {
+                if agent_context_reference.explicit {
+                    return format!("context {}", agent_context_reference.reference.render_path());
+                }
+
+                agent_context_reference.reference.render_path()
+            }
+            Self::Compact(compact_agent_context) => format!("compact {}", compact_agent_context.reference.render_path()),
+        }
+    }
 }
 
 impl ExpressionExecutionGraphExt for Expression {

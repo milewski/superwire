@@ -1,7 +1,7 @@
 use lsp_types::{CompletionItemKind, Position};
 use superwire_dsl::{
-    BuiltinFunctionName, DeclarationKeyword, ImportKeyword, McpCallOperation, ReferenceKeyword, SingletonDeclarationKind, ToolCallKeyword,
-    ToolPropertyName,
+    BuiltinFunctionName, DeclarationKeyword, ExpressionKeyword, ImportKeyword, McpCallOperation, ReferenceKeyword,
+    SingletonDeclarationKind, ToolCallKeyword, ToolPropertyName,
 };
 use superwire_semantic::ProviderDriver;
 
@@ -189,7 +189,6 @@ impl SemanticIndex {
         let tool_call_insert_text = format!("{} {}.", ToolCallKeyword::Call.as_str(), ReferenceKeyword::Tool.as_str());
         let resource_read_insert_text = format!("{} {}.", McpCallOperation::Read.as_str(), ReferenceKeyword::Resource.as_str());
         let prompt_render_insert_text = format!("{} {}.", McpCallOperation::Render.as_str(), ReferenceKeyword::Prompt.as_str());
-        let compact_insert_text = format!("{}($1)", BuiltinFunctionName::Compact.as_str());
         let template_insert_text = format!("{}($1)", BuiltinFunctionName::Template.as_str());
         let function_suggestion_specs = [
             (
@@ -209,12 +208,6 @@ impl SemanticIndex {
                 "MCP prompt render expression",
                 "Renders an imported MCP prompt and stores its content.",
                 prompt_render_insert_text,
-            ),
-            (
-                BuiltinFunctionName::Compact.as_str(),
-                "Builtin function",
-                "Compacts nullable values in object-like data.",
-                compact_insert_text,
             ),
             (
                 BuiltinFunctionName::Template.as_str(),
@@ -385,17 +378,58 @@ impl SemanticIndex {
         completion_suggestions
     }
 
-    pub fn context_function_suggestions(&self, value_prefix: &str) -> Vec<CompletionSuggestion> {
-        let context_function_label = BuiltinFunctionName::Context.as_str();
+    pub fn agent_context_value_suggestions(&self, value_prefix: &str) -> Vec<CompletionSuggestion> {
+        let mut completion_suggestions = [
+            (
+                ExpressionKeyword::Context.as_str(),
+                "Agent context operator",
+                "Pass a prior agent message history.",
+                format!("{} {}.", ExpressionKeyword::Context.as_str(), ReferenceKeyword::Agent.as_str()),
+            ),
+            (
+                ExpressionKeyword::Compact.as_str(),
+                "Agent context compaction operator",
+                "Summarize a prior agent context before continuing.",
+                format!("{} {}.", ExpressionKeyword::Compact.as_str(), ReferenceKeyword::Agent.as_str()),
+            ),
+        ]
+        .into_iter()
+        .filter(|(label, _, _, _)| label.starts_with(value_prefix))
+        .map(|(label, detail, documentation, insert_text)| CompletionSuggestion {
+            label: label.to_string(),
+            kind: CompletionItemKind::FUNCTION,
+            detail: detail.to_string(),
+            documentation: documentation.to_string(),
+            insert_text,
+        })
+        .collect::<Vec<_>>();
 
-        if !context_function_label.starts_with(value_prefix) {
-            return Vec::new();
+        completion_suggestions.extend(
+            self.agent_names
+                .iter()
+                .filter(|agent_name| agent_name.starts_with(value_prefix))
+                .map(|agent_name| CompletionSuggestion {
+                    label: agent_name.clone(),
+                    kind: CompletionItemKind::REFERENCE,
+                    detail: "Declared agent context".to_string(),
+                    documentation: "Pass this agent's message history into the current agent.".to_string(),
+                    insert_text: format!("{}.{agent_name}", ReferenceKeyword::Agent.as_str()),
+                }),
+        );
+
+        if ReferenceKeyword::Agent.as_str().starts_with(value_prefix) {
+            completion_suggestions.push(CompletionSuggestion {
+                label: ReferenceKeyword::Agent.as_str().to_string(),
+                kind: CompletionItemKind::MODULE,
+                detail: "Agent context reference root".to_string(),
+                documentation: "Pass a declared agent message history.".to_string(),
+                insert_text: format!("{}.", ReferenceKeyword::Agent.as_str()),
+            });
         }
 
-        builtin_symbol_suggestions(true)
-            .into_iter()
-            .filter(|completion_suggestion| completion_suggestion.label == context_function_label)
-            .collect()
+        completion_suggestions.sort_by(|left_suggestion, right_suggestion| left_suggestion.label.cmp(&right_suggestion.label));
+
+        completion_suggestions
     }
 
     pub fn tool_reference_suggestions(&self, tool_prefix: &str, existing_tool_binding_block: bool) -> Vec<CompletionSuggestion> {

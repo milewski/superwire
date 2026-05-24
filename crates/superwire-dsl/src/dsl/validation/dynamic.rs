@@ -131,9 +131,11 @@ pub(super) fn validate_agent_dependency_cycles(
                 }
                 AgentProperty::InvalidModel(model_expression)
                 | AgentProperty::Instruction(model_expression)
-                | AgentProperty::Context(model_expression)
                 | AgentProperty::Uses(model_expression) => {
                     model_expression.collect_agent_dependencies(&mut referenced_agents);
+                }
+                AgentProperty::Context(agent_context) => {
+                    agent_context.collect_agent_dependencies(&mut referenced_agents);
                 }
                 AgentProperty::Model(model_usage) => {
                     for model_property in &model_usage.properties {

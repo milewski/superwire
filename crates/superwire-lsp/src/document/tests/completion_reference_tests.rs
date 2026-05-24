@@ -340,7 +340,6 @@ fn suggests_value_producing_expressions_for_dynamic_field_values() {
         ReferenceKeyword::Dynamic,
         ReferenceKeyword::Input,
         ReferenceKeyword::Secrets,
-        BuiltinFunctionName::Compact,
         BuiltinFunctionName::Template
     );
 }
@@ -620,7 +619,7 @@ fn suggests_agent_output_fields_for_nested_agent_output_reference() {
         &completion_suggestions,
         DeclarationKeyword::Provider,
         DeclarationKeyword::Agent,
-        BuiltinFunctionName::Context,
+        "context",
         "string",
         "number"
     );

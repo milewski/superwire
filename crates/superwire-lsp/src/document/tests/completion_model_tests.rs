@@ -22,6 +22,21 @@ fn suggests_only_inference_settings_inside_inference_object() {
 }
 
 #[test]
+fn suggests_context_operators_and_agents_inside_context_value() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent research {
+            instruction: "research"
+        }
+
+        agent summarize {
+            context: <cursor>
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, "context", "compact", "agent", "research", "summarize");
+}
+
+#[test]
 fn suggests_inference_settings_with_newline_before_inference_block() {
     let completion_suggestions = inline_completion_suggestions! {
         model fast from openai {
@@ -342,7 +357,7 @@ fn suggests_only_declared_providers_for_model_property_value() {
 
     assert_completion_excludes_labels!(
         &completion_suggestions,
-        BuiltinFunctionName::Context,
+        "context",
         ReferenceKeyword::Agent,
         AgentExpressionPropertyName::Instruction,
         DeclarationKeyword::Provider,
@@ -385,7 +400,7 @@ fn suggests_declared_models_inside_model_reference_namespace() {
 
     assert_completion_excludes_labels!(
         &completion_suggestions,
-        BuiltinFunctionName::Context,
+        "context",
         ReferenceKeyword::Agent,
         AgentExpressionPropertyName::Instruction,
         DeclarationKeyword::Provider,
@@ -462,7 +477,7 @@ fn suggests_only_declared_providers_for_model_declaration_provider() {
 
     assert_completion_excludes_labels!(
         &completion_suggestions,
-        BuiltinFunctionName::Context,
+        "context",
         ReferenceKeyword::Agent,
         AgentExpressionPropertyName::Instruction,
         DeclarationKeyword::Provider,
@@ -540,7 +555,7 @@ fn suggests_provider_drivers_for_provider_declaration_driver() {
         DeclarationKeyword::Provider,
         ReferenceKeyword::Agent,
         AgentExpressionPropertyName::Instruction,
-        BuiltinFunctionName::Context,
+        "context",
         "string"
     );
 }

@@ -322,24 +322,28 @@ fn suggests_mcp_server_properties_with_newline_before_block() {
 }
 
 #[test]
-fn suggests_only_context_function_for_agent_context_property_value() {
+fn suggests_context_operators_and_agents_for_agent_context_property_value() {
     let completion_suggestions = inline_completion_suggestions! {
         agent example {
             context: <cursor>
         }
     };
 
-    assert_completion_contains_labels!(&completion_suggestions, BuiltinFunctionName::Context);
+    assert_completion_contains_labels!(
+        &completion_suggestions,
+        ExpressionKeyword::Context,
+        ExpressionKeyword::Compact,
+        ReferenceKeyword::Agent,
+        "example"
+    );
 
     assert_completion_excludes_labels!(
         &completion_suggestions,
         BuiltinFunctionName::Template,
-        BuiltinFunctionName::Compact,
-        ReferenceKeyword::Agent,
         ReferenceKeyword::Tool,
         "string",
         "number"
     );
 
-    assert_eq!(completion_suggestions.len(), 1);
+    assert_eq!(completion_suggestions.len(), 4);
 }

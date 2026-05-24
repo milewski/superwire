@@ -99,6 +99,8 @@ impl ImportKeyword {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ExpressionKeyword {
     Asset,
+    Compact,
+    Context,
 }
 
 impl ExpressionKeyword {
@@ -106,6 +108,8 @@ impl ExpressionKeyword {
     pub fn from_identifier(identifier: &str) -> Option<Self> {
         match identifier {
             "asset" => Some(Self::Asset),
+            "compact" => Some(Self::Compact),
+            "context" => Some(Self::Context),
             _ => None,
         }
     }
@@ -114,6 +118,30 @@ impl ExpressionKeyword {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Asset => "asset",
+            Self::Compact => "compact",
+            Self::Context => "context",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AgentContextPropertyName {
+    Instruction,
+}
+
+impl AgentContextPropertyName {
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        match identifier {
+            "instruction" => Some(Self::Instruction),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Instruction => "instruction",
         }
     }
 }
@@ -694,18 +722,14 @@ impl ReferenceKeyword {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BuiltinFunctionName {
-    Context,
     Template,
-    Compact,
 }
 
 impl BuiltinFunctionName {
     #[must_use]
     pub fn from_identifier(identifier: &str) -> Option<Self> {
         match identifier {
-            "context" => Some(Self::Context),
             "template" => Some(Self::Template),
-            "compact" => Some(Self::Compact),
             _ => None,
         }
     }
@@ -713,9 +737,7 @@ impl BuiltinFunctionName {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Context => "context",
             Self::Template => "template",
-            Self::Compact => "compact",
         }
     }
 }

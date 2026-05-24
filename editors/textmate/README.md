@@ -12,7 +12,7 @@ The grammar provides syntax highlighting for:
 - **String interpolation**: `{{ ... }}` syntax in single-line and multiline strings
 - **Multiline strings**: `"""..."""` syntax
 - **References**: `agent.name.field`, `input.field`, `schema.Name`, `secrets.key`, `tool.name`
-- **Function calls**: `context(...)`, `compact(...)`, `template(...)`, provider model calls like `openai(...)`
+- **Function calls and operators**: `template(...)`, context operators like `context agent.name` and `compact agent.name`, provider model calls like `openai(...)`
 - **Comments**: `//` line comments
 - **Provider properties**: `driver`, `endpoint`, `api_key`, `models`
 - **Agent properties**: `model`, `tools`, `context`, `output`, `prompt`, `inference`
@@ -88,7 +88,7 @@ agent release_summary {
 
 agent audience_message {
     model: model.ollama_model
-    context: context(agent.release_summary)
+    context: agent.release_summary
 
     inference: {
         temperature: 0.2

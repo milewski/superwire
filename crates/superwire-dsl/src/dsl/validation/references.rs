@@ -1,6 +1,6 @@
 use super::super::ast::{
-    AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, Declaration, Expression, MatchBranch, ObjectField, Reference,
-    ReferenceAccess, ReferenceKeyword, SourceSpan, StringTemplatePart, TypeExpression, TypeExpressionFieldCache, Workflow,
+    AgentContext, AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, Declaration, Expression, MatchBranch, ObjectField,
+    Reference, ReferenceAccess, ReferenceKeyword, SourceSpan, StringTemplatePart, TypeExpression, TypeExpressionFieldCache, Workflow,
 };
 use super::issues::{AgentDeclarationIssuesExt, ReferenceIssuesExt};
 use super::tools::validate_agent_tool_bindings;
@@ -104,14 +104,19 @@ pub(super) fn validate_agent_references(workflow: &Workflow, validation_index: &
 
                 for agent_property in &agent_declaration.properties {
                     match agent_property {
-                        AgentProperty::InvalidModel(model_expression)
-                        | AgentProperty::Instruction(model_expression)
-                        | AgentProperty::Context(model_expression) => {
+                        AgentProperty::InvalidModel(model_expression) | AgentProperty::Instruction(model_expression) => {
                             keyword_reference_validation_state.validate_expression(
                                 model_expression,
                                 &agent_dynamic_field_types,
                                 agent_context.clone(),
                                 SecretReferencePolicy::Forbid,
+                            );
+                        }
+                        AgentProperty::Context(context_value) => {
+                            keyword_reference_validation_state.validate_agent_context(
+                                context_value,
+                                &agent_dynamic_field_types,
+                                agent_context.clone(),
                             );
                         }
                         AgentProperty::Dynamic(dynamic_block) => {
@@ -618,6 +623,26 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                 }
             }
             Expression::StringLiteral(_) | Expression::NumberLiteral(_) | Expression::BooleanLiteral(_) | Expression::NullLiteral => {}
+        }
+    }
+
+    fn validate_agent_context(
+        &mut self,
+        agent_context: &AgentContext,
+        dynamic_field_types: &HashMap<String, WorkflowType>,
+        context: ValidationContext,
+    ) {
+        self.validate_reference(
+            agent_context.reference(),
+            dynamic_field_types,
+            context.clone(),
+            SecretReferencePolicy::Forbid,
+        );
+
+        if let AgentContext::Compact(compact_agent_context) = agent_context {
+            for property in &compact_agent_context.properties {
+                self.validate_expression(&property.value, dynamic_field_types, context.clone(), SecretReferencePolicy::Forbid);
+            }
         }
     }
 

@@ -466,11 +466,11 @@ fn collect_dependencies_for_agent(
 
     for agent_property in &agent_declaration.properties {
         match agent_property {
-            AgentProperty::InvalidModel(expression)
-            | AgentProperty::Instruction(expression)
-            | AgentProperty::Context(expression)
-            | AgentProperty::Uses(expression) => {
+            AgentProperty::InvalidModel(expression) | AgentProperty::Instruction(expression) | AgentProperty::Uses(expression) => {
                 expression.collect_agent_dependencies(&mut dependencies);
+            }
+            AgentProperty::Context(agent_context) => {
+                agent_context.collect_agent_dependencies(&mut dependencies);
             }
             AgentProperty::Model(model_usage) => {
                 for model_property in &model_usage.properties {

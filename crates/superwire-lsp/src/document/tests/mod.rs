@@ -3,8 +3,8 @@ use crate::diagnostic_code::DiagnosticCode;
 use lsp_types::CompletionItemKind;
 use std::collections::BTreeMap;
 use superwire_dsl::{
-    AgentExpressionPropertyName, BuiltinFunctionName, DeclarationKeyword, ForClauseKeyword, McpCallOperation, ReferenceKeyword,
-    SingletonDeclarationKind, ToolCallKeyword,
+    AgentExpressionPropertyName, BuiltinFunctionName, DeclarationKeyword, ExpressionKeyword, ForClauseKeyword, McpCallOperation,
+    ReferenceKeyword, SingletonDeclarationKind, ToolCallKeyword,
 };
 use superwire_mcp::{McpLock, McpPromptArgumentLock, McpServerLock, McpToolLock};
 use superwire_semantic::InferenceSetting;
@@ -187,7 +187,7 @@ impl CompletionLabelGroup for InferenceSetting {
 
 impl CompletionLabelGroup for BuiltinFunctionName {
     fn completion_labels() -> Vec<&'static str> {
-        vec![Self::Context.as_str(), Self::Template.as_str(), Self::Compact.as_str()]
+        vec![Self::Template.as_str()]
     }
 }
 
@@ -204,6 +204,12 @@ impl CompletionLabel for AgentExpressionPropertyName {
 }
 
 impl CompletionLabel for BuiltinFunctionName {
+    fn completion_label(self) -> &'static str {
+        self.as_str()
+    }
+}
+
+impl CompletionLabel for ExpressionKeyword {
     fn completion_label(self) -> &'static str {
         self.as_str()
     }

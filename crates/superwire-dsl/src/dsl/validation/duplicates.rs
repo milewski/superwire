@@ -1,6 +1,6 @@
 use super::super::ast::{
-    AgentProperty, Asset, Declaration, Expression, MatchBranch, ObjectField, SourceSpan, StringTemplatePart, TypeExpression, TypedField,
-    Workflow,
+    AgentContext, AgentProperty, Asset, Declaration, Expression, MatchBranch, ObjectField, SourceSpan, StringTemplatePart, TypeExpression,
+    TypedField, Workflow,
 };
 use super::issues::{AgentDeclarationIssuesExt, AgentPropertyIssuesExt, ObjectFieldIssuesExt, TypedFieldIssuesExt, VariantCaseIssuesExt};
 use super::{ValidationContext, ValidationReport};
@@ -310,13 +310,22 @@ impl WorkflowDuplicateValidationExt for Workflow {
                             }
                             AgentProperty::InvalidModel(expression)
                             | AgentProperty::Instruction(expression)
-                            | AgentProperty::Context(expression)
                             | AgentProperty::Uses(expression) => {
                                 expression.report_duplicate_object_fields(
                                     agent_context.clone(),
                                     Some(agent_declaration.span),
                                     validation_report,
                                 );
+                            }
+                            AgentProperty::Context(context_value) => {
+                                if let AgentContext::Compact(compact_agent_context) = context_value {
+                                    report_duplicate_object_field_names(
+                                        compact_agent_context.properties.as_slice(),
+                                        agent_context.clone(),
+                                        Some(compact_agent_context.span),
+                                        validation_report,
+                                    );
+                                }
                             }
                             AgentProperty::Model(model_usage) => {
                                 report_duplicate_object_field_names(

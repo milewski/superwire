@@ -1,8 +1,10 @@
 use super::{
-    AgentExpressionPropertyName, DynamicBlock, Expression, ModelDeclaration, ModelUsagePropertyName, ObjectField, ProviderDeclaration,
-    Reference, ReferenceKeyword, SourceSpan, TypeExpression, TypedField,
+    AgentContextPropertyName, AgentExpressionPropertyName, DynamicBlock, Expression, ModelDeclaration, ModelUsagePropertyName, ObjectField,
+    ProviderDeclaration, Reference, ReferenceKeyword, SourceSpan, TypeExpression, TypedField,
 };
 use crate::structure::{self, DslProperty, PropertyDefinition as DslPropertyDefinition};
+use std::collections::HashSet;
+use std::hash::BuildHasher;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentDeclaration {
@@ -33,9 +35,6 @@ impl AgentDeclaration {
                 AgentProperty::Instruction(expression) if property_name == AgentExpressionPropertyName::Instruction => {
                     return Some(expression);
                 }
-                AgentProperty::Context(expression) if property_name == AgentExpressionPropertyName::Context => {
-                    return Some(expression);
-                }
                 AgentProperty::Uses(expression) if property_name == AgentExpressionPropertyName::Uses => return Some(expression),
                 AgentProperty::Dynamic(_) => {}
                 AgentProperty::Model(_)
@@ -49,6 +48,20 @@ impl AgentDeclaration {
         }
 
         None
+    }
+
+    #[must_use]
+    pub fn context_property(&self) -> Option<&AgentContext> {
+        self.properties.iter().find_map(|agent_property| match agent_property {
+            AgentProperty::Context(agent_context) => Some(agent_context),
+            AgentProperty::Dynamic(_)
+            | AgentProperty::Model(_)
+            | AgentProperty::InvalidModel(_)
+            | AgentProperty::Instruction(_)
+            | AgentProperty::Output { fields: _, span: _ }
+            | AgentProperty::Uses(_)
+            | AgentProperty::Unknown { name: _, span: _ } => None,
+        })
     }
 
     #[must_use]
@@ -162,7 +175,7 @@ pub enum AgentProperty {
     InvalidModel(Expression),
     Instruction(Expression),
     Output { fields: Vec<TypedField>, span: SourceSpan },
-    Context(Expression),
+    Context(AgentContext),
     Uses(Expression),
     Unknown { name: String, span: SourceSpan },
 }
@@ -215,6 +228,109 @@ pub struct ModelUsage {
     pub reference: Reference,
     pub properties: Vec<ObjectField>,
     pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentContext {
+    Direct(AgentContextReference),
+    Compact(CompactAgentContext),
+}
+
+impl AgentContext {
+    #[must_use]
+    pub fn reference(&self) -> &Reference {
+        match self {
+            Self::Direct(agent_context_reference) => &agent_context_reference.reference,
+            Self::Compact(compact_agent_context) => &compact_agent_context.reference,
+        }
+    }
+
+    #[must_use]
+    pub fn span(&self) -> SourceSpan {
+        match self {
+            Self::Direct(agent_context_reference) => agent_context_reference.span,
+            Self::Compact(compact_agent_context) => compact_agent_context.span,
+        }
+    }
+
+    #[must_use]
+    pub fn agent_name(&self) -> Option<&str> {
+        let reference = self.reference();
+
+        if !reference.is_agent_root() {
+            return None;
+        }
+
+        reference.first_access_field()
+    }
+
+    #[must_use]
+    pub fn instruction(&self) -> Option<&Expression> {
+        let Self::Compact(compact_agent_context) = self else {
+            return None;
+        };
+
+        compact_agent_context
+            .property(AgentContextPropertyName::Instruction)
+            .map(|property| &property.value)
+    }
+
+    pub fn collect_agent_dependencies<HashBuilder: BuildHasher>(&self, agent_dependencies: &mut HashSet<String, HashBuilder>) {
+        self.reference().collect_agent_dependency(agent_dependencies);
+
+        if let Self::Compact(compact_agent_context) = self {
+            for property in &compact_agent_context.properties {
+                property.value.collect_agent_dependencies(agent_dependencies);
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn references_runtime(&self) -> bool {
+        let mut runtime_dependencies = HashSet::new();
+        self.reference().collect_runtime_dependency(&mut runtime_dependencies);
+
+        if let Self::Compact(compact_agent_context) = self {
+            for property in &compact_agent_context.properties {
+                property.value.collect_runtime_dependencies(&mut runtime_dependencies);
+            }
+        }
+
+        !runtime_dependencies.is_empty()
+    }
+
+    pub fn collect_dynamic_dependencies(&self, referenced_dynamic_fields: &mut HashSet<String>) {
+        self.reference().collect_dynamic_dependency(referenced_dynamic_fields);
+
+        if let Self::Compact(compact_agent_context) = self {
+            for property in &compact_agent_context.properties {
+                property.value.collect_dynamic_dependencies(referenced_dynamic_fields);
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentContextReference {
+    pub reference: Reference,
+    pub explicit: bool,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompactAgentContext {
+    pub reference: Reference,
+    pub properties: Vec<ObjectField>,
+    pub span: SourceSpan,
+}
+
+impl CompactAgentContext {
+    #[must_use]
+    pub fn property(&self, property_name: AgentContextPropertyName) -> Option<&ObjectField> {
+        self.properties
+            .iter()
+            .find(|property| AgentContextPropertyName::from_identifier(property.name.as_str()) == Some(property_name))
+    }
 }
 
 impl ModelUsage {

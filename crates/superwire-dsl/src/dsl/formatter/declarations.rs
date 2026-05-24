@@ -1,6 +1,6 @@
 use crate::dsl::ast::{
-    AgentDeclaration, AgentForLoopPattern, AgentProperty, Declaration, DeclarationKeyword, DynamicBlock, Expression, ForClauseKeyword,
-    ModelUsage, TypedField, Workflow,
+    AgentContext, AgentDeclaration, AgentForLoopPattern, AgentProperty, Declaration, DeclarationKeyword, DynamicBlock, Expression,
+    ExpressionKeyword, ForClauseKeyword, ModelUsage, TypedField, Workflow,
 };
 use crate::dsl::structure::{self, DslProperty};
 
@@ -232,12 +232,12 @@ impl AgentPropertyDeclarationsExt for AgentProperty {
                     fields,
                 );
             }
-            Self::Context(expression) => {
+            Self::Context(agent_context) => {
                 let agent = structure::Agent::new();
 
-                formatter.push_agent_property_expression(
+                formatter.push_agent_context_property(
                     agent.context.expect("agent structure should include context").definition().name,
-                    expression,
+                    agent_context,
                 );
             }
             Self::Uses(expression) => {
@@ -337,6 +337,49 @@ impl AgentPropertyDeclarationsExt for AgentProperty {
             text: property_formatter.output,
             is_multiline: property_is_multiline,
             is_output_property: matches!(self, Self::Output { fields: _, span: _ }),
+        }
+    }
+}
+
+impl DslFormatter {
+    fn push_agent_context_property(&mut self, property_name: &str, agent_context: &AgentContext) {
+        self.push_indent();
+        self.output.push_str(property_name);
+        self.output.push_str(": ");
+
+        match agent_context {
+            AgentContext::Direct(agent_context_reference) => {
+                if agent_context_reference.explicit {
+                    self.output.push_str(ExpressionKeyword::Context.as_str());
+                    self.output.push(' ');
+                }
+
+                agent_context_reference.reference.push_to_formatter(self);
+                self.push_newline();
+            }
+            AgentContext::Compact(compact_agent_context) => {
+                self.output.push_str(ExpressionKeyword::Compact.as_str());
+                self.output.push(' ');
+                compact_agent_context.reference.push_to_formatter(self);
+
+                if compact_agent_context.properties.is_empty() {
+                    self.push_newline();
+                    return;
+                }
+
+                self.output.push_str(" {");
+                self.push_newline();
+                self.indentation_depth += 1;
+
+                for property in &compact_agent_context.properties {
+                    property.push_to_formatter(self);
+                }
+
+                self.indentation_depth -= 1;
+                self.push_indent();
+                self.output.push('}');
+                self.push_newline();
+            }
         }
     }
 }

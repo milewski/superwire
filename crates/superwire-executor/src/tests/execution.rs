@@ -86,3 +86,52 @@ async fn inference_settings_are_sent_with_model_request() {
     assert_eq!(request.inference.get("temperature"), Some(&json!(0.2)));
     assert_eq!(request.inference.get("max_tokens"), Some(&json!(4000)));
 }
+
+#[tokio::test]
+async fn direct_agent_context_is_sent_without_rewriting_history() {
+    let model_provider = TrackingModelProvider::new(vec![json!({ "value": "research" }), json!({ "value": "continued" })]);
+    let service = ExecutorService::new(model_provider.clone());
+
+    service
+        .execute(request(fixtures::AGENT_CONTEXT_SHARING))
+        .await
+        .expect("workflow should execute");
+
+    let recorded_requests = model_provider
+        .recorded_requests
+        .lock()
+        .expect("recorded requests lock should not be poisoned");
+
+    assert_eq!(recorded_requests.len(), 2);
+    assert_eq!(recorded_requests[0].context, None);
+    assert_eq!(recorded_requests[1].context, Some(json!({ "agent": "research" })));
+}
+
+#[tokio::test]
+async fn compact_agent_context_runs_compaction_before_target_agent() {
+    let model_provider = TrackingModelProvider::new(vec![
+        json!({ "value": "research" }),
+        json!("compact summary"),
+        json!({ "value": "summary" }),
+    ]);
+    let service = ExecutorService::new(model_provider.clone());
+
+    service
+        .execute(request(fixtures::AGENT_CONTEXT_COMPACTION))
+        .await
+        .expect("workflow should execute");
+
+    let recorded_requests = model_provider
+        .recorded_requests
+        .lock()
+        .expect("recorded requests lock should not be poisoned");
+
+    assert_eq!(recorded_requests.len(), 3);
+    assert_eq!(recorded_requests[1].agent_name, "summarize__context_compaction");
+    assert_eq!(recorded_requests[1].context, Some(json!({ "agent": "research" })));
+    assert_eq!(recorded_requests[1].prompt, "Compact this prior context for a short summary.");
+    assert_eq!(
+        recorded_requests[2].context,
+        Some(json!({ "agent": "summarize__context_compaction" }))
+    );
+}

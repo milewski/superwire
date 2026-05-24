@@ -78,7 +78,6 @@ dynamic {
 
 agent analyze_task for task in task_list.tasks {
     model: model.fast
-    context: context()
 
     instruction: """
         Analyze this task and identify the next useful action.
@@ -118,8 +117,6 @@ output {
 
 `analyze_task` runs once per task, and those iterations may run in parallel. The final `summarize_project` agent aggregates the array produced by `agent.analyze_task`.
 
-When a looped agent provides `context: context()`, each parallel execution receives its own context object. That gives the runtime a stable per-iteration context for cache matching when caching is enabled.
-
 ## Continue context only when needed
 
-Use `context(agent.previous)` when the next agent should continue the previous message history. Use structured references when you only need data.
+Use `context: agent.previous` when the next agent should continue the previous message history. Use structured references when you only need data.

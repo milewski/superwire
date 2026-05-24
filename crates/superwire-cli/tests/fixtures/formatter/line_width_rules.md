@@ -2,7 +2,6 @@
 agent formatter_checks {
     model: model.openai_model
     instruction: "This is a very long prompt sentence that should exceed the formatter line width limit and therefore be wrapped into a multiline string block automatically by the formatter."
-    context: [1,2,3]
     uses: [tool.one,tool.two,tool.three,tool.four,tool.five,tool.six,tool.seven,tool.eight,tool.nine,tool.ten,tool.eleven,tool.twelve,tool.thirteen,tool.fourteen,tool.fifteen]
     output {
         value: string
@@ -20,8 +19,6 @@ agent formatter_checks {
         This is a very long prompt sentence that should exceed the formatter line width limit and therefore be wrapped
         into a multiline string block automatically by the formatter.
     """
-
-    context: [1, 2, 3]
 
     uses: [
         tool.one,

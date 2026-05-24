@@ -1,0 +1,29 @@
+provider openai from openai {
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
+
+agent research {
+    model: model.openai_model
+    instruction: "Research the migration plan."
+    output {
+        value: string
+    }
+}
+
+agent continue_research {
+    model: model.openai_model
+    context: agent.research
+    instruction: "Continue from the prior context with a new tool set."
+    output {
+        value: string
+    }
+}
+
+output {
+    result: agent.continue_research.value
+}

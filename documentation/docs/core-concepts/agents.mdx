@@ -82,7 +82,7 @@ The output of a looped agent is an array of that agent's output objects.
 
 ## Context continuation
 
-Use `context: context(agent.some_agent)` when a later agent should continue from an earlier agent's message history.
+Use `context: agent.some_agent` when a later agent should continue from an earlier agent's message history.
 
 ```wire
 agent investigate_task {
@@ -97,7 +97,7 @@ agent investigate_task {
 
 agent propose_solution {
     model: model.fast
-    context: context(agent.investigate_task)
+    context: agent.investigate_task
     instruction: "Continue from the investigation and propose a concrete solution."
 
     output {
@@ -107,4 +107,4 @@ agent propose_solution {
 }
 ```
 
-A structured reference such as `agent.investigate_task.issue` reads an output value. `context(agent.investigate_task)` passes the prior conversation/message history so the next agent can append a new instruction and continue the work.
+A structured reference such as `agent.investigate_task.issue` reads an output value. `context: agent.investigate_task` passes the prior conversation/message history so the next agent can append a new instruction and continue the work.

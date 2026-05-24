@@ -10,11 +10,12 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
-use superwire_dsl::{AgentExpressionPropertyName, AgentProperty, Expression, ModelAssetKind};
+use superwire_dsl::{AgentContext, AgentExpressionPropertyName, AgentProperty, Expression, ModelAssetKind};
 use superwire_mcp::McpClientPool;
 use superwire_protocol::event::ExecutorEvent;
 use superwire_semantic::support::expression::{evaluate_expression, EvaluationContext};
 use superwire_semantic::support::provider::ProviderConfig;
+use superwire_semantic::support::types::WorkflowType;
 use superwire_semantic::{PlannedAgent, WorkflowSemanticError};
 use tokio::sync::mpsc;
 
@@ -31,6 +32,7 @@ struct PreparedAgentRequest {
     provider_config: ProviderConfig,
     model_name: String,
     inference: HashMap<String, Value>,
+    context: Option<Value>,
     prompt: String,
     prompt_content: Vec<ModelPromptContent>,
     supported_asset_kinds: Vec<ModelAssetKind>,
@@ -79,6 +81,7 @@ impl PreparedAgentRequest {
             model_name: self.model_name.clone(),
             inference,
             prompt: self.prompt.clone(),
+            context: self.context.clone(),
             prompt_content: self
                 .prompt_content
                 .iter()
@@ -106,6 +109,7 @@ impl PreparedAgentRequest {
             provider_config: self.provider_config,
             model_name: self.model_name,
             inference: self.inference,
+            context: self.context,
             prompt: self.prompt,
             prompt_content: self.prompt_content,
             output_schema: self.output_schema,
@@ -114,6 +118,47 @@ impl PreparedAgentRequest {
             mcp_pool,
             tool_call_tracker,
         }
+    }
+
+    async fn completed_from_cache(
+        &self,
+        cache_key: Option<&AgentCacheKey>,
+        planned_agent: &PlannedAgent,
+        agent_execution_context: &AgentExecutionContext,
+        agent_started_at: Instant,
+        iteration_index: Option<usize>,
+    ) -> Result<Option<CompletedAgentExecution>, ExecutorError> {
+        let Some(cache_key) = cache_key else {
+            return Ok(None);
+        };
+        let Some(cache_store) = &agent_execution_context.cache_options.store else {
+            return Ok(None);
+        };
+        let Some(cached_execution) = cache_store.get(cache_key)? else {
+            return Ok(None);
+        };
+
+        log::debug!("agent `{}` cache hit: hash={}", planned_agent.name, cache_key.agent_hash());
+
+        planned_agent.validate_output_value(&cached_execution.output)?;
+
+        if let Some(event_sender) = &agent_execution_context.event_sender {
+            let _ = event_sender
+                .send(ExecutorEvent::agent_completed(
+                    planned_agent.name.clone(),
+                    cached_execution.output.clone(),
+                    agent_started_at.elapsed(),
+                    iteration_index,
+                    true,
+                ))
+                .await;
+        }
+
+        Ok(Some(CompletedAgentExecution {
+            agent_name: planned_agent.name.clone(),
+            output: cached_execution.output,
+            context: cached_execution.context,
+        }))
     }
 }
 
@@ -124,6 +169,7 @@ struct PreparedAgentRequestCacheFingerprint {
     provider: ProviderConfigCacheFingerprint,
     model_name: String,
     inference: BTreeMap<String, Value>,
+    context: Option<Value>,
     prompt: String,
     prompt_content: Vec<Value>,
     supported_asset_kinds: Vec<&'static str>,
@@ -137,6 +183,15 @@ struct ProviderConfigCacheFingerprint {
     driver: String,
     endpoint: Option<String>,
     api_key: Option<String>,
+}
+
+struct AgentContextResolutionRequest<'a, ModelProviderType> {
+    evaluation_context: &'a EvaluationContext,
+    agent_execution_context: &'a AgentExecutionContext,
+    model_provider: &'a ModelProviderType,
+    provider_config: &'a ProviderConfig,
+    model_name: &'a str,
+    inference: &'a HashMap<String, Value>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -210,6 +265,9 @@ impl RenderedPrompt {
 }
 
 impl WorkflowExecutor {
+    const DEFAULT_CONTEXT_COMPACTION_INSTRUCTION: &'static str =
+        "Compact the prior context into a concise summary for the next agent. Preserve facts, decisions, constraints, tool results, and unresolved questions. Omit redundant wording.";
+
     pub(in crate::runtime) async fn execute_agent<ModelProviderType>(
         &self,
         agent_run_context: AgentRunContext<'_, ModelProviderType>,
@@ -233,7 +291,9 @@ impl WorkflowExecutor {
 
         log::info!("starting agent `{}`", planned_agent.name);
 
-        let prepared_request = self.prepare_agent_request(planned_agent, &evaluation_context, agent_execution_context)?;
+        let prepared_request = self
+            .prepare_agent_request(planned_agent, &evaluation_context, agent_execution_context, model_provider)
+            .await?;
         let mut schema_cache = ModelSchemaCache::new();
         let response_schema_type_name = prepared_request
             .output_schema
@@ -261,32 +321,17 @@ impl WorkflowExecutor {
 
         let cache_key = prepared_request.cache_key(agent_execution_context)?;
 
-        if let Some(cache_key) = cache_key.as_ref() {
-            if let Some(cache_store) = &agent_execution_context.cache_options.store {
-                if let Some(cached_execution) = cache_store.get(cache_key)? {
-                    log::debug!("agent `{}` cache hit: hash={}", planned_agent.name, cache_key.agent_hash());
-
-                    planned_agent.validate_output_value(&cached_execution.output)?;
-
-                    if let Some(event_sender) = &agent_execution_context.event_sender {
-                        let _ = event_sender
-                            .send(ExecutorEvent::agent_completed(
-                                planned_agent.name.clone(),
-                                cached_execution.output.clone(),
-                                agent_started_at.elapsed(),
-                                agent_run_context.iteration_index,
-                                true,
-                            ))
-                            .await;
-                    }
-
-                    return Ok(CompletedAgentExecution {
-                        agent_name: planned_agent.name.clone(),
-                        output: cached_execution.output,
-                        context: cached_execution.context,
-                    });
-                }
-            }
+        if let Some(completed_agent_execution) = prepared_request
+            .completed_from_cache(
+                cache_key.as_ref(),
+                planned_agent,
+                agent_execution_context,
+                agent_started_at,
+                agent_run_context.iteration_index,
+            )
+            .await?
+        {
+            return Ok(completed_agent_execution);
         }
 
         let output_injections = prepared_request.output_injections.clone();
@@ -333,12 +378,16 @@ impl WorkflowExecutor {
         })
     }
 
-    fn prepare_agent_request(
+    async fn prepare_agent_request<ModelProviderType>(
         &self,
         planned_agent: &PlannedAgent,
         evaluation_context: &EvaluationContext,
         agent_execution_context: &AgentExecutionContext,
-    ) -> Result<PreparedAgentRequest, ExecutorError> {
+        model_provider: &ModelProviderType,
+    ) -> Result<PreparedAgentRequest, ExecutorError>
+    where
+        ModelProviderType: ModelProvider,
+    {
         let provider_template = self
             .execution_plan
             .provider_index
@@ -350,6 +399,19 @@ impl WorkflowExecutor {
         let provider_config = provider_template.resolve(&planned_agent.provider_name, evaluation_context)?;
         let model_name = planned_agent.evaluate_model_name(evaluation_context)?;
         let inference = self.evaluate_inference_fields(planned_agent, evaluation_context)?;
+        let context = self
+            .resolve_agent_context(
+                planned_agent,
+                AgentContextResolutionRequest {
+                    evaluation_context,
+                    agent_execution_context,
+                    model_provider,
+                    provider_config: &provider_config,
+                    model_name: &model_name,
+                    inference: &inference,
+                },
+            )
+            .await?;
         let model_declaration = self
             .workflow
             .find_model(&planned_agent.model_name)
@@ -394,6 +456,7 @@ impl WorkflowExecutor {
             provider_config,
             model_name,
             inference,
+            context,
             prompt,
             prompt_content,
             supported_asset_kinds,
@@ -454,6 +517,104 @@ impl WorkflowExecutor {
                 Ok(RenderedPrompt::text(normalize_prompt(&value)))
             }
         }
+    }
+
+    async fn resolve_agent_context<ModelProviderType>(
+        &self,
+        planned_agent: &PlannedAgent,
+        request: AgentContextResolutionRequest<'_, ModelProviderType>,
+    ) -> Result<Option<Value>, ExecutorError>
+    where
+        ModelProviderType: ModelProvider,
+    {
+        let Some(agent_context) = planned_agent.declaration.context_property() else {
+            return Ok(None);
+        };
+
+        let source_context = self.source_agent_context(agent_context, request.evaluation_context, &planned_agent.name)?;
+
+        match agent_context {
+            AgentContext::Direct(_) => Ok(Some(source_context)),
+            AgentContext::Compact(_) => {
+                let instruction =
+                    self.resolve_compaction_instruction(agent_context, request.evaluation_context, request.agent_execution_context)?;
+                let output_schema = ModelSchema::workflow(WorkflowType::String);
+                let tool_definitions = vec![ModelToolDefinition::finalize(output_schema.clone())];
+                let compaction_request = ModelRequest {
+                    agent_name: format!("{}__context_compaction", planned_agent.name),
+                    provider_config: request.provider_config.clone(),
+                    model_name: request.model_name.to_string(),
+                    inference: request.inference.clone(),
+                    context: Some(source_context),
+                    prompt: instruction.clone(),
+                    prompt_content: vec![ModelPromptContent::text(instruction)],
+                    output_schema,
+                    tools: tool_definitions,
+                    event_sender: request.agent_execution_context.event_sender.clone(),
+                    mcp_pool: self.mcp_pool.clone(),
+                    tool_call_tracker: request.agent_execution_context.tool_call_tracker.clone(),
+                };
+                let compaction_response = request.model_provider.generate(compaction_request).await?;
+
+                Ok(Some(compaction_response.context))
+            }
+        }
+    }
+
+    fn source_agent_context(
+        &self,
+        agent_context: &AgentContext,
+        evaluation_context: &EvaluationContext,
+        agent_name: &str,
+    ) -> Result<Value, ExecutorError> {
+        if !agent_context.reference().is_agent_root() {
+            return Err(ExecutorError::Other {
+                message: format!("context for agent `{agent_name}` must reference `agent.<name>`"),
+            });
+        }
+
+        if !agent_context.reference().has_single_access() {
+            return Err(ExecutorError::Other {
+                message: format!("context for agent `{agent_name}` must reference a whole agent, not an output field"),
+            });
+        }
+
+        let Some(source_agent_name) = agent_context.agent_name() else {
+            return Err(ExecutorError::Other {
+                message: format!("context for agent `{agent_name}` must include a source agent name"),
+            });
+        };
+
+        evaluation_context
+            .agent_contexts
+            .get(source_agent_name)
+            .cloned()
+            .ok_or_else(|| ExecutorError::Other {
+                message: format!("context for agent `{source_agent_name}` is not available yet"),
+            })
+    }
+
+    fn resolve_compaction_instruction(
+        &self,
+        agent_context: &AgentContext,
+        evaluation_context: &EvaluationContext,
+        agent_execution_context: &AgentExecutionContext,
+    ) -> Result<String, ExecutorError> {
+        let Some(instruction_expression) = agent_context.instruction() else {
+            return Ok(Self::DEFAULT_CONTEXT_COMPACTION_INSTRUCTION.to_string());
+        };
+        let tool_call_execution_context = ToolCallExecutionContext::new(
+            evaluation_context,
+            agent_execution_context.event_sender.as_ref(),
+            &agent_execution_context.tool_call_tracker,
+        );
+        let rendered_instruction = self.evaluate_prompt_expression(
+            instruction_expression,
+            tool_call_execution_context,
+            "context compaction instruction",
+        )?;
+
+        Ok(rendered_instruction.text)
     }
 
     fn validate_model_asset_support(

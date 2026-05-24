@@ -130,7 +130,9 @@ dynamic {
 ## Context continuation
 
 ```wire
-context(agent.investigate_task)
+agent continue_investigation {
+    context: agent.investigate_task
+}
 ```
 
-`context(agent.name)` returns the prior agent's message history so another agent can continue the work.
+`context: agent.name` passes the prior agent's message history so another agent can continue the work.
