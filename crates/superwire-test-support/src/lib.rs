@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, VecDeque};
 use std::fmt::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use superwire_core::diagnostic::DiagnosticCode;
-use superwire_core::dsl::{
+use superwire_dsl::diagnostic::DiagnosticCode;
+use superwire_dsl::{
     format_workflow_source, parse_workflow, DeclarationKeyword, DslFormatError, DslParseError, Reference, ReferenceAccess,
     ReferenceKeyword, ReferenceRoot, Workflow,
 };
@@ -301,18 +301,6 @@ impl WorkflowSourceTemplate {
 impl From<&WorkflowSourceTemplate> for WorkflowSourceTemplate {
     fn from(source_template: &WorkflowSourceTemplate) -> Self {
         source_template.clone()
-    }
-}
-
-impl From<superwire_core::testing::WorkflowSourceTemplate> for WorkflowSourceTemplate {
-    fn from(source_template: superwire_core::testing::WorkflowSourceTemplate) -> Self {
-        Self::from_inline(source_template.source())
-    }
-}
-
-impl From<&superwire_core::testing::WorkflowSourceTemplate> for WorkflowSourceTemplate {
-    fn from(source_template: &superwire_core::testing::WorkflowSourceTemplate) -> Self {
-        Self::from_inline(source_template.source())
     }
 }
 
@@ -683,7 +671,7 @@ impl SemanticFixture {
         Reference {
             root: ReferenceRoot::Keyword(reference_keyword),
             accesses: Self::reference_accesses(access_fields),
-            span: superwire_core::dsl::SourceSpan::generated(),
+            span: superwire_dsl::SourceSpan::generated(),
         }
     }
 
@@ -692,7 +680,7 @@ impl SemanticFixture {
         Reference {
             root: ReferenceRoot::Identifier(binding_name.into()),
             accesses: Self::reference_accesses(access_fields),
-            span: superwire_core::dsl::SourceSpan::generated(),
+            span: superwire_dsl::SourceSpan::generated(),
         }
     }
 
@@ -1443,7 +1431,7 @@ mod tests {
     };
     use serde_json::json;
     use std::collections::BTreeMap;
-    use superwire_core::dsl::ReferenceKeyword;
+    use superwire_dsl::ReferenceKeyword;
     use superwire_mcp::{McpLock, McpServerLock, ProjectMcpLock};
     use superwire_semantic::support::types::WorkflowType;
     use superwire_semantic::{ReferenceResolutionError, ReferenceResolutionRoot, WorkflowExecutionGraph, WorkflowSemanticIndex};

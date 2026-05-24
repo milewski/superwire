@@ -7,5 +7,5 @@ edition = "2021"
 workspace = true
 
 [dependencies]
-superwire-core = { path = "../superwire-core" }
+superwire-dsl = { path = "../superwire-dsl" }
 superwire-test-support = { path = "../superwire-test-support" }

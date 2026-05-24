@@ -1,8 +1,8 @@
 use lsp_types::DiagnosticSeverity;
-use superwire_core::diagnostic::{
+use superwire_core::WorkflowDocument;
+use superwire_dsl::diagnostic::{
     Diagnostic as CoreDiagnostic, DiagnosticCode as CoreDiagnosticCode, DiagnosticSeverity as CoreDiagnosticSeverity,
 };
-use superwire_core::WorkflowDocument;
 use superwire_dsl::DslParseError;
 use superwire_mcp::McpLock;
 use superwire_semantic::build_dynamic_typed_workflow_ir;

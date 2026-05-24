@@ -1,6 +1,6 @@
 #[doc(hidden)]
 pub mod __private {
-    pub use superwire_core;
+    pub use superwire_dsl;
     pub use superwire_test_support;
 }
 
@@ -10,13 +10,13 @@ macro_rules! parse_inline_workflow {
         $(#$base_workflow:expr;)+
         $($workflow_tokens:tt)*
     ) => {{
-        let mut merged_workflow = $crate::__private::superwire_core::dsl::Workflow {
+        let mut merged_workflow = $crate::__private::superwire_dsl::Workflow {
             declarations: Vec::new(),
             source_text: None,
         };
 
         $(
-            let included_workflow: &$crate::__private::superwire_core::dsl::Workflow = &($base_workflow);
+            let included_workflow: &$crate::__private::superwire_dsl::Workflow = &($base_workflow);
             merged_workflow
                 .declarations
                 .extend(included_workflow.declarations().iter().cloned());

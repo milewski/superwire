@@ -1,6 +1,6 @@
-use crate::dsl::{parse_workflow, DslParseError, ValidationReport, Workflow, WorkflowValidationExt};
-use crate::semantic::WorkflowSemanticIndex;
+use superwire_dsl::{parse_workflow, DslParseError, ValidationReport, Workflow, WorkflowValidationExt};
 use superwire_mcp::McpLock;
+use superwire_semantic::WorkflowSemanticIndex;
 
 #[derive(Debug)]
 pub struct WorkflowDocument {

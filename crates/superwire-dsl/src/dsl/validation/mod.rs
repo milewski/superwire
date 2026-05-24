@@ -13,7 +13,7 @@ use dynamic::{validate_agent_dependency_cycles, validate_dynamic_dependency_cycl
 use references::validate_agent_references;
 use schemas::validate_schema_references;
 
-use crate::semantic::WorkflowSemanticIndex;
+use superwire_semantic::WorkflowSemanticIndex;
 
 pub use superwire_semantic::{SingletonDeclarationKind, ValidationContext, ValidationIssue, ValidationReport};
 

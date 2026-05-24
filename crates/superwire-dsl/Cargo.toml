@@ -7,4 +7,9 @@ edition = "2021"
 workspace = true
 
 [dependencies]
-superwire-core = { path = "../superwire-core" }
+pest = { workspace = true }
+pest_derive = { workspace = true }
+petgraph = { workspace = true }
+superwire-semantic = { path = "../superwire-semantic" }
+superwire-types = { path = "../superwire-types" }
+thiserror = { workspace = true }

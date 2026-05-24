@@ -954,7 +954,7 @@ impl<'source> TolerantSourceExtractor<'source> {
 #[cfg(test)]
 mod tests {
     use super::{SemanticToolingSnapshot, ToolingReferencePath, ToolingSnapshotConstruction, ToolingSymbolCategory};
-    use superwire_core::dsl::parse_workflow;
+    use superwire_dsl::parse_workflow;
     use superwire_macros::{parse_inline_workflow, workflow_source};
     use superwire_types::ast::TypeExpression;
 

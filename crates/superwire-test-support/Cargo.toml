@@ -9,6 +9,6 @@ workspace = true
 [dependencies]
 schemars = { workspace = true }
 serde_json = { workspace = true }
-superwire-core = { path = "../superwire-core" }
-superwire-semantic = { path = "../superwire-semantic" }
+superwire-dsl = { path = "../superwire-dsl" }
 superwire-mcp = { path = "../superwire-mcp" }
+superwire-semantic = { path = "../superwire-semantic" }

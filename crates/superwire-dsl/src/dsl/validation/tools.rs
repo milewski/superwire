@@ -1,10 +1,10 @@
 use super::super::ast::{AgentDeclaration, Expression, ObjectField, SourceSpan};
 use super::issues::AgentDeclarationIssuesExt;
 use super::ValidationReport;
-use crate::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
-use crate::semantic::support::types::{ensure_type_matches, WorkflowType};
-use crate::semantic::WorkflowSemanticIndex as ValidationIndex;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use superwire_semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
+use superwire_semantic::support::types::{ensure_type_matches, WorkflowType};
+use superwire_semantic::WorkflowSemanticIndex as ValidationIndex;
 
 pub(super) fn validate_agent_tool_bindings(
     agent_declaration: &AgentDeclaration,

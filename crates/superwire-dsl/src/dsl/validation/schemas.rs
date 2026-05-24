@@ -1,8 +1,8 @@
 use super::super::ast::{AgentProperty, Declaration, Reference, ReferenceKeyword, SourceSpan, TypeExpression, Workflow};
 use super::issues::ReferenceIssuesExt;
 use super::{ValidationContext, ValidationIssue, ValidationReport};
-use crate::semantic::WorkflowSemanticIndex as ValidationIndex;
 use std::collections::HashSet;
+use superwire_semantic::WorkflowSemanticIndex as ValidationIndex;
 
 pub(super) fn validate_schema_references(
     workflow: &Workflow,

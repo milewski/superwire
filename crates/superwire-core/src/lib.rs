@@ -1,10 +1,7 @@
 pub mod document;
-pub mod dsl;
 pub mod testing;
 
 pub use document::{WorkflowDocument, WorkflowDocumentMcpEnrichment};
-pub use superwire_semantic as semantic;
-pub use superwire_types::diagnostic;
 
 #[cfg(test)]
 macro_rules! parse_inline_workflow {
@@ -12,13 +9,13 @@ macro_rules! parse_inline_workflow {
         $(#$base_workflow:expr;)+
         $($workflow_tokens:tt)*
     ) => {{
-        let mut merged_workflow = $crate::dsl::Workflow {
+        let mut merged_workflow = superwire_dsl::Workflow {
             declarations: Vec::new(),
             source_text: None,
         };
 
         $(
-            let included_workflow: &$crate::dsl::Workflow = &($base_workflow);
+            let included_workflow: &superwire_dsl::Workflow = &($base_workflow);
             merged_workflow
                 .declarations
                 .extend(included_workflow.declarations().iter().cloned());

@@ -1,21 +1,21 @@
-use crate::diagnostic::DiagnosticCode;
-use crate::dsl::{
-    format_workflow_source, parse_workflow, DeclarationKeyword, DslFormatError, DslParseError, Reference, ReferenceAccess,
-    ReferenceKeyword, ReferenceRoot, Workflow,
-};
-use crate::semantic::support::types::WorkflowType;
-use crate::semantic::{
-    ReferenceResolution, ReferenceResolutionError, ReferenceResolutionRoot, ReferenceResolutionScope, WorkflowExecutionGraph,
-    WorkflowSemanticIndex,
-};
 use serde_json::Value;
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use superwire_dsl::diagnostic::DiagnosticCode;
+use superwire_dsl::{
+    format_workflow_source, parse_workflow, DeclarationKeyword, DslFormatError, DslParseError, Reference, ReferenceAccess,
+    ReferenceKeyword, ReferenceRoot, Workflow,
+};
 use superwire_mcp::{
     McpClientBackend, McpClientFactory, McpError, McpLock, McpPromptArgumentLock, McpServerConfig, McpServerLock, McpToolLock,
     ProjectMcpLock, PROJECT_MCP_LOCK_FILE_NAME,
+};
+use superwire_semantic::support::types::WorkflowType;
+use superwire_semantic::{
+    ReferenceResolution, ReferenceResolutionError, ReferenceResolutionRoot, ReferenceResolutionScope, WorkflowExecutionGraph,
+    WorkflowSemanticIndex,
 };
 
 pub const COMPACT_CURSOR_MARKER: &str = "<cursor>";
@@ -665,7 +665,7 @@ impl SemanticFixture {
         Reference {
             root: ReferenceRoot::Keyword(reference_keyword),
             accesses: Self::reference_accesses(access_fields),
-            span: crate::dsl::SourceSpan::generated(),
+            span: superwire_dsl::SourceSpan::generated(),
         }
     }
 
@@ -674,7 +674,7 @@ impl SemanticFixture {
         Reference {
             root: ReferenceRoot::Identifier(binding_name.into()),
             accesses: Self::reference_accesses(access_fields),
-            span: crate::dsl::SourceSpan::generated(),
+            span: superwire_dsl::SourceSpan::generated(),
         }
     }
 
@@ -1423,12 +1423,12 @@ mod tests {
         SemanticCompletionSource, SemanticFixture, SemanticIndexSnapshotAssertion, SemanticTypeRoot, WorkflowSource,
         WorkflowSourceTemplate,
     };
-    use crate::dsl::ReferenceKeyword;
-    use crate::semantic::support::types::WorkflowType;
-    use crate::semantic::{ReferenceResolutionError, ReferenceResolutionRoot, WorkflowExecutionGraph, WorkflowSemanticIndex};
     use serde_json::json;
     use std::collections::BTreeMap;
+    use superwire_dsl::ReferenceKeyword;
     use superwire_mcp::{McpLock, McpServerLock, ProjectMcpLock};
+    use superwire_semantic::support::types::WorkflowType;
+    use superwire_semantic::{ReferenceResolutionError, ReferenceResolutionRoot, WorkflowExecutionGraph, WorkflowSemanticIndex};
 
     #[test]
     fn inline_cursor_layout_normalizes_cursor_before_block_close() {

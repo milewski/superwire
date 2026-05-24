@@ -1,9 +1,9 @@
 use super::super::ast::{AgentProperty, Declaration, ObjectField, Workflow};
 use super::{ValidationIssue, ValidationReport};
-use crate::semantic::WorkflowSemanticIndex as ValidationIndex;
 use petgraph::algo::kosaraju_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
 use std::collections::{HashMap, HashSet};
+use superwire_semantic::WorkflowSemanticIndex as ValidationIndex;
 
 pub(super) fn validate_dynamic_dependency_cycles(workflow: &Workflow, validation_report: &mut ValidationReport) {
     let workflow_dynamic_fields = workflow

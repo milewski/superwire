@@ -2436,7 +2436,6 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "superwire-core",
  "superwire-dsl",
  "superwire-executor",
  "superwire-macros",
@@ -2452,29 +2451,23 @@ dependencies = [
 name = "superwire-core"
 version = "0.1.0"
 dependencies = [
- "async-trait",
- "futures",
- "jsonschema",
- "log",
- "pest",
- "pest_derive",
- "petgraph",
  "schemars",
- "serde",
  "serde_json",
- "strsim",
+ "superwire-dsl",
  "superwire-mcp",
  "superwire-semantic",
- "superwire-types",
- "thiserror 2.0.18",
- "tokio",
 ]
 
 [[package]]
 name = "superwire-dsl"
 version = "0.1.0"
 dependencies = [
- "superwire-core",
+ "pest",
+ "pest_derive",
+ "petgraph",
+ "superwire-semantic",
+ "superwire-types",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2492,7 +2485,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
- "superwire-core",
  "superwire-dsl",
  "superwire-macros",
  "superwire-mcp",
@@ -2551,7 +2543,7 @@ dependencies = [
 name = "superwire-macros"
 version = "0.1.0"
 dependencies = [
- "superwire-core",
+ "superwire-dsl",
  "superwire-test-support",
 ]
 
@@ -2626,7 +2618,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "superwire-core",
+ "superwire-dsl",
  "superwire-macros",
  "superwire-types",
  "thiserror 2.0.18",
@@ -2638,7 +2630,7 @@ version = "0.1.0"
 dependencies = [
  "schemars",
  "serde_json",
- "superwire-core",
+ "superwire-dsl",
  "superwire-mcp",
  "superwire-semantic",
 ]

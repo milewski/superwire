@@ -15,7 +15,6 @@ clap = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-superwire-core = { path = "../superwire-core" }
 superwire-dsl = { path = "../superwire-dsl" }
 superwire-executor = { path = "../superwire-executor" }
 superwire-mcp = { path = "../superwire-mcp" }

@@ -1,3 +1,3 @@
 fn main() {
-    println!("superwire-core provides DSL parsing and semantic analysis primitives");
+    println!("superwire-core provides workflow document orchestration primitives");
 }

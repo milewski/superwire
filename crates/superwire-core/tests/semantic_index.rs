@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
-use superwire_core::dsl::{validate_workflow, Reference, ReferenceAccess, ReferenceKeyword, ReferenceRoot, TypeExpression};
-use superwire_core::semantic::support::types::WorkflowType;
-use superwire_core::semantic::{
+use superwire_dsl::{validate_workflow, Reference, ReferenceAccess, ReferenceKeyword, ReferenceRoot, TypeExpression};
+use superwire_semantic::support::types::WorkflowType;
+use superwire_semantic::{
     ProviderDriver, ReferenceResolutionScope, SemanticDeclarationKey, SemanticFieldRoot, SemanticMcpImportKind, WorkflowSemanticIndex,
 };
 
@@ -519,7 +519,7 @@ fn workflow_semantic_index_exposes_core_source_span_lookup_for_references() {
     );
 }
 
-fn source_span_lookup_workflow() -> superwire_core::dsl::Workflow {
+fn source_span_lookup_workflow() -> superwire_dsl::Workflow {
     parse_inline_workflow! {
         schema profile {
             details: {

@@ -1,4 +1,4 @@
-use superwire_core::dsl::ModelAssetKindSupportError;
+use superwire_dsl::ModelAssetKindSupportError;
 use superwire_mcp::McpError;
 use superwire_model::ModelProviderError;
 use superwire_semantic::WorkflowSemanticError;

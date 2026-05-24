@@ -3,8 +3,8 @@ use super::super::ast::{
 };
 use super::issues::AgentDeclarationIssuesExt;
 use super::{ValidationIssue, ValidationReport};
-use crate::semantic::{InferenceSetting, WorkflowSemanticIndex as ValidationIndex};
 use std::collections::HashSet;
+use superwire_semantic::{InferenceSetting, WorkflowSemanticIndex as ValidationIndex};
 
 pub(super) fn validate_agent_inference_settings(workflow: &Workflow, validation_report: &mut ValidationReport) {
     let mut invalid_inference_setting_values = HashSet::<(String, InferenceSetting)>::new();

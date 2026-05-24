@@ -16,7 +16,6 @@ redis = "1.2.1"
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-superwire-core = { path = "../superwire-core" }
 superwire-dsl = { path = "../superwire-dsl" }
 superwire-mcp = { path = "../superwire-mcp" }
 superwire-model = { path = "../superwire-model" }

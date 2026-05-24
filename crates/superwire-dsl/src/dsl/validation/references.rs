@@ -5,10 +5,10 @@ use super::super::ast::{
 use super::issues::{AgentDeclarationIssuesExt, ReferenceIssuesExt};
 use super::tools::validate_agent_tool_bindings;
 use super::{ValidationContext, ValidationReport};
-use crate::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
-use crate::semantic::support::types::{TypeExpressionWorkflowTypeExt, WorkflowType};
-use crate::semantic::WorkflowSemanticIndex as ValidationIndex;
 use std::collections::{HashMap, HashSet};
+use superwire_semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
+use superwire_semantic::support::types::{TypeExpressionWorkflowTypeExt, WorkflowType};
+use superwire_semantic::WorkflowSemanticIndex as ValidationIndex;
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationIndex, validation_report: &mut ValidationReport) {
@@ -375,7 +375,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             }
 
             if tool_declaration.has_untyped_mcp_output() {
-                tool_output_types.insert(tool_declaration.name.clone(), crate::semantic::support::types::WorkflowType::Any);
+                tool_output_types.insert(tool_declaration.name.clone(), superwire_semantic::support::types::WorkflowType::Any);
             } else if let Ok(tool_output_type) =
                 TypeExpression::Object(tool_declaration.output_fields.clone()).to_workflow_type(&named_schema_types)
             {
@@ -752,7 +752,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
     fn validate_reference(
         &mut self,
         reference: &Reference,
-        dynamic_field_types: &HashMap<String, crate::semantic::support::types::WorkflowType>,
+        dynamic_field_types: &HashMap<String, superwire_semantic::support::types::WorkflowType>,
         context: ValidationContext,
         secret_reference_policy: SecretReferencePolicy,
     ) {
@@ -1053,7 +1053,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             }
 
             if reference_access.is_optional() {
-                next_candidate_types.push(crate::semantic::support::types::WorkflowType::Null);
+                next_candidate_types.push(superwire_semantic::support::types::WorkflowType::Null);
             }
 
             if next_candidate_types.is_empty() {
