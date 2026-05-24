@@ -1,7 +1,9 @@
 #![allow(dead_code, unused_macros)]
 
-pub mod fixtures;
 pub mod runner;
+
+#[allow(unused_imports)]
+pub use superwire_test_support::fixtures;
 
 macro_rules! call {
     ($name:expr, $arguments:tt $(,)?) => {

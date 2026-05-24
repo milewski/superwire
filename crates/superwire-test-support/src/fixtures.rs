@@ -1,3 +1,10 @@
+use std::path::{Path, PathBuf};
+
+#[must_use]
+pub fn root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures")
+}
+
 pub const MINIMUM: &str = include_str!("../fixtures/001_minimum.wire");
 pub const STRING_OUTPUT: &str = include_str!("../fixtures/002_string_output.wire");
 pub const OBJECT_OUTPUT: &str = include_str!("../fixtures/003_object_output.wire");
@@ -37,13 +44,12 @@ pub const MCP_PROMPT_REQUIRED_BINDING_VALIDATION: &str = include_str!("../fixtur
 pub const VARIANT_MATCH_PROJECTION: &str = include_str!("../fixtures/036_variant_match_projection.wire");
 pub const SCHEMA_TYPES: &str = include_str!("../fixtures/037_schema_types.wire");
 pub const SCHEMA_VARIANT_TYPES: &str = include_str!("../fixtures/038_schema_variant_types.wire");
-pub const CERSEI_PROVIDERS: &str = include_str!("../fixtures/039_cersei_providers.wire");
+pub const CERSEI_PROVIDERS: &str = include_str!("../../superwire-dsl/workflows/providers.wire");
 pub const AGENT_OUTPUT_INJECTIONS: &str = include_str!("../fixtures/040_agent_output_injections.wire");
 pub const ARRAY_PLUCK_ASSETS: &str = include_str!("../fixtures/041_array_pluck_assets.wire");
 pub const ARRAY_PLUCK_MODES: &str = include_str!("../fixtures/042_array_pluck_modes.wire");
 pub const ARRAY_PLUCK_VARIANT_CASE_FIELDS: &str = include_str!("../fixtures/043_array_pluck_variant_case_fields.wire");
 
-// Negative Tests
 pub const MCP_TOOL_OUTPUT_SCHEMA_OVERRIDE_NON_ITERABLE: &str =
     include_str!("../fixtures/negative/001_mcp_tool_output_schema_non_iterable_negative.wire");
 pub const SECRETS_IN_INSTRUCTION_TEMPLATE: &str = include_str!("../fixtures/negative/002_secrets_in_instruction_template_negative.wire");

@@ -18,6 +18,8 @@ use superwire_semantic::{
     WorkflowSemanticIndex,
 };
 
+pub mod fixtures;
+
 pub const COMPACT_CURSOR_MARKER: &str = "<cursor>";
 pub const SPACED_CURSOR_MARKER: &str = "< cursor >";
 

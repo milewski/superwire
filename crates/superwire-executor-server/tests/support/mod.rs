@@ -13,11 +13,7 @@ use superwire_executor::model::{ModelProvider, ModelProviderError, ModelRequest,
 use superwire_executor::ExecutorService;
 use superwire_protocol::api::{ExecutionOptions, ExecutionRequest};
 
-pub mod fixtures {
-    pub const MINIMUM: &str = include_str!("../../../superwire-provider-cersei/tests/fixtures/001_minimum.wire");
-    pub const INPUT_STRING: &str = include_str!("../../../superwire-provider-cersei/tests/fixtures/006_input_string.wire");
-    pub const LINEAR_CHAIN: &str = include_str!("../../../superwire-provider-cersei/tests/fixtures/004_linear_chain.wire");
-}
+pub use superwire_test_support::fixtures;
 
 #[derive(Debug, Clone)]
 pub struct TestModelProvider {

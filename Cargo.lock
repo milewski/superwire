@@ -2233,6 +2233,7 @@ dependencies = [
  "superwire-macros",
  "superwire-protocol",
  "superwire-provider-cersei",
+ "superwire-test-support",
  "tokio",
  "tokio-stream",
  "tower",

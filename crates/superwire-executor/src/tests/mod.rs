@@ -1,5 +1,6 @@
-mod fixtures;
 mod support;
+
+use superwire_test_support::fixtures;
 
 mod assets;
 mod cache;

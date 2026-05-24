@@ -2,13 +2,12 @@ use serde_json::{json, Value};
 use std::collections::{BTreeMap, VecDeque};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use superwire_executor::runtime::{ExecutorError, WorkflowExecutor};
 use superwire_provider_cersei::CerseiModelProvider;
 pub use superwire_test_support::FakeMcpRequest;
-use superwire_test_support::{FakeMcpClientFactory, WorkflowSource};
+use superwire_test_support::{fixtures, FakeMcpClientFactory, WorkflowSource};
 
 type MessageAssertion = Arc<dyn Fn(&[Value]) + Send + Sync>;
 
@@ -165,10 +164,8 @@ struct ProviderServerState {
 impl TestRunner {
     #[must_use]
     pub fn workflow(workflow_source: impl Into<String>) -> Self {
-        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("fixtures");
-
         Self {
-            workflow_source: WorkflowSource::fixture_or_inline(fixture_root, workflow_source.into()),
+            workflow_source: WorkflowSource::fixture_or_inline(fixtures::root(), workflow_source.into()),
             input: Value::Null,
             secrets: Value::Null,
             providers: BTreeMap::new(),

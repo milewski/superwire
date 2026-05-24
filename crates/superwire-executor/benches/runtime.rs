@@ -9,15 +9,16 @@ use superwire_executor::WorkflowExecutor;
 use superwire_semantic::support::expression::{evaluate_expression, EvaluationContext};
 use superwire_semantic::support::types::WorkflowSchemaCache;
 use superwire_semantic::{build_dynamic_typed_workflow_ir, build_execution_plan, ExecutionPlan};
+use superwire_test_support::fixtures;
 use tokio::runtime::{Builder, Runtime};
 
 const DEFAULT_ITERATIONS: usize = 50;
 const DEFAULT_WARMUP_ITERATIONS: usize = 5;
 const ITERATIONS_ENVIRONMENT_VARIABLE: &str = "SUPERWIRE_BENCH_ITERATIONS";
 const WARMUP_ITERATIONS_ENVIRONMENT_VARIABLE: &str = "SUPERWIRE_BENCH_WARMUP_ITERATIONS";
-const SMALL_WORKFLOW_SOURCE: &str = include_str!("../tests/fixtures/001_minimum.wire");
-const MEDIUM_WORKFLOW_SOURCE: &str = include_str!("../tests/fixtures/019_diamond_dependency.wire");
-const LARGE_WORKFLOW_SOURCE: &str = include_str!("../tests/fixtures/037_schema_types.wire");
+const SMALL_WORKFLOW_SOURCE: &str = fixtures::MINIMUM;
+const MEDIUM_WORKFLOW_SOURCE: &str = fixtures::DIAMOND_DEPENDENCY;
+const LARGE_WORKFLOW_SOURCE: &str = fixtures::SCHEMA_TYPES;
 
 #[derive(Debug, Clone, Copy)]
 enum BenchmarkStage {
