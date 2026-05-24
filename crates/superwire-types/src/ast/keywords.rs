@@ -127,21 +127,25 @@ impl ExpressionKeyword {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AgentContextPropertyName {
     Instruction,
+    Model,
 }
 
 impl AgentContextPropertyName {
     #[must_use]
+    pub fn all() -> [Self; 2] {
+        [Self::Instruction, Self::Model]
+    }
+
+    #[must_use]
     pub fn from_identifier(identifier: &str) -> Option<Self> {
-        match identifier {
-            "instruction" => Some(Self::Instruction),
-            _ => None,
-        }
+        Self::all().into_iter().find(|property_name| property_name.as_str() == identifier)
     }
 
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Instruction => "instruction",
+            Self::Model => "model",
         }
     }
 }

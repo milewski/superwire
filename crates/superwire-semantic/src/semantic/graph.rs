@@ -7,9 +7,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use superwire_types::ast::{
-    AgentContext, AgentExpressionPropertyName, AgentForLoop, AgentForLoopPattern, AgentProperty, CallArgument, DeclarationKeyword,
-    Expression, MatchBranch, McpPromptImportDeclaration, McpResourceImportDeclaration, ModelDeclaration, ModelDeclarationPropertyName,
-    ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceKeyword, StringTemplatePart, ToolCall, ToolSource, Workflow,
+    AgentContext, AgentContextPropertyName, AgentExpressionPropertyName, AgentForLoop, AgentForLoopPattern, AgentProperty, CallArgument,
+    CompactAgentContext, DeclarationKeyword, Expression, MatchBranch, McpPromptImportDeclaration, McpResourceImportDeclaration,
+    ModelDeclaration, ModelDeclarationPropertyName, ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceKeyword,
+    StringTemplatePart, ToolCall, ToolSource, Workflow,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -64,6 +65,7 @@ pub enum WorkflowExecutionGraphNodeKind {
     Model,
     Input,
     Dynamic,
+    Compact,
     Agent,
     Output,
 }
@@ -156,6 +158,10 @@ impl ExecutionPlan {
 
         for (agent_index, agent_name) in self.agent_execution_order.iter().enumerate() {
             if let Some(planned_agent) = self.planned_agents.get(agent_name) {
+                if let Some(compact_node) = planned_agent.compact_context_execution_graph_node(&graph_lookups, agent_index) {
+                    nodes.push(compact_node);
+                }
+
                 nodes.push(planned_agent.execution_graph_node(self, workflow, &graph_lookups, agent_index, &mut schema_cache));
             }
         }
@@ -193,6 +199,23 @@ impl ExecutionPlan {
                 if let Some(model_declaration) = graph_lookups.model_declarations.get(model_name.as_str()) {
                     nodes.push(model_declaration.execution_graph_node());
                 }
+            }
+
+            let Some(compact_model_name) = planned_agent.compact_context_model_name() else {
+                continue;
+            };
+            let Some(model_declaration) = graph_lookups.model_declarations.get(compact_model_name.as_str()) else {
+                continue;
+            };
+
+            if emitted_provider_names.insert(model_declaration.provider_name.clone()) {
+                if let Some(provider_declaration) = graph_lookups.provider_declarations.get(model_declaration.provider_name.as_str()) {
+                    nodes.push(provider_declaration.execution_graph_node());
+                }
+            }
+
+            if emitted_model_names.insert(compact_model_name) {
+                nodes.push(model_declaration.execution_graph_node());
             }
         }
 
@@ -473,6 +496,7 @@ impl ExecutionPlan {
         self.output_declaration.dynamic_dependencies()
     }
 
+    #[allow(clippy::too_many_lines)]
     fn execution_graph_edges(&self, workflow: &Workflow) -> Vec<WorkflowExecutionGraphEdge> {
         let mut edges = Vec::new();
         let input_node_id = WorkflowExecutionGraphNodeKind::Input.node_id();
@@ -515,7 +539,43 @@ impl ExecutionPlan {
                 ));
             }
 
+            if let Some(compact_agent_context) = planned_agent.compact_agent_context() {
+                let compact_node_id = compact_context_node_id(&planned_agent.name);
+
+                if compact_agent_context.references_runtime() {
+                    edges.push(WorkflowExecutionGraphEdge::new(
+                        &input_node_id,
+                        &compact_node_id,
+                        "runtime",
+                        WorkflowExecutionGraphEdgeKind::Input,
+                    ));
+                }
+
+                if let Some(source_agent_name) = compact_agent_context.agent_name() {
+                    edges.push(WorkflowExecutionGraphEdge::new(
+                        source_agent_name,
+                        &compact_node_id,
+                        "source context",
+                        WorkflowExecutionGraphEdgeKind::AgentDependency,
+                    ));
+                    edges.push(WorkflowExecutionGraphEdge::new(
+                        &compact_node_id,
+                        agent_name,
+                        "compacted context",
+                        WorkflowExecutionGraphEdgeKind::AgentDependency,
+                    ));
+                }
+            }
+
             for dependency_name in &planned_agent.dependencies {
+                if planned_agent
+                    .compact_agent_context()
+                    .and_then(CompactAgentContext::agent_name)
+                    .is_some_and(|source_agent_name| source_agent_name == dependency_name)
+                {
+                    continue;
+                }
+
                 edges.push(WorkflowExecutionGraphEdge::new(
                     dependency_name,
                     agent_name,
@@ -537,22 +597,33 @@ impl ExecutionPlan {
             let Some(model_name) = planned_agent.model_name() else {
                 continue;
             };
-            let model_node_id = model_node_id(&model_name);
+            let model_node_identifier = model_node_id(&model_name);
 
-            if emitted_provider_model_edges.insert((provider_node_id.clone(), model_node_id.clone())) {
+            if emitted_provider_model_edges.insert((provider_node_id.clone(), model_node_identifier.clone())) {
                 edges.push(WorkflowExecutionGraphEdge::new(
                     &provider_node_id,
-                    &model_node_id,
+                    &model_node_identifier,
                     "client",
                     WorkflowExecutionGraphEdgeKind::ProviderClient,
                 ));
             }
 
-            if emitted_model_agent_edges.insert((model_node_id.clone(), planned_agent.name.clone())) {
+            if emitted_model_agent_edges.insert((model_node_identifier.clone(), planned_agent.name.clone())) {
                 edges.push(WorkflowExecutionGraphEdge::new(
-                    &model_node_id,
+                    &model_node_identifier,
                     &planned_agent.name,
                     AgentExpressionPropertyName::Model.as_str(),
+                    WorkflowExecutionGraphEdgeKind::Model,
+                ));
+            }
+
+            if planned_agent.compact_agent_context().is_some() {
+                let compact_model_name = planned_agent.compact_context_model_name().unwrap_or(model_name);
+
+                edges.push(WorkflowExecutionGraphEdge::new(
+                    &model_node_id(&compact_model_name),
+                    &compact_context_node_id(&planned_agent.name),
+                    AgentContextPropertyName::Model.as_str(),
                     WorkflowExecutionGraphEdgeKind::Model,
                 ));
             }
@@ -669,6 +740,71 @@ impl ModelDeclarationExecutionGraphExt for ModelDeclaration {
 }
 
 impl PlannedAgent {
+    fn compact_context_execution_graph_node(
+        &self,
+        graph_lookups: &WorkflowExecutionGraphLookups<'_>,
+        agent_index: usize,
+    ) -> Option<WorkflowExecutionGraphNode> {
+        let compact_agent_context = self.compact_agent_context()?;
+        let source_agent_name = compact_agent_context.agent_name()?.to_string();
+        let model_name = self.compact_context_model_name().or_else(|| self.model_name());
+        let provider_name = model_name
+            .as_ref()
+            .and_then(|model_name| graph_lookups.model_declarations.get(model_name.as_str()))
+            .map_or_else(
+                || self.provider_name.clone(),
+                |model_declaration| model_declaration.provider_name.clone(),
+            );
+
+        let mut details = vec![
+            WorkflowExecutionGraphDetail {
+                name: "source".to_string(),
+                value: format!("agent.{source_agent_name}"),
+                secret: false,
+            },
+            WorkflowExecutionGraphDetail {
+                name: "target".to_string(),
+                value: format!("agent.{}", self.name),
+                secret: false,
+            },
+        ];
+
+        if let Some(model_name) = &model_name {
+            details.push(WorkflowExecutionGraphDetail {
+                name: AgentContextPropertyName::Model.as_str().to_string(),
+                value: model_name.clone(),
+                secret: false,
+            });
+        }
+
+        Some(WorkflowExecutionGraphNode {
+            id: compact_context_node_id(&self.name),
+            label: format!("Compact {source_agent_name}"),
+            kind: WorkflowExecutionGraphNodeKind::Compact,
+            inputs: vec![WorkflowExecutionGraphPort {
+                name: format!("agent.{source_agent_name}"),
+                schema: WorkflowExecutionGraphTool::open_object_schema(),
+            }],
+            outputs: vec![WorkflowExecutionGraphPort {
+                name: "compacted context".to_string(),
+                schema: WorkflowExecutionGraphTool::open_object_schema(),
+            }],
+            dependencies: vec![source_agent_name],
+            provider_name: Some(provider_name),
+            model: model_name,
+            instruction: compact_agent_context.instruction().map(Expression::graph_label),
+            details,
+            bindings: compact_agent_context
+                .properties
+                .iter()
+                .map(ObjectField::execution_graph_binding)
+                .collect(),
+            tools: Vec::new(),
+            execution_index: Some(agent_index),
+            loop_info: None,
+        })
+    }
+
     fn execution_graph_node(
         &self,
         execution_plan: &ExecutionPlan,
@@ -833,6 +969,20 @@ impl PlannedAgent {
 
     fn model_name(&self) -> Option<String> {
         self.declaration.model_usage()?.model_name().map(str::to_string)
+    }
+
+    fn compact_agent_context(&self) -> Option<&CompactAgentContext> {
+        let agent_context = self.declaration.context_property()?;
+
+        let AgentContext::Compact(compact_agent_context) = agent_context else {
+            return None;
+        };
+
+        Some(compact_agent_context)
+    }
+
+    fn compact_context_model_name(&self) -> Option<String> {
+        self.compact_agent_context()?.model_name().map(str::to_string)
     }
 
     fn references_runtime(&self) -> bool {
@@ -1148,6 +1298,7 @@ impl WorkflowExecutionGraphNodeKind {
             Self::Model => ReferenceKeyword::Model.as_str().to_string(),
             Self::Input => ReferenceKeyword::Input.as_str().to_string(),
             Self::Dynamic => ReferenceKeyword::Dynamic.as_str().to_string(),
+            Self::Compact => "compact".to_string(),
             Self::Agent => ReferenceKeyword::Agent.as_str().to_string(),
             Self::Output => "output".to_string(),
         }
@@ -1292,6 +1443,10 @@ fn model_node_id(model_name: &str) -> String {
     format!("{}:{model_name}", ReferenceKeyword::Model.as_str())
 }
 
+fn compact_context_node_id(agent_name: &str) -> String {
+    format!("compact:{agent_name}")
+}
+
 fn render_field_path_suffix(field_path: &[String]) -> String {
     let mut suffix = String::new();
 
@@ -1319,6 +1474,7 @@ fn mask_secret_expression(expression: &Expression) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::WorkflowExecutionGraphNodeKind;
     use crate::semantic::{build_dynamic_typed_workflow_ir, build_execution_plan};
     use superwire_macros::parse_inline_workflow;
 
@@ -1375,5 +1531,68 @@ mod tests {
             .nodes
             .iter()
             .any(|node| node.id == "dynamic" && node.tools.iter().any(|tool| tool.name == "fetch_answers")));
+    }
+
+    #[test]
+    fn graph_represents_compact_context_as_dedicated_node() {
+        let workflow = parse_inline_workflow! {
+            provider openai from openai {
+                endpoint: "https://api.openai.com/v1"
+                api_key: "test-api-key"
+            }
+
+            model plus from openai {
+                id: "model-a"
+            }
+
+            model flash from openai {
+                id: "model-b"
+            }
+
+            agent research {
+                model: model.plus
+                instruction: "Research this"
+                output {
+                    value: string
+                }
+            }
+
+            agent summarize {
+                model: model.plus
+                context: compact agent.research {
+                    model: model.flash
+                    instruction: "Compact this"
+                }
+                instruction: "Summarize this"
+                output {
+                    value: string
+                }
+            }
+
+            output {
+                result: agent.summarize.value
+            }
+        };
+
+        let typed_workflow_ir = build_dynamic_typed_workflow_ir(&workflow).expect("workflow should typecheck");
+        let execution_plan = build_execution_plan(&workflow, &typed_workflow_ir).expect("workflow should plan");
+        let graph = execution_plan.execution_graph(&workflow);
+
+        assert!(graph
+            .nodes
+            .iter()
+            .any(|node| node.id == "compact:summarize" && node.kind == WorkflowExecutionGraphNodeKind::Compact));
+        assert!(graph
+            .edges
+            .iter()
+            .any(|edge| edge.source == "research" && edge.target == "compact:summarize"));
+        assert!(graph
+            .edges
+            .iter()
+            .any(|edge| edge.source == "model:flash" && edge.target == "compact:summarize"));
+        assert!(graph
+            .edges
+            .iter()
+            .any(|edge| edge.source == "compact:summarize" && edge.target == "summarize"));
     }
 }

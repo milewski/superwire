@@ -48,6 +48,8 @@ pub enum DiagnosticCode {
     DuplicateProperty,
     #[serde(rename = "unknown_agent_property")]
     UnknownAgentProperty,
+    #[serde(rename = "unsupported_agent_context_property")]
+    UnsupportedAgentContextProperty,
     #[serde(rename = "invalid_inference_setting_value_type")]
     InvalidInferenceSettingValueType,
     #[serde(rename = "invalid_model_expression")]

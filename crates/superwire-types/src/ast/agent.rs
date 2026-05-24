@@ -270,9 +270,16 @@ impl AgentContext {
             return None;
         };
 
-        compact_agent_context
-            .property(AgentContextPropertyName::Instruction)
-            .map(|property| &property.value)
+        compact_agent_context.instruction()
+    }
+
+    #[must_use]
+    pub fn compact_model_name(&self) -> Option<&str> {
+        let Self::Compact(compact_agent_context) = self else {
+            return None;
+        };
+
+        compact_agent_context.model_name()
     }
 
     pub fn collect_agent_dependencies<HashBuilder: BuildHasher>(&self, agent_dependencies: &mut HashSet<String, HashBuilder>) {
@@ -348,10 +355,58 @@ pub struct CompactAgentContext {
 
 impl CompactAgentContext {
     #[must_use]
+    pub fn agent_name(&self) -> Option<&str> {
+        if !self.reference.is_agent_root() {
+            return None;
+        }
+
+        self.reference.first_access_field()
+    }
+
+    #[must_use]
     pub fn property(&self, property_name: AgentContextPropertyName) -> Option<&ObjectField> {
         self.properties
             .iter()
             .find(|property| AgentContextPropertyName::from_identifier(property.name.as_str()) == Some(property_name))
+    }
+
+    #[must_use]
+    pub fn instruction(&self) -> Option<&Expression> {
+        self.property(AgentContextPropertyName::Instruction).map(|property| &property.value)
+    }
+
+    #[must_use]
+    pub fn model_expression(&self) -> Option<&Expression> {
+        self.property(AgentContextPropertyName::Model).map(|property| &property.value)
+    }
+
+    #[must_use]
+    pub fn model_name(&self) -> Option<&str> {
+        let Expression::Reference(reference) = self.model_expression()? else {
+            return None;
+        };
+
+        reference.direct_required_name_for_keyword(ReferenceKeyword::Model)
+    }
+
+    #[must_use]
+    pub fn unsupported_properties(&self) -> Vec<&ObjectField> {
+        self.properties
+            .iter()
+            .filter(|property| AgentContextPropertyName::from_identifier(property.name.as_str()).is_none())
+            .collect()
+    }
+
+    #[must_use]
+    pub fn references_runtime(&self) -> bool {
+        let mut runtime_dependencies = HashSet::new();
+        self.reference.collect_runtime_dependency(&mut runtime_dependencies);
+
+        for property in &self.properties {
+            property.value.collect_runtime_dependencies(&mut runtime_dependencies);
+        }
+
+        !runtime_dependencies.is_empty()
     }
 }
 

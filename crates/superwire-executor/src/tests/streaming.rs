@@ -29,6 +29,35 @@ async fn lifecycle_events_are_emitted_in_order() {
 }
 
 #[tokio::test]
+async fn context_compaction_events_are_emitted() {
+    let service = support::service(vec![
+        json!({ "value": "research" }),
+        json!("compact summary"),
+        json!({ "value": "summary" }),
+    ]);
+    let request = support::request(fixtures::AGENT_CONTEXT_COMPACTION);
+    let mut receiver = service.execute_stream(request);
+    let mut compaction_events = Vec::new();
+
+    while let Some(event) = receiver.recv().await {
+        if matches!(
+            event.kind,
+            ExecutorEventKind::ContextCompactionStarted | ExecutorEventKind::ContextCompactionCompleted
+        ) {
+            compaction_events.push(event);
+        }
+    }
+
+    assert_eq!(compaction_events.len(), 2);
+    assert_eq!(compaction_events[0].kind, ExecutorEventKind::ContextCompactionStarted);
+    assert_eq!(compaction_events[0].agent_name.as_deref(), Some("summarize"));
+    assert_eq!(compaction_events[0].data.as_ref().unwrap()["source_agent_name"], json!("research"));
+    assert_eq!(compaction_events[1].kind, ExecutorEventKind::ContextCompactionCompleted);
+    assert_eq!(compaction_events[1].agent_name.as_deref(), Some("summarize"));
+    assert_eq!(compaction_events[1].data.as_ref().unwrap()["output"], json!("compact summary"));
+}
+
+#[tokio::test]
 async fn agent_names_are_included_in_events() {
     let service = support::service(vec![json!({ "value": "first" }), json!({ "value": "second" })]);
     let request = support::request_with_input(fixtures::LINEAR_CHAIN, json!({ "topic": "testing" }));

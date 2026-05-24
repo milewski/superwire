@@ -1,5 +1,6 @@
 use super::super::ast::{
-    AgentDeclaration, AgentProperty, Declaration, ModelUsage, ModelUsagePropertyName, ObjectField, ReferenceKeyword, SourceSpan, Workflow,
+    AgentContext, AgentContextPropertyName, AgentDeclaration, AgentProperty, Declaration, ModelUsage, ModelUsagePropertyName, ObjectField,
+    ReferenceKeyword, SourceSpan, Workflow,
 };
 use super::issues::AgentDeclarationIssuesExt;
 use super::{ValidationIssue, ValidationReport};
@@ -114,6 +115,9 @@ pub(super) fn validate_agent_model_bindings(
                     has_model_property = true;
                     validate_model_usage(agent_declaration, model_usage, validation_index, validation_report);
                 }
+                AgentProperty::Context(agent_context) => {
+                    validate_compact_agent_context(agent_declaration, agent_context, validation_index, validation_report);
+                }
                 AgentProperty::InvalidModel(_) => {
                     has_model_property = true;
                     validation_report
@@ -122,7 +126,6 @@ pub(super) fn validate_agent_model_bindings(
                 AgentProperty::Dynamic(_)
                 | AgentProperty::Instruction(_)
                 | AgentProperty::Output { fields: _, span: _ }
-                | AgentProperty::Context(_)
                 | AgentProperty::Uses(_)
                 | AgentProperty::Unknown { name: _, span: _ } => {}
             }
@@ -131,6 +134,41 @@ pub(super) fn validate_agent_model_bindings(
         if !has_model_property {
             validation_report.push_issue_with_span(agent_declaration.invalid_model_expression_issue(), Some(agent_declaration.span));
         }
+    }
+}
+
+fn validate_compact_agent_context(
+    agent_declaration: &AgentDeclaration,
+    agent_context: &AgentContext,
+    validation_index: &ValidationIndex,
+    validation_report: &mut ValidationReport,
+) {
+    let AgentContext::Compact(compact_agent_context) = agent_context else {
+        return;
+    };
+
+    for property in compact_agent_context.unsupported_properties() {
+        validation_report.push_issue_with_span(
+            ValidationIssue::UnsupportedAgentContextProperty {
+                agent_name: agent_declaration.name.clone(),
+                property_name: property.name.clone(),
+            },
+            Some(property.span),
+        );
+    }
+
+    let Some(model_property) = compact_agent_context.property(AgentContextPropertyName::Model) else {
+        return;
+    };
+
+    let Some(model_name) = compact_agent_context.model_name() else {
+        validation_report.push_issue_with_span(agent_declaration.invalid_model_expression_issue(), Some(model_property.span));
+
+        return;
+    };
+
+    if !validation_index.has_model(model_name) {
+        validation_report.push_issue_with_span(agent_declaration.unknown_model_profile_issue(model_name), Some(model_property.span));
     }
 }
 

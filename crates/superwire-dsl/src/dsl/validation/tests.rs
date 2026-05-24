@@ -630,6 +630,71 @@ fn reports_unknown_agent_properties() {
 }
 
 #[test]
+fn reports_unsupported_compact_context_properties() {
+    let workflow = parse_inline_workflow! {
+        provider openai from openai {}
+
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
+
+        agent research {
+            model: model.openai_model
+            instruction: "Research this"
+            output {
+                value: string
+            }
+        }
+
+        agent writer {
+            model: model.openai_model
+            context: compact agent.research {
+                uses: []
+                output: string
+                context: agent.research
+                dynamic: {}
+                model: model.openai_model
+                instruction: "Compact this"
+            }
+            instruction: "Write this"
+            output {
+                value: string
+            }
+        }
+    };
+
+    assert_workflow_issues_contain!(
+        workflow,
+        ValidationIssue::UnsupportedAgentContextProperty {
+            agent_name,
+            property_name
+        } if agent_name == "writer" && property_name == "uses"
+    );
+    assert_workflow_issues_contain!(
+        workflow,
+        ValidationIssue::UnsupportedAgentContextProperty {
+            agent_name,
+            property_name
+        } if agent_name == "writer" && property_name == "output"
+    );
+    assert_workflow_issues_contain!(
+        workflow,
+        ValidationIssue::UnsupportedAgentContextProperty {
+            agent_name,
+            property_name
+        } if agent_name == "writer" && property_name == "context"
+    );
+    assert_workflow_issues_contain!(
+        workflow,
+        ValidationIssue::UnsupportedAgentContextProperty {
+            agent_name,
+            property_name
+        } if agent_name == "writer" && property_name == "dynamic"
+    );
+    assert_workflow_issues_do_not_contain!(workflow, ValidationIssue::InvalidModelExpression { .. });
+}
+
+#[test]
 fn exposes_stable_codes_and_messages_for_validation_issues() {
     let issue = ValidationIssue::UnknownAgentProperty {
         agent_name: "writer".to_string(),

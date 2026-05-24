@@ -69,6 +69,9 @@ pub enum ExecutorEventKind {
     WorkflowPlanned,
     AgentLoopStarted,
     AgentLoopCompleted,
+    ContextCompactionStarted,
+    ContextCompactionCompleted,
+    ContextCompactionFailed,
     AgentStarted,
     AgentCompleted,
     ToolCallStarted,
@@ -95,6 +98,9 @@ impl ExecutorEventKind {
             Self::WorkflowPlanned => "workflow_planned",
             Self::AgentLoopStarted => "agent_loop_started",
             Self::AgentLoopCompleted => "agent_loop_completed",
+            Self::ContextCompactionStarted => "context_compaction_started",
+            Self::ContextCompactionCompleted => "context_compaction_completed",
+            Self::ContextCompactionFailed => "context_compaction_failed",
             Self::AgentStarted => "agent_started",
             Self::AgentCompleted => "agent_completed",
             Self::ToolCallStarted => "tool_call_started",
@@ -171,6 +177,39 @@ impl ExecutorEvent {
                 "output": output,
                 "duration_ms": duration_ms(duration),
                 "iteration_count": iteration_count,
+            }))
+    }
+
+    #[must_use]
+    pub fn context_compaction_started(agent_name: String, source_agent_name: Option<String>, model_name: String) -> Self {
+        let mut event_data = serde_json::Map::from_iter([("model".to_string(), Value::String(model_name))]);
+
+        if let Some(source_agent_name) = source_agent_name {
+            event_data.insert("source_agent_name".to_string(), Value::String(source_agent_name));
+        }
+
+        Self::new(ExecutorEventKind::ContextCompactionStarted)
+            .with_agent_name(agent_name)
+            .with_data(Value::Object(event_data))
+    }
+
+    #[must_use]
+    pub fn context_compaction_completed(agent_name: String, output: Value, duration: Duration) -> Self {
+        Self::new(ExecutorEventKind::ContextCompactionCompleted)
+            .with_agent_name(agent_name)
+            .with_data(serde_json::json!({
+                "output": output,
+                "duration_ms": duration_ms(duration),
+            }))
+    }
+
+    #[must_use]
+    pub fn context_compaction_failed(agent_name: String, message: String, duration: Duration) -> Self {
+        Self::new(ExecutorEventKind::ContextCompactionFailed)
+            .with_agent_name(agent_name)
+            .with_message(message)
+            .with_data(serde_json::json!({
+                "duration_ms": duration_ms(duration),
             }))
     }
 

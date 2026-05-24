@@ -11,7 +11,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
-use superwire_dsl::{AgentContext, AgentExpressionPropertyName, AgentProperty, Expression, ModelAssetKind};
+use superwire_dsl::{AgentContext, AgentExpressionPropertyName, AgentProperty, Expression, ModelAssetKind, ObjectField};
 use superwire_mcp::McpClientPool;
 use superwire_protocol::event::ExecutorEvent;
 use superwire_semantic::support::expression::{evaluate_expression, EvaluationContext};
@@ -667,16 +667,17 @@ impl WorkflowExecutor {
         ModelProviderType: ModelProvider,
     {
         let compaction_agent = self.compaction_agent(agent_context, request.target_agent)?;
+        let compaction_model = self.compaction_model(agent_context, compaction_agent)?;
         let provider_template = self
             .execution_plan
             .provider_index
-            .get(&compaction_agent.provider_name)
+            .get(compaction_model.provider_name)
             .ok_or_else(|| ExecutorError::Other {
-                message: format!("provider `{}` is not declared", compaction_agent.provider_name),
+                message: format!("provider `{}` is not declared", compaction_model.provider_name),
             })?;
-        let provider_config = provider_template.resolve(&compaction_agent.provider_name, request.evaluation_context)?;
-        let model_name = compaction_agent.evaluate_model_name(request.evaluation_context)?;
-        let inference = self.evaluate_inference_fields(compaction_agent, request.evaluation_context)?;
+        let provider_config = provider_template.resolve(compaction_model.provider_name, request.evaluation_context)?;
+        let model_name = compaction_model.evaluate_model_name(request.evaluation_context)?;
+        let inference = compaction_model.evaluate_inference_fields(request.evaluation_context)?;
         let instruction = self.resolve_compaction_instruction(
             agent_context,
             request.evaluation_context,
@@ -688,7 +689,7 @@ impl WorkflowExecutor {
         let compaction_request = ModelRequest {
             agent_name: format!("{}__context_compaction", compaction_agent.name),
             provider_config,
-            model_name,
+            model_name: model_name.clone(),
             inference,
             context: Some(source_context),
             prompt: instruction.clone(),
@@ -699,9 +700,66 @@ impl WorkflowExecutor {
             mcp_pool: self.mcp_pool.clone(),
             tool_call_tracker: request.tool_call_tracker.clone(),
         };
-        let compaction_response = request.model_provider.generate(compaction_request).await?;
+        let compaction_started_at = Instant::now();
+
+        if let Some(event_sender) = request.event_sender {
+            let _ = event_sender.try_send(ExecutorEvent::context_compaction_started(
+                compaction_agent.name.clone(),
+                agent_context.agent_name().map(str::to_string),
+                model_name,
+            ));
+        }
+
+        let compaction_response = match request.model_provider.generate(compaction_request).await {
+            Ok(compaction_response) => compaction_response,
+            Err(error) => {
+                if let Some(event_sender) = request.event_sender {
+                    let _ = event_sender.try_send(ExecutorEvent::context_compaction_failed(
+                        compaction_agent.name.clone(),
+                        error.to_string(),
+                        compaction_started_at.elapsed(),
+                    ));
+                }
+
+                return Err(error.into());
+            }
+        };
+
+        if let Some(event_sender) = request.event_sender {
+            let _ = event_sender.try_send(ExecutorEvent::context_compaction_completed(
+                compaction_agent.name.clone(),
+                compaction_response.output.clone(),
+                compaction_started_at.elapsed(),
+            ));
+        }
 
         Ok(compaction_response.context)
+    }
+
+    fn compaction_model<'a>(
+        &'a self,
+        agent_context: &AgentContext,
+        compaction_agent: &'a PlannedAgent,
+    ) -> Result<CompactionModel<'a>, ExecutorError> {
+        let Some(model_name) = agent_context.compact_model_name() else {
+            return Ok(CompactionModel::from_planned_agent(compaction_agent));
+        };
+
+        let model_declarations = self.workflow.model_declarations_by_name();
+        let model_declaration = model_declarations.get(model_name).copied().ok_or_else(|| ExecutorError::Other {
+            message: format!("context compaction references unknown model `{model_name}`"),
+        })?;
+        let Some(model_id_expression) = model_declaration.id_expression() else {
+            return Err(ExecutorError::Other {
+                message: format!("context compaction model `{model_name}` is missing `id`"),
+            });
+        };
+
+        Ok(CompactionModel {
+            provider_name: &model_declaration.provider_name,
+            model_id_expression,
+            inference_fields: model_declaration.inference_fields().unwrap_or_default(),
+        })
     }
 
     fn compaction_agent<'a>(
@@ -865,5 +923,41 @@ impl PlannedAgentRuntimeExt for PlannedAgent {
         model_value.as_str().map(str::to_string).ok_or_else(|| ExecutorError::Other {
             message: format!("model for agent `{}` must resolve to string", self.name),
         })
+    }
+}
+
+struct CompactionModel<'a> {
+    provider_name: &'a str,
+    model_id_expression: &'a Expression,
+    inference_fields: &'a [ObjectField],
+}
+
+impl<'a> CompactionModel<'a> {
+    fn from_planned_agent(planned_agent: &'a PlannedAgent) -> Self {
+        Self {
+            provider_name: &planned_agent.provider_name,
+            model_id_expression: &planned_agent.model_id_expression,
+            inference_fields: planned_agent.inference_fields.as_slice(),
+        }
+    }
+
+    fn evaluate_model_name(&self, evaluation_context: &EvaluationContext) -> Result<String, ExecutorError> {
+        let model_value = evaluate_expression(self.model_id_expression, evaluation_context, "context compaction model")?;
+
+        model_value.as_str().map(str::to_string).ok_or_else(|| ExecutorError::Other {
+            message: "context compaction model must resolve to string".to_string(),
+        })
+    }
+
+    fn evaluate_inference_fields(&self, evaluation_context: &EvaluationContext) -> Result<HashMap<String, Value>, ExecutorError> {
+        let mut inference = HashMap::new();
+
+        for inference_field in self.inference_fields {
+            let context = format!("context compaction inference setting `{}`", inference_field.name);
+            let value = evaluate_expression(&inference_field.value, evaluation_context, &context)?;
+            inference.insert(inference_field.name.clone(), value);
+        }
+
+        Ok(inference)
     }
 }

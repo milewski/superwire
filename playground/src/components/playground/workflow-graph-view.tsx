@@ -402,7 +402,7 @@ function GraphNodeHandles({ node, collapsed, showExpandedInstructionHandle }: { 
       {hasCollapsedTargetHandle ? <span className="graph-node__collapsed-handle graph-node__collapsed-handle--left" aria-hidden="true" /> : null}
       {hasCollapsedSourceHandle ? <span className="graph-node__collapsed-handle graph-node__collapsed-handle--right" aria-hidden="true" /> : null}
       {node.kind === 'model' ? <Handle id="client" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--client" isConnectable={false} /> : null}
-      {node.kind === 'agent' ? <Handle id="instruction" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--instruction" isConnectable={false} /> : null}
+      {node.kind === 'agent' || node.kind === 'compact' ? <Handle id="instruction" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--instruction" isConnectable={false} /> : null}
       {node.kind === 'agent' || node.kind === 'dynamic' ? <Handle id="mcp-access" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--mcp-access" isConnectable={false} /> : null}
       {node.kind !== 'input' ? <Handle id="inputs" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--inputs" isConnectable={false} /> : null}
       {node.kind === 'provider' ? <Handle id="client" type="source" position={Position.Right} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--client" isConnectable={false} /> : null}
@@ -1915,6 +1915,10 @@ function inputPortFallback(node: WorkflowExecutionGraphNode) {
     return 'No upstream runtime values';
   }
 
+  if (node.kind === 'compact') {
+    return 'No source context';
+  }
+
   return 'No upstream agent output';
 }
 
@@ -2071,11 +2075,15 @@ function initialWorkflowGraphNodeRank(node: WorkflowGraphReactNode) {
     return 2;
   }
 
-  if (node.data.node.kind === 'output') {
-    return 4;
+  if (node.data.node.kind === 'compact') {
+    return 3;
   }
 
-  return 3;
+  if (node.data.node.kind === 'output') {
+    return 5;
+  }
+
+  return 4;
 }
 
 function compareWorkflowGraphNodesForLayout(leftNode: WorkflowGraphReactNode, rightNode: WorkflowGraphReactNode) {
@@ -2113,15 +2121,19 @@ function workflowGraphNodeKindLayoutWeight(nodeKind: WorkflowExecutionGraphNode[
     return 3;
   }
 
-  if (nodeKind === 'dynamic') {
+  if (nodeKind === 'compact') {
     return 4;
   }
 
-  if (nodeKind === 'agent') {
+  if (nodeKind === 'dynamic') {
     return 5;
   }
 
-  return 6;
+  if (nodeKind === 'agent') {
+    return 6;
+  }
+
+  return 7;
 }
 
 function workflowGraphNodeWidth(node: WorkflowGraphReactNode) {
@@ -2151,6 +2163,12 @@ function nodePosition(node: WorkflowExecutionGraphNode, lastColumn: number, node
 
   if (node.kind === 'dynamic') {
     return { x: 720, y: 430 + nodeKindIndex(node, nodes) * 260 };
+  }
+
+  if (node.kind === 'compact') {
+    const executionIndex = node.execution_index ?? 0;
+
+    return { x: (executionIndex + 2) * 360, y: 275 + nodeKindIndex(node, nodes) * 170 };
   }
 
   if (node.kind === 'output') {
@@ -2189,7 +2207,7 @@ function nodeStatus(node: WorkflowExecutionGraphNode, activeRunCount: number, ou
     return 'running';
   }
 
-  if (node.kind === 'provider' || node.kind === 'model' || node.kind === 'mcp' || node.kind === 'input' || node.kind === 'dynamic' || outputEntries.length > 0) {
+  if (node.kind === 'provider' || node.kind === 'model' || node.kind === 'mcp' || node.kind === 'input' || node.kind === 'dynamic' || node.kind === 'compact' || outputEntries.length > 0) {
     return 'completed';
   }
 
@@ -2237,6 +2255,10 @@ function nodeSubtitle(node: WorkflowExecutionGraphNode) {
     return 'Dynamic values';
   }
 
+  if (node.kind === 'compact') {
+    return 'Context compaction';
+  }
+
   if (node.kind === 'output') {
     return 'Final payload';
   }
@@ -2267,6 +2289,10 @@ function nodeIcon(node: WorkflowExecutionGraphNode) {
 
   if (node.kind === 'dynamic') {
     return <DatabaseZap />;
+  }
+
+  if (node.kind === 'compact') {
+    return <RefreshCcw />;
   }
 
   if (node.kind === 'output') {
@@ -2303,6 +2329,10 @@ function nodeColor(node: Node) {
 
   if (node.id === 'dynamic') {
     return '#4f8b7b';
+  }
+
+  if (node.id.startsWith('compact:')) {
+    return '#8a6a2a';
   }
 
   if (node.id === 'output') {

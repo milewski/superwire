@@ -18,6 +18,7 @@ use superwire_types::ModelAssetKind;
 
 const MAX_TOOL_CALL_ROUNDS: usize = 8;
 const DEFAULT_MAX_TOKENS: u32 = 16_384;
+const CONTEXT_COMPACTION_AGENT_SUFFIX: &str = "__context_compaction";
 
 #[derive(Debug, Clone, Default)]
 pub struct CerseiModelProvider;
@@ -167,6 +168,12 @@ impl CerseiAgentContext {
         );
 
         Value::Object(context_object)
+    }
+
+    fn from_compaction_summary(summary: String) -> Self {
+        Self {
+            messages: vec![Message::user(summary)],
+        }
     }
 }
 
@@ -416,6 +423,13 @@ impl CerseiModelProvider {
                 let mut messages = context_messages.to_vec();
                 let assistant_output = output.as_str().map_or_else(|| output.to_string(), str::to_string);
 
+                if request.is_context_compaction() {
+                    return Ok(ModelResponse {
+                        output,
+                        context: CerseiAgentContext::from_compaction_summary(assistant_output).into_value(),
+                    });
+                }
+
                 messages.push(Message::assistant(assistant_output));
 
                 Ok(ModelResponse {
@@ -428,6 +442,16 @@ impl CerseiModelProvider {
                 message: format!("agent finalized with failure: {reason}"),
             }),
         }
+    }
+}
+
+trait ModelRequestCompactionExt {
+    fn is_context_compaction(&self) -> bool;
+}
+
+impl ModelRequestCompactionExt for ModelRequest {
+    fn is_context_compaction(&self) -> bool {
+        self.agent_name.ends_with(CONTEXT_COMPACTION_AGENT_SUFFIX)
     }
 }
 

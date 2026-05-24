@@ -194,6 +194,10 @@ pub enum ValidationIssue {
         agent_name: String,
         property_name: String,
     },
+    UnsupportedAgentContextProperty {
+        agent_name: String,
+        property_name: String,
+    },
     InvalidInferenceSettingValueType {
         agent_name: String,
         inference_setting: InferenceSetting,
@@ -325,6 +329,7 @@ impl ValidationIssue {
             Self::DuplicateSingletonDeclaration { .. } => "duplicate_singleton_declaration",
             Self::DuplicateProperty { .. } => "duplicate_property",
             Self::UnknownAgentProperty { .. } => "unknown_agent_property",
+            Self::UnsupportedAgentContextProperty { .. } => "unsupported_agent_context_property",
             Self::InvalidInferenceSettingValueType { .. } => "invalid_inference_setting_value_type",
             Self::InvalidModelExpression { .. } => "invalid_model_expression",
             Self::UnknownProviderInModel { .. } => "unknown_provider_in_model",
@@ -418,6 +423,9 @@ impl ValidationIssue {
             }
             Self::UnknownAgentProperty { agent_name, property_name } => {
                 format!("Agent `{agent_name}` declares unsupported property `{property_name}`.")
+            }
+            Self::UnsupportedAgentContextProperty { agent_name, property_name } => {
+                format!("Agent `{agent_name}` compact context block cannot declare `{property_name}`.")
             }
             Self::InvalidInferenceSettingValueType {
                 agent_name,
@@ -575,6 +583,10 @@ impl ValidationIssue {
                 agent_name: _,
                 property_name,
             } => Some(Self::unknown_agent_property_help(property_name)),
+            Self::UnsupportedAgentContextProperty {
+                agent_name: _,
+                property_name: _,
+            } => Some("Use only `model` and `instruction` inside a compact context block.".to_string()),
             Self::InvalidProviderName { .. } => Some("Rename the provider using lowercase snake_case, such as `openai_cloud`.".to_string()),
             Self::InvalidModelName { .. } => Some("Rename the model using lowercase snake_case, such as `fast`.".to_string()),
             Self::UnknownProviderDriver { .. }
@@ -935,6 +947,10 @@ impl From<&ValidationIssue> for DiagnosticCode {
                 agent_name: _,
                 property_name: _,
             } => Self::UnknownAgentProperty,
+            ValidationIssue::UnsupportedAgentContextProperty {
+                agent_name: _,
+                property_name: _,
+            } => Self::UnsupportedAgentContextProperty,
             ValidationIssue::InvalidInferenceSettingValueType {
                 agent_name: _,
                 inference_setting: _,

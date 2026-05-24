@@ -65,7 +65,7 @@ export interface WorkflowExecutionGraphNode {
   loop_info: WorkflowExecutionGraphLoopInfo | null;
 }
 
-export type WorkflowExecutionGraphNodeKind = 'provider' | 'model' | 'mcp' | 'input' | 'dynamic' | 'agent' | 'output';
+export type WorkflowExecutionGraphNodeKind = 'provider' | 'model' | 'mcp' | 'input' | 'dynamic' | 'compact' | 'agent' | 'output';
 
 export interface WorkflowExecutionGraphDetail {
   name: string;
