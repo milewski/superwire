@@ -35,5 +35,5 @@ sha2 = "0.11.0"
 cersei-provider = "0.1.9"
 cersei-types = "0.1.9"
 
-[patch."https://github.com/pacifio/cersei"]
+[patch.crates-io]
 cersei-provider = { path = "vendor/cersei-provider" }

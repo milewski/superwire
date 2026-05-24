@@ -76,13 +76,20 @@ async fn plucks_array_fields_for_assets_and_for_loop_iterables() {
     );
 }
 
-fn latest_user_content_parts(messages: &[Value]) -> &[Value] {
-    messages
+fn latest_user_content_parts(messages: &[Value]) -> Vec<Value> {
+    let content = messages
         .iter()
         .rev()
         .find(|message| message.get("role").and_then(Value::as_str) == Some("user"))
         .and_then(|message| message.get("content"))
-        .and_then(Value::as_array)
-        .map(Vec::as_slice)
-        .expect("latest user message should use content parts")
+        .expect("latest user message should include content");
+
+    if let Some(content_parts) = content.as_array() {
+        return content_parts.clone();
+    }
+
+    content
+        .as_str()
+        .map(|text| vec![json!({ "type": "text", "text": text })])
+        .expect("latest user message should use text or content parts")
 }

@@ -8,7 +8,7 @@ repository = "https://github.com/pacifio/cersei"
 description = "Provider trait and built-in LLM providers for the Cersei SDK"
 
 [dependencies]
-cersei-types = { git = "https://github.com/pacifio/cersei", rev = "ab37ead06aaa72419e9bae757ac886fc68091877", package = "cersei-types" }
+cersei-types = "0.1.9"
 async-trait = "0.1"
 tokio = { version = "1.44", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls", "rustls-tls-webpki-roots"], default-features = false }
