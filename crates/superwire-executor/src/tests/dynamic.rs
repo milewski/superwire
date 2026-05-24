@@ -1,5 +1,4 @@
 use super::fixtures;
-use crate::api::ExecutionOptions;
 use crate::service::ExecutorService;
 use crate::tests::support::{request_with_input, TestModelProvider, TrackingModelProvider};
 use serde_json::{json, Value};
@@ -8,6 +7,7 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use superwire_macros::workflow_source;
+use superwire_protocol::api::ExecutionOptions;
 
 #[tokio::test]
 async fn dynamic_values_are_computed_and_used() {

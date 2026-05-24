@@ -1,4 +1,3 @@
-use crate::event::{ExecutorEvent, McpCallEventDetails};
 use crate::model::provider::ModelProvider;
 use crate::model::types::{
     FinalizeCallKind, ModelAsset, ModelAssetSource, ModelPromptContent, ModelRequest, ModelResponse, ModelSchemaCache, ModelToolDefinition,
@@ -15,6 +14,7 @@ use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
 use superwire_mcp::{normalize_mcp_tool_result, render_mcp_prompt_text_result, render_mcp_resource_text_result, McpServerConfig};
+use superwire_protocol::event::{ExecutorEvent, McpCallEventDetails};
 use superwire_semantic::support::provider::{ProviderApiFormat, ProviderConfig, ProviderDriver};
 
 const MAX_TOOL_CALL_ROUNDS: usize = 8;

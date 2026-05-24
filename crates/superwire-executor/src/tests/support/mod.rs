@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-use crate::api::{ExecutionOptions, ExecutionRequest};
 use crate::model::{ModelProvider, ModelRequest, ModelResponse};
 use crate::runtime::ExecutorError;
 use crate::service::ExecutorService;
@@ -10,6 +9,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use superwire_protocol::api::{ExecutionOptions, ExecutionRequest};
 
 // ---------------------------------------------------------------------------
 // Mock providers

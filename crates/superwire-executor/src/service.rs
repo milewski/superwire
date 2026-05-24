@@ -1,8 +1,3 @@
-use crate::api::{
-    CacheInvalidationResponse, ExecutionRequest, ExecutionResponse, FormatRequest, FormatResponse, GraphRequest, GraphResponse,
-    ValidationRequest, ValidationResponse,
-};
-use crate::event::ExecutorEvent;
 use crate::model::{CerseiModelProvider, ModelProvider};
 use crate::runtime::cache::{
     AgentCacheConfig, AgentCacheDriver, AgentCacheOptions, AgentCacheSession, AgentCacheStore, DEFAULT_AGENT_CACHE_TIME_TO_LIVE,
@@ -15,6 +10,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::time::Instant;
 use superwire_dsl::format_workflow_source;
+use superwire_protocol::api::{
+    CacheInvalidationResponse, ExecutionRequest, ExecutionResponse, FormatRequest, FormatResponse, GraphRequest, GraphResponse,
+    ValidationRequest, ValidationResponse,
+};
+use superwire_protocol::event::ExecutorEvent;
 use tokio::sync::mpsc;
 use tokio::task::AbortHandle;
 
@@ -564,7 +564,7 @@ where
     let mcp_imports = executor
         .mcp_imports()
         .iter()
-        .map(|import| crate::event::PlannedMcpImportEvent {
+        .map(|import| superwire_protocol::event::PlannedMcpImportEvent {
             name: import.name.clone(),
             kind: match import.kind {
                 superwire_semantic::PlannedMcpImportKind::Prompt => "prompt".to_string(),

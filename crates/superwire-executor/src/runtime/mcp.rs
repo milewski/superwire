@@ -1,10 +1,10 @@
 use super::{ExecutorError, ToolCallExecutionContext, WorkflowExecutor};
-use crate::event::{ExecutorEvent, McpCallEventDetails};
 use crate::model::ToolCallTracker;
 use serde_json::Value;
 use std::time::Instant;
 use superwire_dsl::{McpCall, McpCallOperation, McpImportBindingEvaluationKind, McpImportBindings, ObjectField};
 use superwire_mcp::{render_mcp_prompt_result, render_mcp_resource_result, McpServerConfig};
+use superwire_protocol::event::{ExecutorEvent, McpCallEventDetails};
 use superwire_semantic::support::expression::EvaluationContext;
 use tokio::sync::mpsc;
 

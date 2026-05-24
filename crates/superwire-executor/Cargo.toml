@@ -9,7 +9,6 @@ workspace = true
 [dependencies]
 async-trait = "0.1"
 axum = { version = "0.8", features = ["ws"] }
-base64 = "0.22"
 cersei-provider = { workspace = true }
 cersei-types = { workspace = true }
 clap = { workspace = true }
@@ -26,6 +25,7 @@ superwire-core = { path = "../superwire-core" }
 superwire-dsl = { path = "../superwire-dsl" }
 superwire-lsp = { path = "../superwire-lsp" }
 superwire-mcp = { path = "../superwire-mcp" }
+superwire-protocol = { path = "../superwire-protocol" }
 superwire-semantic = { path = "../superwire-semantic" }
 thiserror = { workspace = true }
 tokio = { workspace = true }
@@ -34,6 +34,7 @@ tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["fs"] }
 
 [dev-dependencies]
+base64 = "0.22"
 schemars = { workspace = true }
 superwire-macros = { path = "../superwire-macros" }
 superwire-test-support = { path = "../superwire-test-support" }

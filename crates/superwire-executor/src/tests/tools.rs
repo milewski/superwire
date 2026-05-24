@@ -1,6 +1,4 @@
 use super::fixtures;
-use crate::api::ValidationRequest;
-use crate::event::ExecutorEventKind;
 use crate::model::{ModelToolSource, ToolCallLimitScope};
 use crate::service::ExecutorService;
 use crate::tests::support::{request, TrackingModelProvider};
@@ -11,6 +9,8 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use superwire_macros::workflow_source;
+use superwire_protocol::api::ValidationRequest;
+use superwire_protocol::event::ExecutorEventKind;
 
 #[tokio::test]
 async fn agent_tool_definitions_are_passed_to_model_provider() {
@@ -590,7 +590,7 @@ fn array_schema(item_schema: Value) -> Value {
     })
 }
 
-fn request_with_input(fixture: &str, input: serde_json::Value) -> crate::api::ExecutionRequest {
+fn request_with_input(fixture: &str, input: serde_json::Value) -> superwire_protocol::api::ExecutionRequest {
     let mut execution_request = request(fixture);
     execution_request.input = input;
 

@@ -1,10 +1,10 @@
 use super::{ExecutorError, ToolCallExecutionContext, WorkflowExecutor};
-use crate::event::ExecutorEvent;
 use crate::model::{ModelSchema, ModelToolDefinition, ToolCallTracker};
 use crate::runtime::state::RuntimeState;
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 use superwire_dsl::{Expression, TypeExpression};
+use superwire_protocol::event::ExecutorEvent;
 use superwire_semantic::support::expression::{evaluate_expression, EvaluationContext};
 use superwire_semantic::support::types::validate_value_against_type;
 use superwire_semantic::support::types::WorkflowType;

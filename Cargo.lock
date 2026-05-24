@@ -2517,6 +2517,7 @@ dependencies = [
  "superwire-lsp",
  "superwire-macros",
  "superwire-mcp",
+ "superwire-protocol",
  "superwire-semantic",
  "superwire-test-support",
  "thiserror 2.0.18",
@@ -2567,6 +2568,16 @@ dependencies = [
  "superwire-types",
  "thiserror 2.0.18",
  "ureq",
+]
+
+[[package]]
+name = "superwire-protocol"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "serde",
+ "serde_json",
+ "superwire-semantic",
 ]
 
 [[package]]

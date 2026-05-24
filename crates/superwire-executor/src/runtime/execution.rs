@@ -2,13 +2,13 @@ use super::{
     AgentExecutionContext, AgentRunContext, ExecutorError, RuntimeConcurrencyLimiter, RuntimeValidationContext, ToolCallExecutionContext,
     WorkflowExecutor,
 };
-use crate::event::ExecutorEvent;
 use crate::model::{ModelProvider, ToolCallTracker};
 use crate::runtime::cache::AgentCacheOptions;
 use crate::runtime::state::RuntimeState;
 use futures::future::try_join_all;
 use serde_json::Value;
 use superwire_dsl::Declaration;
+use superwire_protocol::event::ExecutorEvent;
 use tokio::sync::mpsc;
 
 impl WorkflowExecutor {

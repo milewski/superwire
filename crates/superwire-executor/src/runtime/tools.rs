@@ -1,10 +1,10 @@
 use super::{ExecutorError, ToolCallExecutionContext, WorkflowExecutor};
-use crate::event::{ExecutorEvent, McpCallEventDetails};
 use crate::model::{ModelSchema, ModelToolDefinition, ModelToolSource, ToolCallLimitScope};
 use serde_json::{Map, Value};
 use std::time::Instant;
 use superwire_dsl::{AgentExpressionPropertyName, Declaration, Expression, ObjectField, ReferenceKeyword, ToolCall, ToolSource, Workflow};
 use superwire_mcp::{normalize_mcp_tool_result, McpServerConfig};
+use superwire_protocol::event::{ExecutorEvent, McpCallEventDetails};
 use superwire_semantic::support::expression::{evaluate_expression, EvaluationContext};
 use superwire_semantic::support::types::WorkflowType;
 use superwire_semantic::{PlannedAgent, TypedToolIr};

@@ -1,5 +1,3 @@
-pub mod api;
-pub mod event;
 pub mod model;
 pub mod runtime;
 pub mod server;
@@ -12,11 +10,6 @@ mod test_macros;
 #[cfg(test)]
 mod tests;
 
-pub use api::{
-    CacheInvalidationRequest, CacheInvalidationResponse, ExecutionOptions, ExecutionRequest, ExecutionResponse, FormatRequest,
-    FormatResponse, GraphRequest, GraphResponse, ValidationRequest, ValidationResponse,
-};
-pub use event::{ExecutorEvent, ExecutorEventKind};
 pub use model::{CerseiModelProvider, ModelRequest, ModelResponse};
 pub use runtime::{
     AgentCacheConfig, AgentCacheDriver, AgentCacheOptions, AgentCacheSession, AgentCacheTimeToLive, ExecutorError, RedisAgentCacheConfig,

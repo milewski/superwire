@@ -42,14 +42,14 @@ impl McpCallEventDetails {
 
     #[must_use]
     fn into_event_data(self) -> serde_json::Map<String, Value> {
-        let params = self.arguments.clone();
+        let legacy_parameters = self.arguments.clone();
         let mut event_data = serde_json::Map::from_iter([
             ("operation".to_string(), Value::String(self.operation)),
             ("target_name".to_string(), Value::String(self.target_name)),
             ("server_name".to_string(), Value::String(self.server_name)),
             ("item_name".to_string(), Value::String(self.item_name)),
             ("arguments".to_string(), self.arguments),
-            ("params".to_string(), params),
+            ("params".to_string(), legacy_parameters),
         ]);
 
         if let Some(input_schema) = self.input_schema {
@@ -266,11 +266,11 @@ impl ExecutorEvent {
 
     #[must_use]
     pub fn mcp_tool_validation_started(agent_name: String, tool_name: String, arguments: Value, input_schema: Value) -> Self {
-        let params = arguments.clone();
+        let legacy_parameters = arguments.clone();
         let event_data = Value::Object(serde_json::Map::from_iter([
             ("tool_name".to_string(), Value::String(tool_name)),
             ("arguments".to_string(), arguments),
-            ("params".to_string(), params),
+            ("params".to_string(), legacy_parameters),
             ("input_schema".to_string(), input_schema),
         ]));
 
@@ -359,7 +359,7 @@ impl ExecutorEvent {
     }
 
     #[must_use]
-    pub(crate) fn current_timestamp_ms() -> u64 {
+    pub fn current_timestamp_ms() -> u64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -368,7 +368,8 @@ impl ExecutorEvent {
             .unwrap_or(u64::MAX)
     }
 
-    pub(crate) fn with_agent_name(mut self, agent_name: String) -> Self {
+    #[must_use]
+    pub fn with_agent_name(mut self, agent_name: String) -> Self {
         self.agent_name = Some(agent_name);
         self
     }

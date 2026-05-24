@@ -8,6 +8,7 @@ use base64::prelude::{Engine as _, BASE64_STANDARD};
 use serde_json::json;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use superwire_protocol::{ExecutionOptions, ExecutionRequest};
 use tower::util::ServiceExt;
 
 #[tokio::test]
@@ -21,12 +22,12 @@ async fn rejects_empty_workflow_source() {
 #[tokio::test]
 async fn rejects_request_with_both_source_encodings() {
     let service = support::service(vec![]);
-    let request = crate::ExecutionRequest {
+    let request = ExecutionRequest {
         workflow_source: Some(fixtures::MINIMUM.to_string()),
         workflow_source_base64: Some(BASE64_STANDARD.encode(fixtures::MINIMUM)),
         input: json!(null),
         secrets: json!(null),
-        options: crate::ExecutionOptions::default(),
+        options: ExecutionOptions::default(),
     };
     let error = service.execute(request).await.expect_err("ambiguous source should fail");
     assert!(error
@@ -37,12 +38,12 @@ async fn rejects_request_with_both_source_encodings() {
 #[tokio::test]
 async fn rejects_invalid_base64_source() {
     let service = support::service(vec![]);
-    let request = crate::ExecutionRequest {
+    let request = ExecutionRequest {
         workflow_source: None,
         workflow_source_base64: Some("not base64!".to_string()),
         input: json!(null),
         secrets: json!(null),
-        options: crate::ExecutionOptions::default(),
+        options: ExecutionOptions::default(),
     };
     let error = service.execute(request).await.expect_err("invalid base64 should fail");
     assert!(error.to_string().contains("workflow_source_base64 must be valid standard base64"));

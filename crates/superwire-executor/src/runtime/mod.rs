@@ -19,7 +19,6 @@ pub(in crate::runtime) use configuration::RuntimeValidationContext;
 pub use error::ExecutorError;
 pub(in crate::runtime) use schema::value_object;
 
-use crate::event::ExecutorEvent;
 use crate::model::ToolCallTracker;
 use crate::runtime::mcp::normalize_prompt;
 use crate::runtime::state::RuntimeState;
@@ -32,6 +31,7 @@ use superwire_dsl::{
     AgentProperty, Declaration, Expression, McpPromptImportDeclaration, McpResourceImportDeclaration, McpServerDeclaration, Workflow,
 };
 use superwire_mcp::McpClientPool;
+use superwire_protocol::event::ExecutorEvent;
 use superwire_semantic::support::expression::{evaluate_expression, EvaluationContext};
 use superwire_semantic::{ExecutionPlan, WorkflowExecutionGraph};
 use tokio::sync::{mpsc, Semaphore};

@@ -1,11 +1,11 @@
 use super::{AgentExecutionContext, AgentRunContext, CompletedAgentExecution, ExecutorError, WorkflowExecutor};
-use crate::event::ExecutorEvent;
 use crate::model::ModelProvider;
 use crate::runtime::state::RuntimeState;
 use futures::stream::{FuturesUnordered, StreamExt};
 use serde_json::{Map, Value};
 use std::time::Instant;
 use superwire_dsl::AgentForLoopPattern;
+use superwire_protocol::event::ExecutorEvent;
 use superwire_semantic::support::expression::evaluate_expression;
 use superwire_semantic::support::types::value_kind_name;
 use superwire_semantic::PlannedAgent;

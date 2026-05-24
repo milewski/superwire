@@ -1,5 +1,4 @@
 use super::{AgentExecutionContext, CompletedAgentExecution, ExecutorError, ToolCallExecutionContext, WorkflowExecutor};
-use crate::event::ExecutorEvent;
 use crate::model::{
     ModelAsset, ModelPromptContent, ModelProvider, ModelRequest, ModelSchema, ModelSchemaCache, ModelToolDefinition, ToolCallTracker,
 };
@@ -13,6 +12,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
 use superwire_dsl::{AgentExpressionPropertyName, AgentProperty, Expression, ModelAssetKind};
 use superwire_mcp::McpClientPool;
+use superwire_protocol::event::ExecutorEvent;
 use superwire_semantic::support::expression::{evaluate_expression, EvaluationContext};
 use superwire_semantic::support::provider::ProviderConfig;
 use superwire_semantic::{PlannedAgent, WorkflowSemanticError};

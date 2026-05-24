@@ -1,10 +1,10 @@
-use crate::api::ExecutionOptions;
-use crate::event::ExecutorEventKind;
 use crate::service::ExecutorService;
 use crate::tests::support::{request_with_input, ConcurrentTrackingModelProvider, ScriptedModelProvider, TestModelProvider};
 use serde_json::{json, Value};
 use std::time::Duration;
 use superwire_macros::workflow_source;
+use superwire_protocol::api::ExecutionOptions;
+use superwire_protocol::event::ExecutorEventKind;
 
 #[tokio::test]
 async fn for_loop_over_literal_array() {

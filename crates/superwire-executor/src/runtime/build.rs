@@ -1,11 +1,11 @@
 use super::{value_object, ExecutorError, WorkflowExecutor, WorkflowExecutorLookups};
-use crate::event::ExecutorEvent;
 use crate::runtime::tools::StartupMcpToolValidationContext;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Instant;
 use superwire_dsl::{parse_workflow, validate_workflow, Declaration, Workflow};
 use superwire_mcp::{HttpMcpClientFactory, McpClientFactory, McpClientPool, McpLock, McpServerConfig};
+use superwire_protocol::event::ExecutorEvent;
 use superwire_semantic::support::expression::EvaluationContext;
 use superwire_semantic::{build_dynamic_typed_workflow_ir, build_execution_plan, ExecutionPlan, WorkflowSemanticError};
 use tokio::sync::mpsc;

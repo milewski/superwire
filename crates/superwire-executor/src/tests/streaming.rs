@@ -1,6 +1,5 @@
 use super::fixtures;
 use super::support;
-use crate::event::ExecutorEventKind;
 use crate::service::ExecutorService;
 use crate::tests::support::{request_with_input, ConcurrentTrackingModelProvider, TestModelProvider, TrackingModelProvider};
 use serde_json::{json, Value};
@@ -9,6 +8,7 @@ use std::net::{TcpListener, TcpStream};
 use std::thread;
 use std::time::Duration;
 use superwire_macros::workflow_source;
+use superwire_protocol::event::ExecutorEventKind;
 
 #[tokio::test]
 async fn lifecycle_events_are_emitted_in_order() {
