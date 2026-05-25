@@ -1413,12 +1413,6 @@ textarea {
   background: color-mix(in srgb, var(--graph-agent) 8%, transparent);
 }
 
-.graph-node[data-running="true"] .graph-node__icon {
-  border-color: color-mix(in srgb, var(--graph-agent) 42%, var(--graph-line));
-  background: color-mix(in srgb, var(--graph-agent) 11%, transparent);
-  box-shadow: inset 3px 0 0 var(--graph-agent);
-}
-
 .graph-node[data-collapsed="true"] {
   @apply w-[260px];
 }
@@ -2116,6 +2110,7 @@ textarea {
 
 .graph-node[data-running="true"] {
   border-color: color-mix(in srgb, var(--graph-agent) 46%, var(--graph-line));
+  animation: graph-node-running-pulse 1.8s ease-in-out infinite;
 }
 
 .graph-node__header {
@@ -2512,6 +2507,22 @@ textarea {
   }
 }
 
+@keyframes graph-node-running-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--graph-agent) 0%, transparent);
+  }
+
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--graph-agent) 18%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .graph-node[data-running="true"] {
+    animation: none;
+  }
+}
+
 .graph-node__section {
   margin: 0.72rem 1rem 0;
   min-width: calc(100% - 2rem);
@@ -2612,6 +2623,11 @@ textarea {
 
 .graph-node[data-density="compact"] .graph-node__header {
   padding: 0.78rem 0.8rem 0.58rem;
+}
+
+.graph-node[data-density="compact"] .graph-node__title-block {
+  display: flex;
+  align-items: center;
 }
 
 .graph-node[data-density="compact"] .graph-node__meta-row,

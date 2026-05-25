@@ -349,6 +349,7 @@ function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
   const visiblyCollapsed = config.collapseAll || collapsed;
   const status = nodeStatus(node, activeRunCount, outputEntries, failureEntry);
   const visibleBindings = node.bindings.filter((binding) => binding.name !== 'instruction' && binding.name !== 'model');
+  const showSubtitle = config.density === 'comfortable';
   const localTools = node.tools.filter((tool) => tool.kind === 'local_tool');
   const mcpTools = node.tools.filter(isMcpTool);
   const inputsCollapsible = node.kind !== 'input';
@@ -372,7 +373,7 @@ function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
           <span className="graph-node__icon">{nodeIcon(node)}</span>
           <span className="graph-node__title-block">
             <strong className="graph-node__title">{node.label}</strong>
-            <small className="graph-node__subtitle">{nodeSubtitle(node)}</small>
+            {showSubtitle ? <small className="graph-node__subtitle">{nodeSubtitle(node)}</small> : null}
           </span>
         </div>
         <NodeStatusBadge status={status} activeRunCount={activeRunCount} outputEntries={outputEntries} />
@@ -441,7 +442,7 @@ function NodeStatusBadge({ status, activeRunCount, outputEntries }: { status: Gr
 }
 
 function GraphExecutionStrip({ node, runState, activeRunCount, plannedRunCount, executionSlots, outputEntries, failureEntry, onOpenOutput }: { node: WorkflowExecutionGraphNode; runState: RunState; activeRunCount: number; plannedRunCount: number; executionSlots: GraphExecutionSlotStatus[]; outputEntries: GraphOutputEntry[]; failureEntry: GraphFailureEntry | null; onOpenOutput: (outputIndex: number) => void }) {
-  if (node.kind !== 'agent') {
+  if (node.kind !== 'agent' || !node.loop_info) {
     return null;
   }
 
@@ -449,6 +450,11 @@ function GraphExecutionStrip({ node, runState, activeRunCount, plannedRunCount, 
   const fallbackSlotCount = graphExecutionSlotCount(node, completedCount, activeRunCount, plannedRunCount, failureEntry !== null);
   const fallbackSlots = Array.from({ length: fallbackSlotCount }).map((_, slotIndex) => executionSlotStatus(slotIndex, completedCount, activeRunCount, failureEntry !== null, runState));
   const slots = executionSlots.length > 0 ? executionSlots : fallbackSlots;
+
+  if (slots.length <= 1) {
+    return null;
+  }
+
   const executionSummary = graphExecutionSummary(slots);
 
   return (
