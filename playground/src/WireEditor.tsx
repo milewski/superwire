@@ -18,6 +18,7 @@ interface WireEditorProps {
   secretsJson: string;
   jumpTarget: EditorJumpTarget | null;
   onChange: (value: string, cursorOffset: number) => void;
+  onBlur: () => void;
   onDefinitionJump: (position: LspPosition) => void;
 }
 
@@ -284,23 +285,25 @@ export default function WireEditor({
   secretsJson,
   jumpTarget,
   onChange,
+  onBlur,
   onDefinitionJump,
 }: WireEditorProps) {
   const editorElementRef = useRef<HTMLDivElement | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
   const languageClientRef = useRef<WebSocketLanguageClient | null>(null);
   const onChangeRef = useRef(onChange);
+  const onBlurRef = useRef(onBlur);
   const onDefinitionJumpRef = useRef(onDefinitionJump);
   const fullValueRef = useRef(fullValue);
   const documentOffsetRef = useRef(documentOffset);
   const visibleValueRef = useRef(value);
   const documentVersionRef = useRef(1);
-  const didSaveDebounceTimeoutRef = useRef<number | null>(null);
   const diagnosticsRef = useRef<LspDiagnostic[]>([]);
   const [editorHeight, setEditorHeight] = useState(260);
   const documentUri = `file:///playground/${documentId}.wire`;
 
   onChangeRef.current = onChange;
+  onBlurRef.current = onBlur;
   onDefinitionJumpRef.current = onDefinitionJump;
   fullValueRef.current = fullValue;
   documentOffsetRef.current = documentOffset;
@@ -338,12 +341,12 @@ export default function WireEditor({
         documentUri,
         languageClient,
         onChangeRef,
+        onBlurRef,
         onDefinitionJumpRef,
         fullValueRef,
         documentOffsetRef,
         visibleValueRef,
         documentVersionRef,
-        didSaveDebounceTimeoutRef,
         diagnosticsRef,
         setEditorHeight,
       ),
@@ -372,10 +375,6 @@ export default function WireEditor({
 
     return () => {
       disposed = true;
-
-      if (didSaveDebounceTimeoutRef.current !== null) {
-        window.clearTimeout(didSaveDebounceTimeoutRef.current);
-      }
 
       languageClient.notifyIfOpen('textDocument/didClose', { textDocument: { uri: documentUri } });
       languageClient.close();
@@ -418,20 +417,6 @@ export default function WireEditor({
 
     updateEditorHeight(editorView, setEditorHeight);
   }, [value]);
-
-  useEffect(() => {
-    const languageClient = languageClientRef.current;
-
-    if (!languageClient) {
-      return;
-    }
-
-    documentVersionRef.current += 1;
-    languageClient.notifyIfOpen('textDocument/didChange', {
-      textDocument: { uri: documentUri, version: documentVersionRef.current },
-      contentChanges: [{ text: fullValue }],
-    });
-  }, [documentUri, fullValue]);
 
   useEffect(() => {
     const editorView = editorViewRef.current;
@@ -481,12 +466,12 @@ function createEditorState(
   documentUri: string,
   languageClient: WebSocketLanguageClient,
   onChangeRef: React.MutableRefObject<(value: string, cursorOffset: number) => void>,
+  onBlurRef: React.MutableRefObject<() => void>,
   onDefinitionJumpRef: React.MutableRefObject<(position: LspPosition) => void>,
   fullValueRef: React.MutableRefObject<string>,
   documentOffsetRef: React.MutableRefObject<number>,
   visibleValueRef: React.MutableRefObject<string>,
   documentVersionRef: React.MutableRefObject<number>,
-  didSaveDebounceTimeoutRef: React.MutableRefObject<number | null>,
   diagnosticsRef: React.MutableRefObject<LspDiagnostic[]>,
   setEditorHeight: (height: number) => void,
 ) {
@@ -516,6 +501,15 @@ function createEditorState(
       EditorView.lineWrapping,
       EditorView.domEventHandlers({
         mousedown: (event, editorView) => handleDefinitionMouseDown(event, editorView, documentUri, languageClient, fullValueRef, documentOffsetRef, onDefinitionJumpRef),
+        blur: () => {
+          documentVersionRef.current += 1;
+          languageClient.notifyIfOpen('textDocument/didChange', {
+            textDocument: { uri: documentUri, version: documentVersionRef.current },
+            contentChanges: [{ text: fullValueRef.current }],
+          });
+
+          onBlurRef.current();
+        },
       }),
       EditorView.updateListener.of((update) => {
         if (!update.docChanged) {
@@ -529,22 +523,6 @@ function createEditorState(
         fullValueRef.current = nextFullValue;
         onChangeRef.current(nextValue, cursorOffset);
         updateEditorHeight(update.view, setEditorHeight);
-        documentVersionRef.current += 1;
-
-        void languageClient.notify('textDocument/didChange', {
-          textDocument: { uri: documentUri, version: documentVersionRef.current },
-          contentChanges: [{ text: nextFullValue }],
-        });
-
-        if (didSaveDebounceTimeoutRef.current !== null) {
-          window.clearTimeout(didSaveDebounceTimeoutRef.current);
-        }
-
-        didSaveDebounceTimeoutRef.current = window.setTimeout(() => {
-          void languageClient.notify('textDocument/didSave', {
-            textDocument: { uri: documentUri },
-          });
-        }, 700);
       }),
     ],
   });

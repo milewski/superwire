@@ -73,7 +73,6 @@ export default function App() {
   const [playgroundControlsSentinelElement, setPlaygroundControlsSentinelElement] = useState<HTMLDivElement | null>(null);
   const [playgroundControlsStuck, setPlaygroundControlsStuck] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
-  const validationDebounceTimeoutRef = useRef<number | null>(null);
   const graphDebounceTimeoutRef = useRef<number | null>(null);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
   const canRun = activeTab?.runState !== 'running';
@@ -156,30 +155,6 @@ export default function App() {
       window.removeEventListener('resize', requestPlaygroundControlsStuckUpdate);
     };
   }, [playgroundControlsSentinelElement]);
-
-  useEffect(() => {
-    if (!activeTab) {
-      return;
-    }
-
-    if (activeTab.runState === 'running') {
-      return;
-    }
-
-    if (validationDebounceTimeoutRef.current !== null) {
-      window.clearTimeout(validationDebounceTimeoutRef.current);
-    }
-
-    validationDebounceTimeoutRef.current = window.setTimeout(() => {
-      void validateWorkflowByTabId(activeTab.id);
-    }, 700);
-
-    return () => {
-      if (validationDebounceTimeoutRef.current !== null) {
-        window.clearTimeout(validationDebounceTimeoutRef.current);
-      }
-    };
-  }, [activeTab?.id, activeTab?.source]);
 
   useEffect(() => {
     if (!activeTab || activeView !== 'graph') {
@@ -593,6 +568,14 @@ export default function App() {
     if (valid) {
       setToastMessage('Workflow is valid.');
     }
+  }
+
+  function validateActiveWorkflowOnBlur() {
+    if (!activeTab || activeTab.runState === 'running') {
+      return;
+    }
+
+    void validateWorkflowByTabId(activeTab.id);
   }
 
   async function validateWorkflowByTabId(tabId: string) {
@@ -1188,6 +1171,7 @@ export default function App() {
                                   secretsJson={activeTab.secretsJson}
                                   jumpTarget={activeEditorJumpTarget}
                                   onChange={updateActiveCodeFragmentSource}
+                                  onBlur={validateActiveWorkflowOnBlur}
                                   onDefinitionJump={jumpToFullDocumentPosition}
                                 />
                               ) : null}
