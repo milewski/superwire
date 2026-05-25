@@ -1,4 +1,4 @@
-use super::{ExecutorError, ToolCallExecutionContext, WorkflowExecutor};
+use super::{AgentCacheOptions, ExecutorError, ToolCallExecutionContext, WorkflowExecutor};
 use crate::model::{ModelSchema, ModelToolDefinition, ToolCallTracker};
 use crate::runtime::state::RuntimeState;
 use serde_json::{Map, Value};
@@ -327,6 +327,7 @@ impl WorkflowExecutor {
         event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
         tool_call_tracker: &ToolCallTracker,
         model_provider: &ModelProviderType,
+        cache_options: Option<&AgentCacheOptions>,
     ) -> Result<Value, ExecutorError>
     where
         ModelProviderType: crate::model::ModelProvider,
@@ -337,7 +338,13 @@ impl WorkflowExecutor {
 
         for output_field in &self.execution_plan.output_declaration.fields {
             let output_value = self
-                .evaluate_runtime_expression_with_model(&output_field.value, tool_call_execution_context, "workflow output", model_provider)
+                .evaluate_runtime_expression_with_model(
+                    &output_field.value,
+                    tool_call_execution_context,
+                    "workflow output",
+                    model_provider,
+                    cache_options,
+                )
                 .await?;
             output_fields.insert(output_field.name.clone(), output_value);
         }

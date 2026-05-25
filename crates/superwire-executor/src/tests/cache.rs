@@ -97,3 +97,58 @@ async fn service_separates_cache_by_session() {
     assert_eq!(second_response.output, json!({ "greeting": "second" }));
     assert_eq!(model_provider.recorded_count(), 2);
 }
+
+#[tokio::test]
+async fn service_reuses_cached_context_compaction_for_same_session() {
+    let model_provider = TrackingModelProvider::new(vec![
+        json!({ "value": "research" }),
+        json!("compact summary"),
+        json!({ "value": "summary" }),
+        json!("unexpected compaction rerun"),
+    ]);
+    let service = ExecutorService::new(model_provider.clone());
+    let cache_session = AgentCacheSession::new("browser-a");
+    let first_response = service
+        .execute_for_session(request(fixtures::AGENT_CONTEXT_COMPACTION), cache_session.clone())
+        .await
+        .expect("first execution should succeed");
+    let second_response = service
+        .execute_for_session(request(fixtures::AGENT_CONTEXT_COMPACTION), cache_session)
+        .await
+        .expect("second execution should succeed");
+    let recorded_agent_names = model_provider.recorded_agent_names();
+
+    assert_eq!(first_response.output, json!({ "result": "summary" }));
+    assert_eq!(second_response.output, json!({ "result": "summary" }));
+    assert_eq!(recorded_agent_names, vec!["research", "summarize__context_compaction", "summarize"]);
+}
+
+#[tokio::test]
+async fn service_reuses_cached_output_context_compaction_for_same_session() {
+    let model_provider = TrackingModelProvider::new(vec![
+        json!({ "result": "cat joke" }),
+        json!("compact joke context"),
+        json!("unexpected output compaction rerun"),
+    ]);
+    let service = ExecutorService::new(model_provider.clone());
+    let cache_session = AgentCacheSession::new("browser-a");
+    let first_response = service
+        .execute_for_session(request(fixtures::AGENT_CONTEXT_EXPRESSION_COMPACTION), cache_session.clone())
+        .await
+        .expect("first execution should succeed");
+    let second_response = service
+        .execute_for_session(request(fixtures::AGENT_CONTEXT_EXPRESSION_COMPACTION), cache_session)
+        .await
+        .expect("second execution should succeed");
+    let recorded_agent_names = model_provider.recorded_agent_names();
+
+    assert_eq!(
+        first_response.output,
+        json!({ "compacted": { "agent": "analyzer__context_compaction" } })
+    );
+    assert_eq!(
+        second_response.output,
+        json!({ "compacted": { "agent": "analyzer__context_compaction" } })
+    );
+    assert_eq!(recorded_agent_names, vec!["analyzer", "analyzer__context_compaction"]);
+}

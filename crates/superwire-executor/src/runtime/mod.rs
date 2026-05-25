@@ -357,12 +357,14 @@ impl WorkflowExecutor {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     pub(in crate::runtime) fn evaluate_runtime_expression_with_model<'a, ModelProviderType>(
         &'a self,
         expression: &'a Expression,
         tool_call_execution_context: ToolCallExecutionContext<'a>,
         context: &'a str,
         model_provider: &'a ModelProviderType,
+        cache_options: Option<&'a AgentCacheOptions>,
     ) -> BoxFuture<'a, Result<Value, ExecutorError>>
     where
         ModelProviderType: ModelProvider + 'a,
@@ -383,6 +385,7 @@ impl WorkflowExecutor {
                                         tool_call_execution_context,
                                         context,
                                         model_provider,
+                                        cache_options,
                                     )
                                     .await?;
                                 rendered_template.push_str(&normalize_prompt(&interpolation_value));
@@ -401,6 +404,7 @@ impl WorkflowExecutor {
                             tool_call_tracker: tool_call_execution_context.tool_call_tracker,
                             model_provider,
                             target_agent: None,
+                            cache_options,
                         },
                     )
                     .await
@@ -419,7 +423,13 @@ impl WorkflowExecutor {
                 )?),
                 Expression::NullFallback(null_fallback) => {
                     let value = self
-                        .evaluate_runtime_expression_with_model(&null_fallback.value, tool_call_execution_context, context, model_provider)
+                        .evaluate_runtime_expression_with_model(
+                            &null_fallback.value,
+                            tool_call_execution_context,
+                            context,
+                            model_provider,
+                            cache_options,
+                        )
                         .await?;
 
                     if value.is_null() {
@@ -429,6 +439,7 @@ impl WorkflowExecutor {
                                 tool_call_execution_context,
                                 context,
                                 model_provider,
+                                cache_options,
                             )
                             .await;
                     }
@@ -442,8 +453,14 @@ impl WorkflowExecutor {
 
                     for array_item in array_items {
                         evaluated_items.push(
-                            self.evaluate_runtime_expression_with_model(array_item, tool_call_execution_context, context, model_provider)
-                                .await?,
+                            self.evaluate_runtime_expression_with_model(
+                                array_item,
+                                tool_call_execution_context,
+                                context,
+                                model_provider,
+                                cache_options,
+                            )
+                            .await?,
                         );
                     }
 
@@ -459,6 +476,7 @@ impl WorkflowExecutor {
                                 tool_call_execution_context,
                                 context,
                                 model_provider,
+                                cache_options,
                             )
                             .await?;
                         evaluated_fields.insert(object_field.name.clone(), field_value);

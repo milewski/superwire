@@ -2,7 +2,7 @@ use super::{AgentExecutionContext, CompletedAgentExecution, ExecutorError, ToolC
 use crate::model::{
     ModelAsset, ModelPromptContent, ModelProvider, ModelRequest, ModelSchema, ModelSchemaCache, ModelToolDefinition, ToolCallTracker,
 };
-use crate::runtime::cache::{hash_serializable_value, AgentCacheKey, CachedAgentExecution};
+use crate::runtime::cache::{hash_serializable_value, AgentCacheKey, AgentCacheOptions, CachedAgentExecution};
 use crate::runtime::mcp::normalize_prompt;
 use crate::runtime::schema::{AgentOutputInjections, PlannedAgentSchemaExt};
 use crate::runtime::state::RuntimeState;
@@ -163,6 +163,153 @@ impl PreparedAgentRequest {
     }
 }
 
+struct PreparedCompactionRequest {
+    agent_name: String,
+    source_agent_name: Option<String>,
+    provider_config: ProviderConfig,
+    model_name: String,
+    inference: HashMap<String, Value>,
+    source_context: Value,
+    instruction: String,
+    output_schema: ModelSchema,
+    tool_definitions: Vec<ModelToolDefinition>,
+}
+
+impl PreparedCompactionRequest {
+    fn cache_key(&self, cache_options: Option<&AgentCacheOptions>) -> Result<Option<AgentCacheKey>, ExecutorError> {
+        let Some(cache_options) = cache_options else {
+            return Ok(None);
+        };
+
+        if !cache_options.is_enabled() {
+            return Ok(None);
+        }
+
+        let fingerprint = self.cache_fingerprint()?;
+        let agent_hash = hash_serializable_value(&fingerprint)?;
+
+        Ok(Some(AgentCacheKey::new(&cache_options.session, agent_hash)))
+    }
+
+    fn cache_fingerprint(&self) -> Result<PreparedCompactionRequestCacheFingerprint, ExecutorError> {
+        let mut schema_cache = ModelSchemaCache::new();
+        let provider = ProviderConfigCacheFingerprint {
+            driver: self.provider_config.driver.as_str().to_string(),
+            endpoint: self.provider_config.endpoint.clone(),
+            api_key: self.provider_config.api_key.clone(),
+        };
+        let inference = self
+            .inference
+            .iter()
+            .map(|(field_name, field_value)| (field_name.clone(), field_value.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let output_schema = self.output_schema.cache_fingerprint_value(&mut schema_cache);
+        let tools = self
+            .tool_definitions
+            .iter()
+            .map(|tool_definition| tool_definition.cache_fingerprint_value(&mut schema_cache))
+            .collect::<Vec<_>>();
+
+        Ok(PreparedCompactionRequestCacheFingerprint {
+            version: 1,
+            agent_name: self.agent_name.clone(),
+            source_agent_name: self.source_agent_name.clone(),
+            provider,
+            model_name: self.model_name.clone(),
+            inference,
+            source_context: self.source_context.clone(),
+            instruction: self.instruction.clone(),
+            output_schema,
+            tools,
+        })
+    }
+
+    async fn completed_context_from_cache(
+        &self,
+        cache_key: Option<&AgentCacheKey>,
+        cache_options: Option<&AgentCacheOptions>,
+        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+        compaction_started_at: Instant,
+    ) -> Result<Option<Value>, ExecutorError> {
+        let Some(cache_key) = cache_key else {
+            return Ok(None);
+        };
+        let Some(cache_options) = cache_options else {
+            return Ok(None);
+        };
+        let Some(cache_store) = &cache_options.store else {
+            return Ok(None);
+        };
+        let Some(cached_execution) = cache_store.get(cache_key)? else {
+            return Ok(None);
+        };
+
+        log::debug!(
+            "context compaction for agent `{}` cache hit: hash={}",
+            self.agent_name,
+            cache_key.agent_hash()
+        );
+
+        if let Some(event_sender) = event_sender {
+            let _ = event_sender
+                .send(ExecutorEvent::context_compaction_completed(
+                    self.agent_name.clone(),
+                    cached_execution.output,
+                    compaction_started_at.elapsed(),
+                ))
+                .await;
+        }
+
+        Ok(Some(cached_execution.context))
+    }
+
+    fn put_completed(
+        &self,
+        cache_key: Option<AgentCacheKey>,
+        cache_options: Option<&AgentCacheOptions>,
+        output: Value,
+        context: Value,
+    ) -> Result<(), ExecutorError> {
+        let Some(cache_key) = cache_key else {
+            return Ok(());
+        };
+        let Some(cache_options) = cache_options else {
+            return Ok(());
+        };
+        let Some(cache_store) = &cache_options.store else {
+            return Ok(());
+        };
+
+        cache_store.put(cache_key, CachedAgentExecution::new(output, context), cache_options.time_to_live)
+    }
+
+    fn to_model_request(
+        &self,
+        event_sender: Option<mpsc::Sender<ExecutorEvent>>,
+        mcp_pool: McpClientPool,
+        tool_call_tracker: ToolCallTracker,
+    ) -> ModelRequest {
+        ModelRequest {
+            agent_name: self.model_request_agent_name(),
+            provider_config: self.provider_config.clone(),
+            model_name: self.model_name.clone(),
+            inference: self.inference.clone(),
+            context: Some(self.source_context.clone()),
+            prompt: self.instruction.clone(),
+            prompt_content: vec![ModelPromptContent::text(self.instruction.clone())],
+            output_schema: self.output_schema.clone(),
+            tools: self.tool_definitions.clone(),
+            event_sender,
+            mcp_pool,
+            tool_call_tracker,
+        }
+    }
+
+    fn model_request_agent_name(&self) -> String {
+        format!("{}__context_compaction", self.agent_name)
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct PreparedAgentRequestCacheFingerprint {
     version: u8,
@@ -176,6 +323,20 @@ struct PreparedAgentRequestCacheFingerprint {
     supported_asset_kinds: Vec<&'static str>,
     output_schema: Value,
     output_injections: Value,
+    tools: Vec<Value>,
+}
+
+#[derive(Debug, Serialize)]
+struct PreparedCompactionRequestCacheFingerprint {
+    version: u8,
+    agent_name: String,
+    source_agent_name: Option<String>,
+    provider: ProviderConfigCacheFingerprint,
+    model_name: String,
+    inference: BTreeMap<String, Value>,
+    source_context: Value,
+    instruction: String,
+    output_schema: Value,
     tools: Vec<Value>,
 }
 
@@ -198,6 +359,7 @@ pub(in crate::runtime) struct AgentContextExpressionRequest<'a, ModelProviderTyp
     pub(in crate::runtime) tool_call_tracker: &'a ToolCallTracker,
     pub(in crate::runtime) model_provider: &'a ModelProviderType,
     pub(in crate::runtime) target_agent: Option<&'a PlannedAgent>,
+    pub(in crate::runtime) cache_options: Option<&'a AgentCacheOptions>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -440,6 +602,7 @@ impl WorkflowExecutor {
                 &format!("instruction for agent `{}`", planned_agent.name),
                 model_provider,
                 Some(planned_agent),
+                Some(&agent_execution_context.cache_options),
             )
             .await?;
         self.validate_model_asset_support(planned_agent, &supported_asset_kinds, &rendered_instruction)?;
@@ -533,6 +696,7 @@ impl WorkflowExecutor {
         context: &'a str,
         model_provider: &'a ModelProviderType,
         target_agent: Option<&'a PlannedAgent>,
+        cache_options: Option<&'a AgentCacheOptions>,
     ) -> BoxFuture<'a, Result<RenderedPrompt, ExecutorError>>
     where
         ModelProviderType: ModelProvider + 'a,
@@ -555,6 +719,7 @@ impl WorkflowExecutor {
                                         context,
                                         model_provider,
                                         target_agent,
+                                        cache_options,
                                     )
                                     .await?;
                                 rendered_prompt.extend(interpolation_prompt);
@@ -566,7 +731,13 @@ impl WorkflowExecutor {
                 }
                 Expression::Asset(_) => {
                     let value = self
-                        .evaluate_runtime_expression_with_model(expression, tool_call_execution_context, context, model_provider)
+                        .evaluate_runtime_expression_with_model(
+                            expression,
+                            tool_call_execution_context,
+                            context,
+                            model_provider,
+                            cache_options,
+                        )
                         .await?;
                     let Some(assets) = ModelAsset::all_from_value(&value) else {
                         return Err(ExecutorError::Other {
@@ -578,7 +749,13 @@ impl WorkflowExecutor {
                 }
                 Expression::Reference(_) => {
                     let value = self
-                        .evaluate_runtime_expression_with_model(expression, tool_call_execution_context, context, model_provider)
+                        .evaluate_runtime_expression_with_model(
+                            expression,
+                            tool_call_execution_context,
+                            context,
+                            model_provider,
+                            cache_options,
+                        )
                         .await?;
 
                     if let Some(assets) = ModelAsset::non_empty_all_from_value(&value) {
@@ -597,6 +774,7 @@ impl WorkflowExecutor {
                                 tool_call_tracker: tool_call_execution_context.tool_call_tracker,
                                 model_provider,
                                 target_agent,
+                                cache_options,
                             },
                         )
                         .await?;
@@ -605,7 +783,13 @@ impl WorkflowExecutor {
                 }
                 _ => {
                     let value = self
-                        .evaluate_runtime_expression_with_model(expression, tool_call_execution_context, context, model_provider)
+                        .evaluate_runtime_expression_with_model(
+                            expression,
+                            tool_call_execution_context,
+                            context,
+                            model_provider,
+                            cache_options,
+                        )
                         .await?;
 
                     Ok(RenderedPrompt::text(normalize_prompt(&value)))
@@ -635,6 +819,7 @@ impl WorkflowExecutor {
                 tool_call_tracker: &request.agent_execution_context.tool_call_tracker,
                 model_provider: request.model_provider,
                 target_agent: Some(planned_agent),
+                cache_options: Some(&request.agent_execution_context.cache_options),
             },
         )
         .await
@@ -686,36 +871,54 @@ impl WorkflowExecutor {
         )?;
         let output_schema = ModelSchema::workflow(WorkflowType::String);
         let tool_definitions = vec![ModelToolDefinition::finalize(output_schema.clone())];
-        let compaction_request = ModelRequest {
-            agent_name: format!("{}__context_compaction", compaction_agent.name),
+        let prepared_compaction_request = PreparedCompactionRequest {
+            agent_name: compaction_agent.name.clone(),
+            source_agent_name: agent_context.agent_name().map(str::to_string),
             provider_config,
-            model_name: model_name.clone(),
+            model_name,
             inference,
-            context: Some(source_context),
-            prompt: instruction.clone(),
-            prompt_content: vec![ModelPromptContent::text(instruction)],
+            source_context,
+            instruction,
             output_schema,
-            tools: tool_definitions,
-            event_sender: request.event_sender.cloned(),
-            mcp_pool: self.mcp_pool.clone(),
-            tool_call_tracker: request.tool_call_tracker.clone(),
+            tool_definitions,
         };
+        let cache_key = prepared_compaction_request.cache_key(request.cache_options)?;
         let compaction_started_at = Instant::now();
 
         if let Some(event_sender) = request.event_sender {
             let _ = event_sender.try_send(ExecutorEvent::context_compaction_started(
-                compaction_agent.name.clone(),
-                agent_context.agent_name().map(str::to_string),
-                model_name,
+                prepared_compaction_request.agent_name.clone(),
+                prepared_compaction_request.source_agent_name.clone(),
+                prepared_compaction_request.model_name.clone(),
             ));
         }
 
-        let compaction_response = match request.model_provider.generate(compaction_request).await {
+        if let Some(cached_context) = prepared_compaction_request
+            .completed_context_from_cache(
+                cache_key.as_ref(),
+                request.cache_options,
+                request.event_sender,
+                compaction_started_at,
+            )
+            .await?
+        {
+            return Ok(cached_context);
+        }
+
+        let compaction_response = match request
+            .model_provider
+            .generate(prepared_compaction_request.to_model_request(
+                request.event_sender.cloned(),
+                self.mcp_pool.clone(),
+                request.tool_call_tracker.clone(),
+            ))
+            .await
+        {
             Ok(compaction_response) => compaction_response,
             Err(error) => {
                 if let Some(event_sender) = request.event_sender {
                     let _ = event_sender.try_send(ExecutorEvent::context_compaction_failed(
-                        compaction_agent.name.clone(),
+                        prepared_compaction_request.agent_name.clone(),
                         error.to_string(),
                         compaction_started_at.elapsed(),
                     ));
@@ -725,9 +928,16 @@ impl WorkflowExecutor {
             }
         };
 
+        prepared_compaction_request.put_completed(
+            cache_key,
+            request.cache_options,
+            compaction_response.output.clone(),
+            compaction_response.context.clone(),
+        )?;
+
         if let Some(event_sender) = request.event_sender {
             let _ = event_sender.try_send(ExecutorEvent::context_compaction_completed(
-                compaction_agent.name.clone(),
+                prepared_compaction_request.agent_name.clone(),
                 compaction_response.output.clone(),
                 compaction_started_at.elapsed(),
             ));
