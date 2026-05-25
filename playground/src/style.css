@@ -2559,6 +2559,7 @@ textarea {
 
 .graph-node__details li,
 .graph-node__bindings li {
+  position: relative;
   grid-template-columns: minmax(5.5rem, auto) minmax(0, 1fr);
   align-items: center;
 }
@@ -2680,8 +2681,9 @@ textarea {
   top: 50% !important;
 }
 
-.graph-node__handle--model.react-flow__handle-left {
-  top: 4.8rem !important;
+.graph-node__handle--detail.graph-node__handle--model.react-flow__handle-left {
+  left: -0.45rem !important;
+  top: 50% !important;
   background: var(--graph-model);
   box-shadow: none;
 }

@@ -388,7 +388,7 @@ function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
         <p className="graph-node__summary">{nodeSummary(node)}</p>
       ) : (
         <>
-          {node.kind !== 'agent' && node.details.length > 0 ? <GraphDetails title={node.kind === 'mcp' ? 'MCP bindings' : 'Details'} details={node.details} collapsible={node.kind === 'mcp'} /> : null}
+          {node.kind !== 'agent' && node.details.length > 0 ? <GraphDetails title={node.kind === 'mcp' ? 'MCP bindings' : 'Details'} details={node.details} collapsible={node.kind === 'mcp'} targetHandleByDetailName={detailTargetHandles(node)} /> : null}
           {visibleBindings.length > 0 ? <GraphBindings bindings={visibleBindings} targetHandleId={node.kind === 'dynamic' && mcpTools.length > 0 ? 'mcp-access' : undefined} /> : null}
           <GraphPorts title="Inputs" ports={node.inputs} fallback={inputPortFallback(node)} config={config} collapsible={inputsCollapsible} targetHandleId={inputPortTargetHandleId(node)} />
           <GraphPorts title="Outputs" ports={node.outputs} config={config} collapsible={outputsCollapsible} defaultOpen={node.kind !== 'agent'} showPortNames={node.kind !== 'agent' && node.kind !== 'output'} sourceHandleId={outputPortSourceHandleId(node)} />
@@ -409,7 +409,6 @@ function GraphNodeHandles({ node, collapsed, showExpandedInstructionHandle }: { 
     return (
       <>
         {node.kind === 'agent' && showExpandedInstructionHandle ? <Handle id="instruction" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--instruction" isConnectable={false} /> : null}
-        {node.kind === 'compact' ? <Handle id="model" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--model" isConnectable={false} /> : null}
       </>
     );
   }
@@ -582,15 +581,20 @@ function GraphInstructionDialog({ node, open, onOpenChange }: { node: WorkflowEx
   );
 }
 
-function GraphDetails({ title, details, collapsible = false }: { title: string; details: WorkflowExecutionGraphNode['details']; collapsible?: boolean }) {
+function GraphDetails({ title, details, collapsible = false, targetHandleByDetailName = {} }: { title: string; details: WorkflowExecutionGraphNode['details']; collapsible?: boolean; targetHandleByDetailName?: Record<string, string> }) {
   const content = (
     <ul>
-      {details.map((detail) => (
-        <li key={`${detail.name}:${detail.value}`}>
-          <small>{detail.name}</small>
-          <code data-secret={detail.secret ? 'true' : 'false'}>{detail.value}</code>
-        </li>
-      ))}
+      {details.map((detail) => {
+        const targetHandleId = targetHandleByDetailName[detail.name];
+
+        return (
+          <li key={`${detail.name}:${detail.value}`}>
+            {targetHandleId ? <Handle id={targetHandleId} type="target" position={Position.Left} className="graph-node__handle graph-node__handle--detail graph-node__handle--model" isConnectable={false} /> : null}
+            <small>{detail.name}</small>
+            <code data-secret={detail.secret ? 'true' : 'false'}>{detail.value}</code>
+          </li>
+        );
+      })}
     </ul>
   );
 
@@ -1751,6 +1755,14 @@ function mcpToolsByServerName(tools: WorkflowExecutionGraphTool[]) {
 
 function nodeUsesModel(node: WorkflowExecutionGraphNode) {
   return node.kind === 'agent' || node.kind === 'dynamic' || node.kind === 'compact';
+}
+
+function detailTargetHandles(node: WorkflowExecutionGraphNode): Record<string, string> {
+  if (node.kind === 'compact') {
+    return { model: 'model' };
+  }
+
+  return {};
 }
 
 function mcpAccessLabel(tools: WorkflowExecutionGraphTool[]) {
