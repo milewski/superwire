@@ -1,0 +1,42 @@
+provider openai from openai {
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
+
+agent support_router {
+    model: model.openai_model
+
+    instruction: "Route the billing support request to the best next action."
+
+    output {
+        routing: variant action {
+            self_service {
+                article_id: string
+                title: string
+            }
+            team_escalation {
+                queue: string
+                priority: enum { low, normal, urgent }
+                reason: string
+                details: {
+                    customer_summary: string
+                }
+            }
+        }
+    }
+}
+
+output {
+    routing: agent.support_router
+    action: agent.support_router.routing.action
+    selected_summary: match agent.support_router.routing {
+        self_service.title
+        team_escalation.details.customer_summary
+    }
+    escalation_reason: agent.support_router.routing#team_escalation.reason ?? "not-escalated"
+    self_service_article: agent.support_router.routing#self_service.article_id ?? "none"
+}
