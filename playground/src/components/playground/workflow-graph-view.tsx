@@ -406,7 +406,12 @@ function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
 
 function GraphNodeHandles({ node, collapsed, showExpandedInstructionHandle }: { node: WorkflowExecutionGraphNode; collapsed: boolean; showExpandedInstructionHandle: boolean }) {
   if (!collapsed) {
-    return node.kind === 'agent' && showExpandedInstructionHandle ? <Handle id="instruction" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--instruction" isConnectable={false} /> : null;
+    return (
+      <>
+        {node.kind === 'agent' && showExpandedInstructionHandle ? <Handle id="instruction" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--instruction" isConnectable={false} /> : null}
+        {node.kind === 'compact' ? <Handle id="model" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--model" isConnectable={false} /> : null}
+      </>
+    );
   }
 
   const hasCollapsedTargetHandle = node.kind !== 'input';
@@ -417,6 +422,7 @@ function GraphNodeHandles({ node, collapsed, showExpandedInstructionHandle }: { 
       {hasCollapsedTargetHandle ? <span className="graph-node__collapsed-handle graph-node__collapsed-handle--left" aria-hidden="true" /> : null}
       {hasCollapsedSourceHandle ? <span className="graph-node__collapsed-handle graph-node__collapsed-handle--right" aria-hidden="true" /> : null}
       {node.kind === 'model' ? <Handle id="client" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--client" isConnectable={false} /> : null}
+      {node.kind === 'compact' ? <Handle id="model" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--model" isConnectable={false} /> : null}
       {node.kind === 'agent' || node.kind === 'compact' ? <Handle id="instruction" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--instruction" isConnectable={false} /> : null}
       {node.kind === 'agent' || node.kind === 'dynamic' ? <Handle id="mcp-access" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--mcp-access" isConnectable={false} /> : null}
       {node.kind !== 'input' ? <Handle id="inputs" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--inputs" isConnectable={false} /> : null}
@@ -1053,7 +1059,7 @@ function graphWithProviderModelDeclarations(graph: WorkflowExecutionGraph, decla
   const edgesById = new Map(graph.edges.map((edge) => [edge.id, edge]));
 
   for (const node of Array.from(nodesById.values())) {
-    if (node.kind !== 'agent' && node.kind !== 'dynamic') {
+    if (!nodeUsesModel(node)) {
       continue;
     }
 
@@ -1743,6 +1749,10 @@ function mcpToolsByServerName(tools: WorkflowExecutionGraphTool[]) {
   return toolsByServerName;
 }
 
+function nodeUsesModel(node: WorkflowExecutionGraphNode) {
+  return node.kind === 'agent' || node.kind === 'dynamic' || node.kind === 'compact';
+}
+
 function mcpAccessLabel(tools: WorkflowExecutionGraphTool[]) {
   const count = tools.length;
 
@@ -1874,7 +1884,7 @@ function reactFlowEdges(graph: WorkflowExecutionGraph, config: GraphConfig, acti
     source: edge.source,
     target: edge.target,
     sourceHandle: graphEdgeSourceHandle(edge.kind),
-    targetHandle: graphEdgeTargetHandle(edge.kind),
+    targetHandle: graphEdgeTargetHandle(edge.kind, graphNodesById.get(edge.target)),
     label: config.showEdgeLabels ? edge.label : undefined,
     type: config.edgeType,
     animated: (activeRunCounts.get(edge.target) ?? 0) > 0,
@@ -1898,12 +1908,16 @@ function graphEdgeSourceHandle(edgeKind: string) {
   return 'output';
 }
 
-function graphEdgeTargetHandle(edgeKind: string) {
+function graphEdgeTargetHandle(edgeKind: string, targetNode?: WorkflowExecutionGraphNode) {
   if (edgeKind === 'provider_client') {
     return 'client';
   }
 
   if (edgeKind === 'model') {
+    if (targetNode?.kind === 'compact') {
+      return 'model';
+    }
+
     return 'instruction';
   }
 
@@ -1965,7 +1979,7 @@ function outputPortSourceHandleId(node: WorkflowExecutionGraphNode) {
 function normalizeWorkflowGraphNode(node: WorkflowExecutionGraphNode): WorkflowExecutionGraphNode {
   return {
     ...node,
-    inputs: Array.isArray(node.inputs) ? node.inputs : [],
+    inputs: normalizedWorkflowGraphInputs(node),
     outputs: Array.isArray(node.outputs) ? node.outputs : [],
     dependencies: Array.isArray(node.dependencies) ? node.dependencies : [],
     instruction: typeof node.instruction === 'string' ? node.instruction : null,
@@ -1977,6 +1991,16 @@ function normalizeWorkflowGraphNode(node: WorkflowExecutionGraphNode): WorkflowE
     model: node.model ?? null,
     provider_name: node.provider_name ?? null,
   };
+}
+
+function normalizedWorkflowGraphInputs(node: WorkflowExecutionGraphNode) {
+  const inputs = Array.isArray(node.inputs) ? node.inputs : [];
+
+  if (node.kind !== 'compact' || inputs.some((input) => input.name === 'model')) {
+    return inputs;
+  }
+
+  return [{ name: 'model', schema: { type: 'object', title: 'Language model' } }, ...inputs];
 }
 
 function normalizeWorkflowGraphTool(tool: WorkflowExecutionGraphTool): WorkflowExecutionGraphTool {

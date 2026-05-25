@@ -781,10 +781,7 @@ impl PlannedAgent {
             id: compact_context_node_id(&self.name),
             label: format!("Compact {source_agent_name}"),
             kind: WorkflowExecutionGraphNodeKind::Compact,
-            inputs: vec![WorkflowExecutionGraphPort {
-                name: format!("agent.{source_agent_name}"),
-                schema: WorkflowExecutionGraphTool::open_object_schema(),
-            }],
+            inputs: self.compact_context_execution_graph_inputs(&source_agent_name),
             outputs: vec![WorkflowExecutionGraphPort {
                 name: "compacted context".to_string(),
                 schema: WorkflowExecutionGraphTool::open_object_schema(),
@@ -803,6 +800,19 @@ impl PlannedAgent {
             execution_index: Some(agent_index),
             loop_info: None,
         })
+    }
+
+    fn compact_context_execution_graph_inputs(&self, source_agent_name: &str) -> Vec<WorkflowExecutionGraphPort> {
+        vec![
+            WorkflowExecutionGraphPort {
+                name: AgentContextPropertyName::Model.as_str().to_string(),
+                schema: json!({ "type": "object", "title": "Language model" }),
+            },
+            WorkflowExecutionGraphPort {
+                name: format!("agent.{source_agent_name}"),
+                schema: WorkflowExecutionGraphTool::open_object_schema(),
+            },
+        ]
     }
 
     fn execution_graph_node(
@@ -1474,9 +1484,10 @@ fn mask_secret_expression(expression: &Expression) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::WorkflowExecutionGraphNodeKind;
+    use super::{WorkflowExecutionGraphEdgeKind, WorkflowExecutionGraphNodeKind};
     use crate::semantic::{build_dynamic_typed_workflow_ir, build_execution_plan};
     use superwire_macros::parse_inline_workflow;
+    use superwire_types::ast::AgentContextPropertyName;
 
     #[test]
     fn graph_connects_workflow_dynamic_values_to_loop_agents_without_runtime_fallback() {
@@ -1582,14 +1593,23 @@ mod tests {
             .nodes
             .iter()
             .any(|node| node.id == "compact:summarize" && node.kind == WorkflowExecutionGraphNodeKind::Compact));
+        assert!(graph.nodes.iter().any(|node| {
+            node.id == "compact:summarize"
+                && node
+                    .inputs
+                    .iter()
+                    .any(|input| input.name == AgentContextPropertyName::Model.as_str())
+        }));
         assert!(graph
             .edges
             .iter()
             .any(|edge| edge.source == "research" && edge.target == "compact:summarize"));
-        assert!(graph
-            .edges
-            .iter()
-            .any(|edge| edge.source == "model:flash" && edge.target == "compact:summarize"));
+        assert!(graph.edges.iter().any(|edge| {
+            edge.source == "model:flash"
+                && edge.target == "compact:summarize"
+                && edge.label == AgentContextPropertyName::Model.as_str()
+                && edge.kind == WorkflowExecutionGraphEdgeKind::Model
+        }));
         assert!(graph
             .edges
             .iter()

@@ -2680,6 +2680,12 @@ textarea {
   top: 50% !important;
 }
 
+.graph-node__handle--model.react-flow__handle-left {
+  top: 4.8rem !important;
+  background: var(--graph-model);
+  box-shadow: none;
+}
+
 .graph-node__handle--model.react-flow__handle-right {
   top: 52% !important;
   background: var(--graph-model);
