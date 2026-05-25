@@ -61,11 +61,7 @@ agent greeting_single {
 
 agent greeting_prompt_multiline {
     model: model.ollama_model
-
-    instruction: """
-        test
-    """
-
+    instruction: "test"
     output {
         value: string
     }

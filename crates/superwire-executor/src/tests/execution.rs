@@ -1,5 +1,6 @@
 use super::fixtures;
 use super::support::{request, TrackingModelProvider};
+use crate::model::ModelPromptContent;
 use crate::service::ExecutorService;
 use serde_json::json;
 
@@ -57,8 +58,32 @@ async fn linear_chain_executes_in_order() {
 
 #[tokio::test]
 async fn multiline_prompt_workflow() {
-    let output = execute!(fixtures::MULTILINE_PROMPT, output: { "value": "Welcome!" }).await;
-    assert_eq!(output, json!({ "message": "Welcome!" }));
+    let model_provider = TrackingModelProvider::new(vec![json!({ "value": "Welcome!" })]);
+    let service = ExecutorService::new(model_provider.clone());
+
+    let output = service
+        .execute(request(fixtures::MULTILINE_PROMPT))
+        .await
+        .expect("workflow should execute");
+
+    assert_eq!(output.output, json!({ "message": "Welcome!" }));
+
+    let recorded_requests = model_provider
+        .recorded_requests
+        .lock()
+        .expect("recorded requests lock should not be poisoned");
+    let request = recorded_requests.first().expect("agent request should be recorded");
+
+    assert_eq!(
+        request.prompt,
+        "You are a friendly assistant.\nWrite a short welcome message.\nKeep it to one sentence."
+    );
+    assert_eq!(
+        request.prompt_content,
+        vec![ModelPromptContent::Text(
+            "You are a friendly assistant.\nWrite a short welcome message.\nKeep it to one sentence.".to_string()
+        )]
+    );
 }
 
 #[tokio::test]

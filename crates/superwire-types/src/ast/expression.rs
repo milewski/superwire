@@ -806,10 +806,202 @@ pub struct StringTemplate {
     pub parts: Vec<StringTemplatePart>,
 }
 
+impl StringTemplate {
+    #[must_use]
+    pub fn normalized_multiline_indentation(self) -> Self {
+        let mut template_lines = Vec::from([StringTemplateLine::default()]);
+
+        for template_part in self.parts {
+            template_part.push_split_lines(&mut template_lines);
+        }
+
+        let Some(first_content_line_index) = template_lines.iter().position(|template_line| !template_line.is_blank()) else {
+            return Self { parts: Vec::new() };
+        };
+
+        let last_content_line_index = template_lines
+            .iter()
+            .rposition(|template_line| !template_line.is_blank())
+            .expect("first content line should guarantee last content line");
+
+        let common_indentation = template_lines[first_content_line_index..=last_content_line_index]
+            .iter()
+            .filter_map(StringTemplateLine::indentation_width)
+            .min()
+            .unwrap_or(0);
+
+        let mut normalized_parts = Vec::new();
+
+        for (line_index, template_line) in template_lines
+            .into_iter()
+            .enumerate()
+            .filter(|(line_index, _)| *line_index >= first_content_line_index && *line_index <= last_content_line_index)
+        {
+            if line_index > first_content_line_index {
+                StringTemplatePart::push_text(&mut normalized_parts, "\n");
+            }
+
+            let normalized_line = template_line.normalized_indentation(common_indentation);
+            normalized_line.push_parts(&mut normalized_parts);
+        }
+
+        Self { parts: normalized_parts }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StringTemplatePart {
     Text(String),
     Interpolation(Expression),
+}
+
+impl StringTemplatePart {
+    fn push_split_lines(self, template_lines: &mut Vec<StringTemplateLine>) {
+        match self {
+            Self::Text(text) => {
+                let mut current_text = String::new();
+
+                for character in text.chars() {
+                    if character == '\n' {
+                        Self::push_text_to_last_line(template_lines, &current_text);
+                        current_text.clear();
+                        template_lines.push(StringTemplateLine::default());
+
+                        continue;
+                    }
+
+                    current_text.push(character);
+                }
+
+                Self::push_text_to_last_line(template_lines, &current_text);
+            }
+            Self::Interpolation(expression) => {
+                template_lines
+                    .last_mut()
+                    .expect("template line list should never be empty")
+                    .parts
+                    .push(Self::Interpolation(expression));
+            }
+        }
+    }
+
+    fn push_text_to_last_line(template_lines: &mut [StringTemplateLine], text: &str) {
+        if text.is_empty() {
+            return;
+        }
+
+        template_lines
+            .last_mut()
+            .expect("template line list should never be empty")
+            .parts
+            .push(Self::Text(text.to_string()));
+    }
+
+    fn push_text(template_parts: &mut Vec<Self>, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+
+        match template_parts.last_mut() {
+            Some(Self::Text(existing_text)) => existing_text.push_str(text),
+            Some(Self::Interpolation(_)) | None => template_parts.push(Self::Text(text.to_string())),
+        }
+    }
+
+    fn is_blank(&self) -> bool {
+        match self {
+            Self::Text(text) => text.chars().all(char::is_whitespace),
+            Self::Interpolation(_) => false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct StringTemplateLine {
+    parts: Vec<StringTemplatePart>,
+}
+
+impl StringTemplateLine {
+    fn is_blank(&self) -> bool {
+        self.parts.iter().all(StringTemplatePart::is_blank)
+    }
+
+    fn indentation_width(&self) -> Option<usize> {
+        if self.is_blank() {
+            return None;
+        }
+
+        let mut indentation_width = 0;
+
+        for template_part in &self.parts {
+            match template_part {
+                StringTemplatePart::Text(text) => {
+                    for character in text.chars() {
+                        if character != ' ' && character != '\t' {
+                            return Some(indentation_width);
+                        }
+
+                        indentation_width += 1;
+                    }
+                }
+                StringTemplatePart::Interpolation(_) => return Some(indentation_width),
+            }
+        }
+
+        Some(indentation_width)
+    }
+
+    fn normalized_indentation(mut self, common_indentation: usize) -> Self {
+        if self.is_blank() {
+            self.parts.clear();
+
+            return self;
+        }
+
+        let mut remaining_indentation = common_indentation;
+
+        for template_part in &mut self.parts {
+            let StringTemplatePart::Text(text) = template_part else {
+                break;
+            };
+
+            let mut split_byte_index = 0;
+            let mut removed_indentation = 0;
+
+            for (character_byte_index, character) in text.char_indices() {
+                if removed_indentation == remaining_indentation || (character != ' ' && character != '\t') {
+                    break;
+                }
+
+                split_byte_index = character_byte_index + character.len_utf8();
+                removed_indentation += 1;
+            }
+
+            if split_byte_index > 0 {
+                text.drain(..split_byte_index);
+            }
+
+            remaining_indentation -= removed_indentation;
+
+            if remaining_indentation == 0 {
+                break;
+            }
+        }
+
+        self.parts
+            .retain(|template_part| !matches!(template_part, StringTemplatePart::Text(text) if text.is_empty()));
+
+        self
+    }
+
+    fn push_parts(self, template_parts: &mut Vec<StringTemplatePart>) {
+        for template_part in self.parts {
+            match template_part {
+                StringTemplatePart::Text(text) => StringTemplatePart::push_text(template_parts, &text),
+                StringTemplatePart::Interpolation(expression) => template_parts.push(StringTemplatePart::Interpolation(expression)),
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

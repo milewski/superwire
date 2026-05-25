@@ -1531,6 +1531,77 @@ mod tests {
     }
 
     #[test]
+    fn parses_multiline_string_without_surrounding_indentation() {
+        let workflow = parse_inline_workflow! {
+            agent joker_1 {
+                model: model.qwen_plus
+
+                instruction: """
+                    please write a funny joke about a cat
+                """
+
+                output {
+                    result: string
+                }
+            }
+        };
+
+        let joker_agent = workflow.find_agent("joker_1").expect("missing agent declaration: joker_1");
+        let instruction = joker_agent
+            .expression_property(AgentExpressionPropertyName::Instruction)
+            .expect("instruction should be present");
+
+        assert!(matches!(
+            instruction,
+            Expression::StringLiteral(instruction_text) if instruction_text == "please write a funny joke about a cat"
+        ));
+    }
+
+    #[test]
+    fn parses_multiline_template_without_surrounding_indentation() {
+        let workflow = parse_inline_workflow! {
+            agent template_test {
+                instruction: """
+                    Start
+                        Nested {{ input.topic }}
+                    End
+                """
+                output {
+                    value: string
+                }
+            }
+        };
+
+        let template_agent = workflow
+            .find_agent("template_test")
+            .expect("missing agent declaration: template_test");
+        let instruction = template_agent
+            .expression_property(AgentExpressionPropertyName::Instruction)
+            .expect("instruction should be present");
+
+        let Expression::StringTemplate(string_template) = instruction else {
+            panic!("instruction should parse as string template");
+        };
+
+        assert!(matches!(
+            &string_template.parts[0],
+            StringTemplatePart::Text(text) if text == "Start\n    Nested "
+        ));
+
+        assert!(matches!(
+            &string_template.parts[1],
+            StringTemplatePart::Interpolation(Expression::Reference(reference))
+                if reference.root == ReferenceRoot::Keyword(ReferenceKeyword::Input)
+                    && reference.accesses[0].field == "topic"
+        ));
+
+        assert!(matches!(
+            &string_template.parts[2],
+            StringTemplatePart::Text(text) if text == "\nEnd"
+        ));
+    }
+
+    #[test]
     fn parses_asset_expression_with_options_in_instruction_template() {
         let workflow = parse_inline_workflow! {
             provider openai from openai {}

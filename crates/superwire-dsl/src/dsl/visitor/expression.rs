@@ -324,6 +324,7 @@ impl AstVisitor {
                 ));
             }
         };
+        let is_multiline_string = string_container_pair.as_rule() == Rule::multiline_string_expression;
 
         let mut string_template_parts = Vec::new();
 
@@ -344,6 +345,14 @@ impl AstVisitor {
                     ));
                 }
             }
+        }
+
+        if is_multiline_string {
+            string_template_parts = StringTemplate {
+                parts: string_template_parts,
+            }
+            .normalized_multiline_indentation()
+            .parts;
         }
 
         if string_template_parts.is_empty() {

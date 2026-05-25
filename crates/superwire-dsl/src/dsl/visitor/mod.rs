@@ -5,7 +5,7 @@ mod mcp;
 mod tool;
 mod types;
 
-use crate::dsl::ast::{SourcePosition, SourceSpan, Workflow};
+use crate::dsl::ast::{SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, Workflow};
 use crate::dsl::parser::{DslParseError, Rule};
 use pest::iterators::{Pair, Pairs};
 
@@ -52,7 +52,21 @@ impl AstVisitor {
                     return Ok(String::new());
                 }
 
-                Ok(raw_string[3..raw_string.len() - 3].to_owned())
+                let string_template = StringTemplate {
+                    parts: vec![StringTemplatePart::Text(raw_string[3..raw_string.len() - 3].to_owned())],
+                }
+                .normalized_multiline_indentation();
+
+                Ok(string_template
+                    .parts
+                    .into_iter()
+                    .map(|template_part| match template_part {
+                        StringTemplatePart::Text(text) => text,
+                        StringTemplatePart::Interpolation(_) => {
+                            unreachable!("plain multiline strings should only contain text parts")
+                        }
+                    })
+                    .collect())
             }
             _ => Err(DslParseError::unexpected_with_span(
                 string_pair.as_rule(),
