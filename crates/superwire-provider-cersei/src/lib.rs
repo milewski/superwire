@@ -19,6 +19,8 @@ use superwire_types::ModelAssetKind;
 const MAX_TOOL_CALL_ROUNDS: usize = 8;
 const DEFAULT_MAX_TOKENS: u32 = 16_384;
 const CONTEXT_COMPACTION_AGENT_SUFFIX: &str = "__context_compaction";
+const DEFAULT_PROVIDER_MAX_RETRIES: u32 = 3;
+const DEFAULT_PROVIDER_RETRY_BASE_DELAY_MS: u64 = 1000;
 
 #[derive(Debug, Clone, Default)]
 pub struct CerseiModelProvider;
@@ -32,13 +34,16 @@ impl ModelProvider for CerseiModelProvider {
         let mut last_error = None;
         let context_messages = request.cersei_context_messages()?;
         let mut messages = context_messages.clone();
+        let max_retries = request.provider_max_retries();
+        let retry_base_delay = request.provider_retry_base_delay();
 
         log::info!(
-            "starting Cersei generation: agent={}, provider={}, model={}, tools={}",
+            "starting Cersei generation: agent={}, provider={}, model={}, tools={}, max_retries={}",
             request.agent_name,
             request.provider_config.driver.as_str(),
             request.model_name,
-            request.tools.len()
+            request.tools.len(),
+            max_retries
         );
 
         for round_index in 0..MAX_TOOL_CALL_ROUNDS {
@@ -53,22 +58,15 @@ impl ModelProvider for CerseiModelProvider {
                 completion_request.tools.len()
             );
 
-            let completion_result = provider.complete_blocking(completion_request).await;
-            let completion = match completion_result {
-                Ok(completion) => completion,
-                Err(error) => {
-                    log::warn!(
-                        "provider request failed through Cersei: agent={}, provider={}, round={}, error={}",
-                        request.agent_name,
-                        request.provider_config.driver.as_str(),
-                        round_index + 1,
-                        error
-                    );
-                    last_error = Some(error.to_string());
+            let completion =
+                match Self::complete_with_retry(&provider, &completion_request, &request.agent_name, max_retries, retry_base_delay).await {
+                    Ok(completion) => completion,
+                    Err(error) => {
+                        last_error = Some(error);
 
-                    break;
-                }
-            };
+                        break;
+                    }
+                };
 
             let tool_calls = CerseiToolCall::from_message(&completion.message);
 
@@ -295,6 +293,63 @@ impl ModelAssetCerseiExt for ModelAsset {
 }
 
 impl CerseiModelProvider {
+    async fn complete_with_retry(
+        provider: &dyn Provider,
+        request: &CompletionRequest,
+        agent_name: &str,
+        max_retries: u32,
+        base_delay: Duration,
+    ) -> Result<cersei_provider::CompletionResponse, String> {
+        let total_attempts = max_retries + 1;
+        let mut last_error = None;
+
+        for attempt in 0..total_attempts {
+            match provider.complete_blocking(request.clone()).await {
+                Ok(completion) => {
+                    if attempt > 0 {
+                        log::info!(
+                            "provider request succeeded after retry: agent={}, attempt={}/{}",
+                            agent_name,
+                            attempt + 1,
+                            total_attempts
+                        );
+                    }
+
+                    return Ok(completion);
+                }
+                Err(error) => {
+                    let error_message = error.to_string();
+
+                    log::warn!(
+                        "provider request failed: agent={}, attempt={}/{}, error={}",
+                        agent_name,
+                        attempt + 1,
+                        total_attempts,
+                        error_message
+                    );
+
+                    last_error = Some(error_message);
+
+                    if attempt < max_retries {
+                        let delay = base_delay * 2u32.pow(attempt);
+
+                        log::info!(
+                            "retrying provider request: agent={}, attempt={}/{}, delay={}ms",
+                            agent_name,
+                            attempt + 2,
+                            total_attempts,
+                            delay.as_millis()
+                        );
+
+                        tokio::time::sleep(delay).await;
+                    }
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| "provider request failed without error message".to_string()))
+    }
+
     fn execute_tool_calls(
         &self,
         request: &ModelRequest,
@@ -459,6 +514,8 @@ impl ModelRequestCompactionExt for ModelRequest {
 enum InferenceParameter {
     MaxTokens,
     Temperature,
+    ProviderMaxRetries,
+    ProviderRetryBaseDelayMs,
 }
 
 impl InferenceParameter {
@@ -466,6 +523,8 @@ impl InferenceParameter {
         match self {
             Self::MaxTokens => "max_tokens",
             Self::Temperature => "temperature",
+            Self::ProviderMaxRetries => "provider_max_retries",
+            Self::ProviderRetryBaseDelayMs => "provider_retry_base_delay_ms",
         }
     }
 }
@@ -525,6 +584,8 @@ trait ModelRequestCerseiContextExt {
     fn temperature(&self) -> Option<f32>;
     fn cersei_options(&self) -> HashMap<String, Value>;
     fn call_limit_error(&self, tool_definition: &ModelToolDefinition) -> Option<Value>;
+    fn provider_max_retries(&self) -> u32;
+    fn provider_retry_base_delay(&self) -> Duration;
 }
 
 impl ModelRequestCerseiContextExt for ModelRequest {
@@ -573,6 +634,8 @@ impl ModelRequestCerseiContextExt for ModelRequest {
             .filter(|(setting_name, _)| {
                 setting_name.as_str() != InferenceParameter::MaxTokens.as_str()
                     && setting_name.as_str() != InferenceParameter::Temperature.as_str()
+                    && setting_name.as_str() != InferenceParameter::ProviderMaxRetries.as_str()
+                    && setting_name.as_str() != InferenceParameter::ProviderRetryBaseDelayMs.as_str()
             })
             .map(|(setting_name, setting_value)| (setting_name.clone(), setting_value.clone()))
             .collect()
@@ -594,6 +657,24 @@ impl ModelRequestCerseiContextExt for ModelRequest {
         );
 
         Some(tool_error)
+    }
+
+    fn provider_max_retries(&self) -> u32 {
+        self.inference
+            .get(InferenceParameter::ProviderMaxRetries.as_str())
+            .and_then(Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .unwrap_or(DEFAULT_PROVIDER_MAX_RETRIES)
+    }
+
+    fn provider_retry_base_delay(&self) -> Duration {
+        let milliseconds = self
+            .inference
+            .get(InferenceParameter::ProviderRetryBaseDelayMs.as_str())
+            .and_then(Value::as_u64)
+            .unwrap_or(DEFAULT_PROVIDER_RETRY_BASE_DELAY_MS);
+
+        Duration::from_millis(milliseconds)
     }
 }
 

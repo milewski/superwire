@@ -18,6 +18,7 @@ superwire-model = { path = "../superwire-model" }
 superwire-protocol = { path = "../superwire-protocol" }
 superwire-semantic = { path = "../superwire-semantic" }
 superwire-types = { path = "../superwire-types" }
+tokio = { workspace = true }
 
 [dev-dependencies]
 schemars = { workspace = true }

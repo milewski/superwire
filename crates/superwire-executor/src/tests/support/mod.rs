@@ -171,6 +171,46 @@ impl ModelProvider for FailingModelProvider {
 }
 
 #[derive(Debug, Clone)]
+pub struct RetryModelProvider {
+    failures_before_success: usize,
+    failure_message: String,
+    call_count: Arc<AtomicUsize>,
+}
+
+impl RetryModelProvider {
+    pub fn new(failures_before_success: usize, failure_message: impl Into<String>) -> Self {
+        Self {
+            failures_before_success,
+            failure_message: failure_message.into(),
+            call_count: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    pub fn call_count(&self) -> usize {
+        self.call_count.load(Ordering::SeqCst)
+    }
+}
+
+#[async_trait]
+impl ModelProvider for RetryModelProvider {
+    async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ModelProviderError> {
+        let attempt = self.call_count.fetch_add(1, Ordering::SeqCst);
+
+        if attempt < self.failures_before_success {
+            return Err(ModelProviderError::Model {
+                agent_name: request.agent_name,
+                message: format!("{} (attempt {})", self.failure_message, attempt + 1),
+            });
+        }
+
+        Ok(ModelResponse {
+            output: serde_json::json!({ "success": true }),
+            context: serde_json::json!({ "agent": request.agent_name }),
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct ConcurrentTrackingModelProvider {
     active_requests: Arc<AtomicUsize>,
     max_active_requests: Arc<AtomicUsize>,
