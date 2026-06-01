@@ -5,7 +5,7 @@ use serde_json::{Map, Value};
 use std::collections::HashMap;
 use superwire_types::ast::{
     AgentContext, Asset, AssetPropertyName, Expression, MatchBranch, ModelAssetKind, Reference, ReferenceAccess, ReferenceKeyword,
-    ReferenceRoot, StringTemplatePart,
+    ReferenceRoot, StringTemplatePart, Workflow,
 };
 use superwire_types::PromptValueFormat;
 
@@ -16,6 +16,44 @@ pub struct EvaluationContext {
     pub agent_outputs: HashMap<String, Value>,
     pub agent_contexts: HashMap<String, Value>,
     pub local_bindings: HashMap<String, Value>,
+}
+
+impl EvaluationContext {
+    pub fn evaluate_available_workflow_dynamic_bindings(&mut self, workflow: &Workflow) {
+        let mut pending_dynamic_fields = workflow
+            .dynamic_blocks()
+            .flat_map(|dynamic_block| dynamic_block.fields.iter())
+            .collect::<Vec<_>>();
+
+        while !pending_dynamic_fields.is_empty() {
+            let pending_count_before_pass = pending_dynamic_fields.len();
+            let mut remaining_dynamic_fields = Vec::new();
+
+            for dynamic_field in pending_dynamic_fields {
+                if self.local_bindings.contains_key(&dynamic_field.name) {
+                    continue;
+                }
+
+                match dynamic_field
+                    .value
+                    .evaluate(self, &format!("dynamic field `{}`", dynamic_field.name))
+                {
+                    Ok(field_value) => {
+                        self.local_bindings.insert(dynamic_field.name.clone(), field_value);
+                    }
+                    Err(_) => {
+                        remaining_dynamic_fields.push(dynamic_field);
+                    }
+                }
+            }
+
+            if remaining_dynamic_fields.len() == pending_count_before_pass {
+                break;
+            }
+
+            pending_dynamic_fields = remaining_dynamic_fields;
+        }
+    }
 }
 
 pub fn evaluate_expression(

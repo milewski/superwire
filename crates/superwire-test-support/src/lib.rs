@@ -252,12 +252,14 @@ pub struct FakeMcpRequest {
     pub server_name: String,
     pub method: String,
     pub name: Option<String>,
+    pub headers: BTreeMap<String, String>,
     pub arguments: Value,
 }
 
 #[derive(Debug)]
 struct FakeMcpClient {
     server: FakeMcpServer,
+    headers: BTreeMap<String, String>,
 }
 
 impl WorkflowSourceTemplate {
@@ -909,8 +911,9 @@ impl FakeMcpClientFactory {
 impl McpClientFactory for FakeMcpClientFactory {
     fn client_for_config(&self, server_config: McpServerConfig) -> Result<Arc<dyn McpClientBackend>, McpError> {
         let server = self.server_for_config(&server_config)?;
+        let headers = server_config.headers.clone();
 
-        Ok(Arc::new(FakeMcpClient { server }))
+        Ok(Arc::new(FakeMcpClient { server, headers }))
     }
 }
 
@@ -1085,7 +1088,7 @@ impl FakeMcpServer {
             .collect()
     }
 
-    fn record_request(&self, method: &str, name: Option<&str>, arguments: Value) {
+    fn record_request(&self, method: &str, name: Option<&str>, headers: &BTreeMap<String, String>, arguments: Value) {
         self.requests
             .lock()
             .expect("fake MCP request log lock poisoned")
@@ -1093,6 +1096,7 @@ impl FakeMcpServer {
                 server_name: self.name.clone(),
                 method: method.to_string(),
                 name: name.map(str::to_string),
+                headers: headers.clone(),
                 arguments,
             });
     }
@@ -1131,12 +1135,12 @@ impl FakeMcpServer {
 
 impl McpClientBackend for FakeMcpClient {
     fn list_tools(&self) -> Result<McpServerLock, McpError> {
-        self.server.record_request("tools/list", None, Value::Null);
+        self.server.record_request("tools/list", None, &self.headers, Value::Null);
         self.server.server_lock()
     }
 
     fn call_tool(&self, tool_name: &str, arguments: Value) -> Result<Value, McpError> {
-        self.server.record_request("tools/call", Some(tool_name), arguments);
+        self.server.record_request("tools/call", Some(tool_name), &self.headers, arguments);
         let tool = self.server.tools.get(tool_name).ok_or_else(|| McpError::Rpc {
             server_name: self.server.name.clone(),
             method: "tools/call".to_string(),
@@ -1155,7 +1159,8 @@ impl McpClientBackend for FakeMcpClient {
     }
 
     fn read_resource(&self, resource_name: &str, arguments: Value) -> Result<Value, McpError> {
-        self.server.record_request("resources/read", Some(resource_name), arguments);
+        self.server
+            .record_request("resources/read", Some(resource_name), &self.headers, arguments);
         let resource = self.server.resources.get(resource_name).ok_or_else(|| McpError::Rpc {
             server_name: self.server.name.clone(),
             method: "resources/read".to_string(),
@@ -1172,7 +1177,8 @@ impl McpClientBackend for FakeMcpClient {
     }
 
     fn get_prompt(&self, prompt_name: &str, arguments: Value) -> Result<Value, McpError> {
-        self.server.record_request("prompts/get", Some(prompt_name), arguments);
+        self.server
+            .record_request("prompts/get", Some(prompt_name), &self.headers, arguments);
         let prompt = self.server.prompts.get(prompt_name).ok_or_else(|| McpError::Rpc {
             server_name: self.server.name.clone(),
             method: "prompts/get".to_string(),

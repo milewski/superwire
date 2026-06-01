@@ -726,10 +726,14 @@ fn build_provider_response(
         .ok_or_else(|| format!("unexpected provider model `{model_name}`"))?;
     let turn = model
         .turns
-        .pop_front()
+        .front()
         .ok_or_else(|| format!("unexpected provider turn for model `{model_name}`"))?;
 
     turn.assert_request(&request.body, messages)?;
+    let turn = model
+        .turns
+        .pop_front()
+        .expect("provider turn should still exist after request assertion");
 
     Ok(turn.response.to_http_response())
 }

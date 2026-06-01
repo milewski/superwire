@@ -162,12 +162,14 @@ impl McpLock {
         client_factory: &dyn McpClientFactory,
     ) -> Result<Self, McpError> {
         let mut lock = Self::empty();
+        let mut evaluation_context = evaluation_context.clone();
+        evaluation_context.evaluate_available_workflow_dynamic_bindings(workflow);
 
         for declaration in workflow.declarations() {
             let Declaration::McpServer(mcp_server_declaration) = declaration else {
                 continue;
             };
-            let server_config = McpServerConfig::resolve_from_declaration(mcp_server_declaration, evaluation_context)?;
+            let server_config = McpServerConfig::resolve_from_declaration(mcp_server_declaration, &evaluation_context)?;
             log::debug!("discovering MCP tools from runtime server config: {}", server_config.name);
             let server_lock = client_factory.client_for_config(server_config.clone())?.list_tools()?;
 

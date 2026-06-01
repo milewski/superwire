@@ -163,7 +163,8 @@ impl WorkflowExecutor {
                 details,
             }
         })?;
-        let evaluation_context = build_context.evaluation_context();
+        let mut evaluation_context = build_context.evaluation_context();
+        evaluation_context.evaluate_available_workflow_dynamic_bindings(&workflow);
         let mcp_lock = Self::discover_mcp_lock_with_context(McpLockDiscoveryContext {
             workflow: &workflow,
             evaluation_context: &evaluation_context,

@@ -21,7 +21,7 @@ async fn executes_workflow_with_multiple_providers_and_models() {
             provider.model("model-c", |model| {
                 model
                     .turn()
-                    .expect_prompt("Finalize using review: {\"value\":\"reviewed by backup\"}")
+                    .expect_prompt("Finalize using review: value: reviewed by backup")
                     .respond_json(json!({ "value": "final from primary" }));
             });
         })
@@ -30,7 +30,7 @@ async fn executes_workflow_with_multiple_providers_and_models() {
             provider.model("model-b", |model| {
                 model
                     .turn()
-                    .expect_prompt("Review this draft: {\"value\":\"draft from primary\"}")
+                    .expect_prompt("Review this draft: value: draft from primary")
                     .respond_json(json!({ "value": "reviewed by backup" }));
             });
         })

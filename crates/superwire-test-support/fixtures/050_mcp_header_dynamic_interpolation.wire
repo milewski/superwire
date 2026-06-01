@@ -1,0 +1,14 @@
+dynamic {
+    token: "000|xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+}
+
+mcp local {
+    endpoint: "http://php/mcp/summarizer"
+    headers {
+        Authorization: "Bearer {{ dynamic.token }}"
+    }
+}
+
+output {
+    authorization: "Bearer {{ dynamic.token }}"
+}

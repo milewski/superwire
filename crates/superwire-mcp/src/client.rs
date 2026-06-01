@@ -699,12 +699,14 @@ impl McpClientPool {
         client_factory: &dyn McpClientFactory,
     ) -> Result<Self, McpError> {
         let mut clients = HashMap::new();
+        let mut evaluation_context = evaluation_context.clone();
+        evaluation_context.evaluate_available_workflow_dynamic_bindings(workflow);
 
         for declaration in workflow.declarations() {
             let superwire_types::ast::Declaration::McpServer(mcp_server_declaration) = declaration else {
                 continue;
             };
-            let server_config = McpServerConfig::resolve_from_declaration(mcp_server_declaration, evaluation_context)?;
+            let server_config = McpServerConfig::resolve_from_declaration(mcp_server_declaration, &evaluation_context)?;
             log::debug!("initializing MCP client pool for runtime server: {}", server_config.name);
             let client = client_factory.client_for_config(server_config.clone())?;
             clients.insert(server_config.name, client);
