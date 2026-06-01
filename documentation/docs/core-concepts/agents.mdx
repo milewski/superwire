@@ -25,6 +25,7 @@ agent summarize_task {
 | `uses` | Makes tools, prompts, and resources available to the agent. |
 | `context` | Continues from another agent's message history. |
 | `instruction` | The instruction appended for this agent step. |
+| `file` | Uploads content before the agent call and injects it as a file attachment. |
 | `output` | The required structured output contract. |
 
 ## Uses
@@ -45,6 +46,59 @@ agent writer {
 
     output {
         draft: string
+    }
+}
+```
+
+## File directive
+
+`file` uploads content before the agent executes and injects the resulting file attachment into the agent's chat history. Use it when the agent needs to process file content as part of its instruction.
+
+```wire
+agent reviewer {
+    model: model.fast
+    instruction: "Review the uploaded file."
+
+    file {
+        name: "report.json"
+        content: agent.summarizer
+    }
+
+    output {
+        feedback: string
+    }
+}
+```
+
+### File properties
+
+| Property | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `name` | No | `"file.txt"` | The filename exposed to the model. |
+| `content` | Yes | — | An expression whose rendered value becomes the file body. |
+| `purpose` | No | `"file-extract"` | A label describing the file's role in the workflow. |
+
+The `content` property accepts any expression, including agent output references such as `agent.summarizer.value`. This makes it possible to chain agents where one agent produces content and a subsequent agent receives it as a file attachment.
+
+Multiple `file` blocks are allowed on a single agent:
+
+```wire
+agent compare {
+    model: model.fast
+    instruction: "Compare the two files."
+
+    file {
+        name: "before.json"
+        content: agent.step_one
+    }
+
+    file {
+        name: "after.json"
+        content: agent.step_two
+    }
+
+    output {
+        differences: string
     }
 }
 ```

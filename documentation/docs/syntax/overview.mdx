@@ -49,7 +49,7 @@ Use these blocks to define what a workflow needs, how it runs, and what it retur
 | `resource local_name from mcp.server.resource.remote_name` | A resource imported from an MCP server. | Exposes read-only external content. |
 | `prompt local_name from mcp.server.prompt.remote_name` | A prompt template imported from MCP. | Reuses centrally managed prompt assets. |
 | `dynamic { ... }` | Computed values derived from references and expressions. | Prepares runtime values before agent execution. |
-| `agent name { ... }` | One model-backed execution step. | Encapsulates instruction, tools, context, and typed output. |
+| `agent name { ... }` | One model-backed execution step. | Encapsulates instruction, file attachments, tools, context, and typed output. |
 | `output { ... }` | Final response payload of the workflow. | Defines exactly what `/execute` returns. |
 
 ## Typical flow

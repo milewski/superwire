@@ -157,6 +157,7 @@
               "examples/multi-agent",
               "examples/parallel-processing",
               "examples/context-management",
+              "examples/file-directive",
               "examples/mcp-tools",
               "examples/nested-output"
             ]

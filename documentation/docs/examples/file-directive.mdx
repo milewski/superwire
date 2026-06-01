@@ -1,0 +1,54 @@
+---
+title: File Directive
+description: Upload content to an agent as a file attachment.
+---
+
+```wire
+input {
+    topic: string
+}
+
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+    wire_api: "chat/completion"
+}
+
+agent summarize {
+    model: model.fast
+    instruction: "Summarize {{ input.topic }} into a JSON report."
+
+    output {
+        report: string
+    }
+}
+
+agent review {
+    model: model.fast
+    instruction: "Review the uploaded report and provide feedback."
+
+    file {
+        name: "report.json"
+        content: agent.summarize
+    }
+
+    output {
+        feedback: string
+        approved: boolean
+    }
+}
+
+output {
+    report: agent.summarize.report
+    feedback: agent.review.feedback
+    approved: agent.review.approved
+}
+```
