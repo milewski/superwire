@@ -4,7 +4,7 @@ use crate::runtime::cache::{
 };
 use crate::runtime::{ExecutorError, WorkflowExecutor};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -243,7 +243,7 @@ where
 #[derive(Debug)]
 pub struct StreamedExecutionSubscription {
     pub run_identifier: String,
-    pub receiver: mpsc::Receiver<SequencedExecutorEvent>,
+    pub receiver: mpsc::UnboundedReceiver<SequencedExecutorEvent>,
 }
 
 impl StreamedExecutionSubscription {
@@ -432,11 +432,10 @@ impl StreamedExecution {
     fn subscribe(&self, run_identifier: String, last_event_identifier: Option<u64>) -> StreamedExecutionSubscription {
         let mut state = self.state.lock().expect("streamed execution lock should not be poisoned");
         let missed_events = state.events_after(last_event_identifier);
-        let channel_size = EVENT_BUFFER_SIZE.max(missed_events.len() + EVENT_BUFFER_SIZE);
-        let (event_sender, event_receiver) = mpsc::channel(channel_size);
+        let (event_sender, event_receiver) = mpsc::unbounded_channel();
 
         for event in missed_events {
-            if event_sender.try_send(event).is_err() {
+            if event_sender.send(event).is_err() {
                 break;
             }
         }
@@ -458,13 +457,16 @@ impl StreamedExecution {
             return false;
         }
 
-        let sequenced_event = state.next_event(event);
+        let Some(sequenced_event) = state.next_unique_event(event) else {
+            return false;
+        };
+
         let completed = sequenced_event.event.is_terminal();
 
         state.events.push(sequenced_event.clone());
         state
             .subscribers
-            .retain(|subscriber| subscriber.try_send(sequenced_event.clone()).is_ok());
+            .retain(|subscriber| subscriber.send(sequenced_event.clone()).is_ok());
 
         if completed {
             state.completed = true;
@@ -494,7 +496,8 @@ impl StreamedExecution {
 #[derive(Debug, Default)]
 struct StreamedExecutionState {
     events: Vec<SequencedExecutorEvent>,
-    subscribers: Vec<mpsc::Sender<SequencedExecutorEvent>>,
+    seen_event_deduplication_keys: HashSet<String>,
+    subscribers: Vec<mpsc::UnboundedSender<SequencedExecutorEvent>>,
     next_event_identifier: u64,
     completed: bool,
     abort_handle: Option<AbortHandle>,
@@ -509,13 +512,17 @@ impl StreamedExecutionState {
             .collect()
     }
 
-    fn next_event(&mut self, event: ExecutorEvent) -> SequencedExecutorEvent {
+    fn next_unique_event(&mut self, event: ExecutorEvent) -> Option<SequencedExecutorEvent> {
+        if !self.seen_event_deduplication_keys.insert(event.stream_deduplication_key()) {
+            return None;
+        }
+
         self.next_event_identifier += 1;
 
-        SequencedExecutorEvent {
+        Some(SequencedExecutorEvent {
             event_identifier: self.next_event_identifier,
             event,
-        }
+        })
     }
 }
 
@@ -600,4 +607,121 @@ where
     log::info!("streamed workflow execution completed");
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn streamed_execution_records_each_event_identity_once() {
+        let streamed_execution = StreamedExecution::default();
+        let mut stream_subscription = streamed_execution.subscribe("test-run".to_string(), None);
+        let event = ExecutorEvent::agent_started(
+            "research".to_string(),
+            "test-model".to_string(),
+            vec!["internal:finalize".to_string()],
+            None,
+        );
+
+        assert!(!streamed_execution.record_event(event.clone()));
+        assert!(!streamed_execution.record_event(event));
+        assert!(streamed_execution.record_event(ExecutorEvent::workflow_completed(
+            json!({ "status": "done" }),
+            Duration::from_millis(10),
+        )));
+
+        let first_event = stream_subscription.receiver.try_recv().expect("first event should be streamed");
+        let second_event = stream_subscription.receiver.try_recv().expect("terminal event should be streamed");
+
+        assert_eq!(first_event.event_identifier, 1);
+        assert_eq!(first_event.event.kind, superwire_protocol::event::ExecutorEventKind::AgentStarted);
+        assert_eq!(second_event.event_identifier, 2);
+        assert_eq!(
+            second_event.event.kind,
+            superwire_protocol::event::ExecutorEventKind::WorkflowCompleted
+        );
+        assert!(stream_subscription.receiver.try_recv().is_err());
+
+        let event_count = streamed_execution
+            .state
+            .lock()
+            .expect("streamed execution lock should not be poisoned")
+            .events
+            .len();
+
+        assert_eq!(event_count, 2);
+    }
+
+    #[test]
+    fn streamed_execution_deduplicates_events_when_only_duration_changes() {
+        let streamed_execution = StreamedExecution::default();
+        let mut stream_subscription = streamed_execution.subscribe("test-run".to_string(), None);
+
+        assert!(!streamed_execution.record_event(ExecutorEvent::agent_completed(
+            "research".to_string(),
+            json!({ "answer": "ok" }),
+            Duration::from_millis(10),
+            None,
+            false,
+        )));
+        assert!(!streamed_execution.record_event(ExecutorEvent::agent_completed(
+            "research".to_string(),
+            json!({ "answer": "ok" }),
+            Duration::from_millis(25),
+            None,
+            false,
+        )));
+        assert!(streamed_execution.record_event(ExecutorEvent::workflow_completed(
+            json!({ "status": "done" }),
+            Duration::from_millis(10),
+        )));
+
+        let first_event = stream_subscription.receiver.try_recv().expect("first event should be streamed");
+        let second_event = stream_subscription.receiver.try_recv().expect("terminal event should be streamed");
+
+        assert_eq!(first_event.event_identifier, 1);
+        assert_eq!(first_event.event.kind, superwire_protocol::event::ExecutorEventKind::AgentCompleted);
+        assert_eq!(second_event.event_identifier, 2);
+        assert_eq!(
+            second_event.event.kind,
+            superwire_protocol::event::ExecutorEventKind::WorkflowCompleted
+        );
+        assert!(stream_subscription.receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn streamed_execution_keeps_subscriber_connected_during_event_bursts() {
+        let streamed_execution = StreamedExecution::default();
+        let mut stream_subscription = streamed_execution.subscribe("test-run".to_string(), None);
+
+        for agent_index in 0..100 {
+            assert!(!streamed_execution.record_event(ExecutorEvent::agent_started(
+                format!("agent_{agent_index}"),
+                "test-model".to_string(),
+                vec!["internal:finalize".to_string()],
+                None,
+            )));
+        }
+
+        assert!(streamed_execution.record_event(ExecutorEvent::workflow_completed(
+            json!({ "status": "done" }),
+            Duration::from_millis(10),
+        )));
+
+        let mut event_count = 0;
+        let mut last_event_kind = None;
+
+        while let Ok(sequenced_event) = stream_subscription.receiver.try_recv() {
+            event_count += 1;
+            last_event_kind = Some(sequenced_event.event.kind);
+        }
+
+        assert_eq!(event_count, 101);
+        assert_eq!(
+            last_event_kind,
+            Some(superwire_protocol::event::ExecutorEventKind::WorkflowCompleted)
+        );
+    }
 }

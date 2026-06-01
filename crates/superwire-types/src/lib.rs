@@ -1,5 +1,6 @@
 pub mod ast;
 pub mod diagnostic;
+pub mod prompt;
 pub mod structure;
 
 pub use ast::{
@@ -9,4 +10,5 @@ pub use ast::{
     SourceSpan, ToolCallKeyword, ToolCallPropertyName, ToolPropertyName,
 };
 pub use diagnostic::{should_render_rich_diagnostics, Diagnostic, DiagnosticCode, DiagnosticLabel, DiagnosticSeverity};
+pub use prompt::PromptValueFormat;
 pub use structure::{DslProperty, PropertyDefinition, PropertyValueKind};

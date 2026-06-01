@@ -1461,9 +1461,10 @@ function parseStoredWorkflowTabs(savedTabs: string) {
 
 type UpdateTab = (tabId: string, updater: (tab: WorkflowTab) => WorkflowTab) => void;
 
-interface SseReadResult {
+interface SseStreamProgress {
   events: ExecutorEvent[];
   lastEventIdentifier: string | null;
+  acceptedEventIdentifiers: Set<string>;
   terminalEvent: ExecutorEvent | null;
 }
 
@@ -1476,17 +1477,19 @@ async function readWorkflowEventStream(
 ) {
   const runIdentifier = initialResponse.headers.get(runIdentifierHeader);
   let response = initialResponse;
-  let lastEventIdentifier: string | null = null;
-  const events: ExecutorEvent[] = [];
+  const progress: SseStreamProgress = {
+    events: [],
+    lastEventIdentifier: null,
+    acceptedEventIdentifiers: new Set(),
+    terminalEvent: null,
+  };
 
   while (true) {
     try {
-      const readResult = await readSseStream(response.body, tabId, acceptChunk, lastEventIdentifier);
-      events.push(...readResult.events);
-      lastEventIdentifier = readResult.lastEventIdentifier;
+      await readSseStream(response.body, tabId, acceptChunk, progress);
 
-      if (readResult.terminalEvent) {
-        return events;
+      if (progress.terminalEvent) {
+        return progress.events;
       }
     } catch (error) {
       if (abortSignal.aborted) {
@@ -1505,7 +1508,7 @@ async function readWorkflowEventStream(
       await waitForReconnectDelay(abortSignal);
 
       try {
-        response = await reconnectWorkflowEventStream(runIdentifier, lastEventIdentifier, abortSignal);
+        response = await reconnectWorkflowEventStream(runIdentifier, progress.lastEventIdentifier, abortSignal);
         reconnected = true;
       } catch (error) {
         if (abortSignal.aborted || error instanceof WorkflowStreamUnavailableError) {
@@ -1583,17 +1586,14 @@ async function readSseStream(
   stream: ReadableStream<Uint8Array> | null,
   tabId: string,
   acceptChunk: (chunk: string, tabId: string) => ExecutorEvent | null,
-  initialLastEventIdentifier: string | null,
-): Promise<SseReadResult> {
+  progress: SseStreamProgress,
+) {
   if (!stream) {
     throw new Error('Workflow stream response did not include a body.');
   }
 
   const reader = stream.getReader();
   const decoder = new TextDecoder();
-  const events: ExecutorEvent[] = [];
-  let lastEventIdentifier = initialLastEventIdentifier;
-  let terminalEvent: ExecutorEvent | null = null;
   let buffer = '';
 
   while (true) {
@@ -1609,40 +1609,50 @@ async function readSseStream(
 
     for (const chunk of chunks) {
       const sseMessage = parseSseMessage(chunk);
-      const event = sseMessage.data ? acceptChunk(chunk, tabId) : null;
-
-      lastEventIdentifier = sseMessage.eventIdentifier ?? lastEventIdentifier;
-
-      if (event) {
-        events.push(event);
-
-        if (isTerminalWorkflowEvent(event)) {
-          terminalEvent = event;
-        }
-      }
+      acceptSseMessage(chunk, sseMessage, tabId, acceptChunk, progress);
     }
   }
 
   if (buffer.trim()) {
     const sseMessage = parseSseMessage(buffer);
-    const event = sseMessage.data ? acceptChunk(buffer, tabId) : null;
+    acceptSseMessage(buffer, sseMessage, tabId, acceptChunk, progress);
+  }
+}
 
-    lastEventIdentifier = sseMessage.eventIdentifier ?? lastEventIdentifier;
-
-    if (event) {
-      events.push(event);
-
-      if (isTerminalWorkflowEvent(event)) {
-        terminalEvent = event;
-      }
-    }
+function acceptSseMessage(
+  chunk: string,
+  sseMessage: SseMessage,
+  tabId: string,
+  acceptChunk: (chunk: string, tabId: string) => ExecutorEvent | null,
+  progress: SseStreamProgress,
+) {
+  if (sseMessage.eventIdentifier) {
+    progress.lastEventIdentifier = sseMessage.eventIdentifier;
   }
 
-  return {
-    events,
-    lastEventIdentifier,
-    terminalEvent,
-  };
+  if (!sseMessage.data) {
+    return;
+  }
+
+  if (sseMessage.eventIdentifier && progress.acceptedEventIdentifiers.has(sseMessage.eventIdentifier)) {
+    return;
+  }
+
+  const event = acceptChunk(chunk, tabId);
+
+  if (!event) {
+    return;
+  }
+
+  if (sseMessage.eventIdentifier) {
+    progress.acceptedEventIdentifiers.add(sseMessage.eventIdentifier);
+  }
+
+  progress.events.push(event);
+
+  if (isTerminalWorkflowEvent(event)) {
+    progress.terminalEvent = event;
+  }
 }
 
 function parseSseChunk(chunk: string): ExecutorEvent | null {
@@ -1655,7 +1665,12 @@ function parseSseChunk(chunk: string): ExecutorEvent | null {
   return JSON.parse(sseMessage.data) as ExecutorEvent;
 }
 
-function parseSseMessage(chunk: string) {
+interface SseMessage {
+  eventIdentifier: string | null;
+  data: string | null;
+}
+
+function parseSseMessage(chunk: string): SseMessage {
   const eventIdentifierLines: string[] = [];
   const dataLines: string[] = [];
 

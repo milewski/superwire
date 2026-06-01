@@ -9,4 +9,5 @@ workspace = true
 [dependencies]
 ariadne = "0.6.0"
 serde_json = { workspace = true }
+serde_norway = { workspace = true }
 strsim = "0.11"

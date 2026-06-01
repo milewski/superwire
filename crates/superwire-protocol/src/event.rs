@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+const EVENT_DURATION_FIELD_NAME: &str = "duration_ms";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PlannedMcpImportEvent {
     pub name: String,
@@ -395,6 +397,26 @@ impl ExecutorEvent {
     #[must_use]
     pub fn is_terminal(&self) -> bool {
         self.kind.is_terminal()
+    }
+
+    #[must_use]
+    pub fn stream_deduplication_key(&self) -> String {
+        let stable_data = self.data.as_ref().map(Self::stable_stream_data);
+
+        serde_json::to_string(&(&self.kind, &self.agent_name, &self.message, &stable_data))
+            .expect("executor event stream deduplication key should serialize")
+    }
+
+    #[must_use]
+    fn stable_stream_data(data: &Value) -> Value {
+        let Value::Object(object) = data else {
+            return data.clone();
+        };
+
+        let mut stable_object = object.clone();
+        stable_object.remove(EVENT_DURATION_FIELD_NAME);
+
+        Value::Object(stable_object)
     }
 
     #[must_use]

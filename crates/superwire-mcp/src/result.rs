@@ -1,4 +1,5 @@
 use serde_json::Value;
+use superwire_types::PromptValueFormat;
 
 #[must_use]
 pub fn normalize_mcp_tool_result(result: Value) -> Value {
@@ -25,7 +26,7 @@ pub fn normalize_mcp_prompt_value(prompt_value: &Value) -> String {
         return prompt.to_string();
     }
 
-    serde_json::to_string(prompt_value).unwrap_or_else(|_error| prompt_value.to_string())
+    prompt_value.to_prompt_text()
 }
 
 #[must_use]

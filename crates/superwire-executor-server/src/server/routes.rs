@@ -23,7 +23,7 @@ use superwire_protocol::api::{CacheInvalidationRequest, ExecutionRequest, Format
 use superwire_provider_cersei::CerseiModelProvider;
 use tokio::fs;
 use tokio::net::TcpListener;
-use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 
 const RUN_IDENTIFIER_HEADER: &str = "x-superwire-run-id";
 
@@ -135,7 +135,7 @@ where
         ExecuteResponseKind::EventStream => {
             let stream_subscription = state.service.start_streamed_execution(request);
             let run_identifier = stream_subscription.run_identifier.clone();
-            let event_stream = ReceiverStream::new(stream_subscription.receiver).map(event_to_sse_result);
+            let event_stream = UnboundedReceiverStream::new(stream_subscription.receiver).map(event_to_sse_result);
 
             Ok(sse_response(event_stream, &run_identifier))
         }
@@ -187,7 +187,7 @@ where
         return Ok(StatusCode::NOT_FOUND.into_response());
     };
 
-    let event_stream = ReceiverStream::new(stream_subscription.receiver).map(event_to_sse_result);
+    let event_stream = UnboundedReceiverStream::new(stream_subscription.receiver).map(event_to_sse_result);
 
     Ok(sse_response(event_stream, &run_identifier))
 }

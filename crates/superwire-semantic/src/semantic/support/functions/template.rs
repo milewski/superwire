@@ -5,6 +5,7 @@ use serde_json::{Map, Value};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
+use superwire_types::PromptValueFormat;
 
 pub struct TemplateFunction;
 
@@ -214,9 +215,28 @@ fn render_template_with_bindings(
 }
 
 fn render_template_value(value: &Value) -> String {
-    if let Some(string_value) = value.as_str() {
-        return string_value.to_string();
-    }
+    value.to_prompt_text()
+}
 
-    serde_json::to_string(value).unwrap_or_else(|_| value.to_string())
+#[cfg(test)]
+mod tests {
+    use super::render_template_with_bindings;
+    use serde_json::{json, Map};
+
+    #[test]
+    fn renders_template_binding_objects_as_prompt_text() {
+        let bindings = Map::from_iter([(
+            "example".to_string(),
+            json!({
+                "title": "Demo",
+                "count": 2,
+                "tags": ["alpha", "beta"]
+            }),
+        )]);
+
+        assert_eq!(
+            render_template_with_bindings("hello world {{ example }}", &bindings, "template test").expect("template should render"),
+            "hello world count: 2\ntags:\n- alpha\n- beta\ntitle: Demo"
+        );
+    }
 }

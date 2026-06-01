@@ -7,6 +7,7 @@ use superwire_types::ast::{
     AgentContext, Asset, AssetPropertyName, Expression, MatchBranch, ModelAssetKind, Reference, ReferenceAccess, ReferenceKeyword,
     ReferenceRoot, StringTemplatePart,
 };
+use superwire_types::PromptValueFormat;
 
 #[derive(Debug, Clone)]
 pub struct EvaluationContext {
@@ -741,11 +742,7 @@ fn render_template_value(value: &Value) -> String {
         return String::new();
     }
 
-    if let Some(string_value) = value.as_str() {
-        return string_value.to_string();
-    }
-
-    serde_json::to_string(value).unwrap_or_else(|_| value.to_string())
+    value.to_prompt_text()
 }
 
 trait ValueAssetExt {

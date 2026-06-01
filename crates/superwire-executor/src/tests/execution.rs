@@ -3,6 +3,7 @@ use super::support::{request, TrackingModelProvider};
 use crate::model::ModelPromptContent;
 use crate::service::ExecutorService;
 use serde_json::json;
+use superwire_macros::workflow_source;
 
 #[tokio::test]
 async fn minimum_workflow_produces_output() {
@@ -169,7 +170,7 @@ async fn context_expression_serializes_agent_context_in_workflow_output() {
         output,
         json!({
             "context_value": { "agent": "analyzer" },
-            "context_text": "stored {\"agent\":\"analyzer\"}",
+            "context_text": "stored agent: analyzer",
         })
     );
 }
@@ -222,5 +223,70 @@ async fn context_expression_renders_inside_agent_instruction_template() {
         .expect("recorded requests lock should not be poisoned");
 
     assert_eq!(recorded_requests.len(), 2);
-    assert_eq!(recorded_requests[1].prompt, "Use {\"agent\":\"analyzer\"}");
+    assert_eq!(recorded_requests[1].prompt, "Use agent: analyzer");
+}
+
+#[tokio::test]
+async fn object_interpolation_uses_token_efficient_prompt_text() {
+    let workflow_source = workflow_source! {
+        provider openai from openai {
+            endpoint: "http://localhost:1234/v1"
+            api_key: "test-api-key"
+        }
+
+        model openai_model from openai {
+            id: "model-a"
+        }
+
+        agent example {
+            model: model.openai_model
+            instruction: "Create an example"
+            output {
+                title: string
+                count: number
+                enabled: boolean
+                tags: [string]
+            }
+        }
+
+        agent consumer {
+            model: model.openai_model
+            instruction: "hello world {{ agent.example }}"
+            output {
+                result: string
+            }
+        }
+
+        output {
+            result: agent.consumer.result
+        }
+    };
+    let model_provider = TrackingModelProvider::new(vec![
+        json!({
+            "title": "Demo",
+            "count": 2,
+            "enabled": true,
+            "tags": ["alpha", "beta"]
+        }),
+        json!({ "result": "used compact prompt" }),
+    ]);
+    let service = ExecutorService::new(model_provider.clone());
+
+    let output = service
+        .execute(request(workflow_source))
+        .await
+        .expect("workflow should execute")
+        .output;
+
+    assert_eq!(output, json!({ "result": "used compact prompt" }));
+
+    let recorded_requests = model_provider
+        .recorded_requests
+        .lock()
+        .expect("recorded requests lock should not be poisoned");
+
+    assert_eq!(
+        recorded_requests[1].prompt,
+        "hello world count: 2\nenabled: true\ntags:\n- alpha\n- beta\ntitle: Demo"
+    );
 }
