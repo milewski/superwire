@@ -1033,6 +1033,11 @@ textarea {
   @apply flex items-center justify-between gap-2 px-1;
 }
 
+.events-log__group-header--virtual {
+  height: 34px;
+  padding-inline: 0.25rem 0.55rem;
+}
+
 .events-log__group-label {
   @apply inline-flex items-center gap-1.5;
 }
@@ -1054,7 +1059,13 @@ textarea {
 }
 
 .events-log__item-trigger {
-  @apply flex h-auto w-full items-center justify-between gap-3 rounded-none px-3 py-2 text-left;
+  @apply flex w-full items-center justify-between gap-3 px-3 py-2 text-left;
+  height: 46px;
+}
+
+.events-log__item-trigger[data-selected="true"] {
+  border-color: color-mix(in srgb, var(--superwire-accent) 50%, transparent);
+  background: color-mix(in srgb, var(--superwire-accent) 8%, var(--card));
 }
 
 .events-log__item-meta {
@@ -1084,6 +1095,41 @@ textarea {
 .events-log__item-content {
   border-top: 1px solid var(--border);
   padding: 0.6rem 0.7rem 0.75rem;
+}
+
+.events-log__virtual-viewport {
+  height: clamp(260px, 42vh, 620px);
+  overflow: auto;
+  padding-right: 0.35rem;
+  contain: strict;
+}
+
+.events-log__virtual-spacer {
+  position: relative;
+  min-height: 100%;
+}
+
+.events-log__virtual-row {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  will-change: transform;
+}
+
+.events-log__details {
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--background) 76%, var(--card));
+  padding: 0.6rem 0.7rem 0.75rem;
+}
+
+.events-log__details-header {
+  @apply mb-2 flex min-w-0 flex-wrap items-center gap-2;
+}
+
+.events-log__details-title {
+  @apply font-mono text-xs;
+  color: var(--muted-foreground);
 }
 
 .wire-editor-shell {
@@ -1681,19 +1727,27 @@ textarea {
 }
 
 .graph-output-dialog__entries {
-  display: flex;
+  position: relative;
   min-width: 0;
-  flex-direction: column;
-  gap: 0.5rem;
   overflow-y: auto;
   padding-right: 0.15rem;
 }
 
+.graph-output-dialog__entries-spacer {
+  position: relative;
+  min-height: 100%;
+}
+
 .graph-output-dialog__entry {
   @apply grid min-w-0 cursor-pointer gap-1 rounded-lg border px-3 py-2 text-left;
+  position: absolute;
+  inset-inline: 0.05rem 0.25rem;
+  top: 0;
+  height: 66px;
   border-color: var(--graph-line);
   background: var(--graph-panel);
   color: color-mix(in srgb, var(--foreground) 82%, transparent);
+  will-change: transform;
 }
 
 .graph-output-dialog__entry:hover,
@@ -2339,6 +2393,38 @@ textarea {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(0.72rem, 1fr));
   gap: 0.32rem;
+}
+
+.graph-node__execution-strip-summary {
+  display: flex;
+  height: 0.62rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 9%, transparent);
+}
+
+.graph-node__execution-strip-summary span {
+  min-width: 2px;
+}
+
+.graph-node__execution-strip-summary span[data-status="completed"] {
+  background: color-mix(in srgb, var(--graph-output) 82%, var(--foreground) 18%);
+}
+
+.graph-node__execution-strip-summary span[data-status="running"] {
+  background: var(--graph-agent);
+}
+
+.graph-node__execution-strip-summary span[data-status="waiting"] {
+  background: color-mix(in srgb, var(--graph-agent) 62%, transparent);
+}
+
+.graph-node__execution-strip-summary span[data-status="failed"] {
+  background: var(--danger);
+}
+
+.graph-node__execution-strip-summary span[data-status="idle"] {
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
 }
 
 .graph-node__execution-strip button {

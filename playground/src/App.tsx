@@ -75,6 +75,8 @@ export default function App() {
   const [playgroundControlsStuck, setPlaygroundControlsStuck] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const graphDebounceTimeoutRef = useRef<number | null>(null);
+  const pendingEventBatchesRef = useRef(new Map<string, ExecutorEvent[]>());
+  const eventBatchFlushFrameRef = useRef<number | null>(null);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
   const canRun = activeTab?.runState !== 'running';
   const activeView: PlaygroundView = activeTab?.activeView ?? 'workflow';
@@ -118,6 +120,12 @@ export default function App() {
 
     return () => window.clearTimeout(timeoutIdentifier);
   }, [toastMessage]);
+
+  useEffect(() => () => {
+    if (eventBatchFlushFrameRef.current !== null) {
+      window.cancelAnimationFrame(eventBatchFlushFrameRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     if (!playgroundControlsSentinelElement) {
@@ -959,13 +967,70 @@ export default function App() {
       return null;
     }
 
-    updateTab(tabId, (tab) => ({
-      ...tab,
-      eventLog: [...tab.eventLog, event],
-      outputJson: event.kind === 'workflow_completed' && isRecord(event.data) && 'output' in event.data ? JSON.stringify(event.data.output, null, 2) : tab.outputJson,
-    }));
+    enqueueWorkflowEvent(tabId, event);
+
+    if (isTerminalWorkflowEvent(event)) {
+      flushPendingWorkflowEvents();
+    }
 
     return event;
+  }
+
+  function enqueueWorkflowEvent(tabId: string, event: ExecutorEvent) {
+    const pendingEvents = pendingEventBatchesRef.current.get(tabId) ?? [];
+    pendingEvents.push(event);
+    pendingEventBatchesRef.current.set(tabId, pendingEvents);
+
+    if (eventBatchFlushFrameRef.current !== null) {
+      return;
+    }
+
+    eventBatchFlushFrameRef.current = window.requestAnimationFrame(flushPendingWorkflowEvents);
+  }
+
+  function flushPendingWorkflowEvents() {
+    if (eventBatchFlushFrameRef.current !== null) {
+      window.cancelAnimationFrame(eventBatchFlushFrameRef.current);
+      eventBatchFlushFrameRef.current = null;
+    }
+
+    if (pendingEventBatchesRef.current.size === 0) {
+      return;
+    }
+
+    const pendingEventBatches = pendingEventBatchesRef.current;
+    pendingEventBatchesRef.current = new Map();
+
+    setTabs((currentTabs) => currentTabs.map((tab) => {
+      const pendingEvents = pendingEventBatches.get(tab.id);
+
+      if (!pendingEvents || pendingEvents.length === 0) {
+        return tab;
+      }
+
+      const completedEvent = latestCompletedWorkflowEvent(pendingEvents);
+      const outputJson = completedEvent && isRecord(completedEvent.data) && 'output' in completedEvent.data
+        ? JSON.stringify(completedEvent.data.output, null, 2)
+        : tab.outputJson;
+
+      return {
+        ...tab,
+        eventLog: [...tab.eventLog, ...pendingEvents],
+        outputJson,
+      };
+    }));
+  }
+
+  function latestCompletedWorkflowEvent(events: ExecutorEvent[]) {
+    for (let eventIndex = events.length - 1; eventIndex >= 0; eventIndex -= 1) {
+      const event = events[eventIndex];
+
+      if (event.kind === 'workflow_completed') {
+        return event;
+      }
+    }
+
+    return null;
   }
 
   const playgroundControlsSentinel = <div ref={setPlaygroundControlsSentinelElement} className="playground__controls-sentinel" aria-hidden="true" />;
