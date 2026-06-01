@@ -1,0 +1,33 @@
+provider qwen from openai_compatible {
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+}
+
+model qwen_doc from qwen {
+    id: "qwen-doc-turbo"
+    wire_api: "chat/completion"
+}
+
+agent summarizer {
+    model: model.qwen_doc
+    instruction: "Summarize this"
+    output {
+        value: string
+    }
+}
+
+agent reviewer {
+    model: model.qwen_doc
+    instruction: "Review the uploaded file."
+    file {
+        name: "example.json"
+        content: agent.summarizer
+    }
+    output {
+        value: string
+    }
+}
+
+output {
+    value: agent.reviewer.value
+}

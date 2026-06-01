@@ -12,6 +12,7 @@ cersei-provider = { workspace = true }
 cersei-types = { workspace = true }
 jsonschema = { workspace = true }
 log = { workspace = true }
+reqwest = { version = "0.12", features = ["json", "multipart", "rustls-tls", "rustls-tls-webpki-roots"], default-features = false }
 serde_json = { workspace = true }
 superwire-mcp = { path = "../superwire-mcp" }
 superwire-model = { path = "../superwire-model" }

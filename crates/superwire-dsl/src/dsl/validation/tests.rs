@@ -605,6 +605,117 @@ fn reports_direct_agent_inference_as_unknown_property() {
 }
 
 #[test]
+fn accepts_agent_file_when_model_uses_chat_completion_wire_api() {
+    let workflow = parse_inline_workflow! {
+        provider qwen from openai_compatible {}
+
+        model qwen_doc from qwen {
+            id: "qwen-doc-turbo"
+            wire_api: "chat/completion"
+        }
+
+        agent reviewer {
+            model: model.qwen_doc
+            instruction: "Review the uploaded file."
+            file {
+                name: "example.json"
+                content: { value: "example" }
+            }
+        }
+    };
+
+    assert_workflow_issues_do_not_contain!(
+        workflow,
+        ValidationIssue::InvalidAgentFileWireApi {
+            agent_name: _,
+            model_name: _,
+            wire_api: _
+        }
+    );
+}
+
+#[test]
+fn reports_agent_file_without_chat_completion_wire_api() {
+    let workflow = parse_inline_workflow! {
+        provider qwen from openai_compatible {}
+
+        model qwen_doc from qwen {
+            id: "qwen-doc-turbo"
+        }
+
+        agent reviewer {
+            model: model.qwen_doc
+            instruction: "Review the uploaded file."
+            file {
+                content: "content"
+            }
+        }
+    };
+
+    assert_workflow_issues_contain!(
+        workflow,
+        ValidationIssue::InvalidAgentFileWireApi {
+            agent_name,
+            model_name,
+            wire_api
+        } if agent_name == "reviewer" && model_name == "qwen_doc" && wire_api == "responses"
+    );
+}
+
+#[test]
+fn reports_agent_file_missing_content() {
+    let workflow = parse_inline_workflow! {
+        provider qwen from openai_compatible {}
+
+        model qwen_doc from qwen {
+            id: "qwen-doc-turbo"
+            wire_api: "chat/completion"
+        }
+
+        agent reviewer {
+            model: model.qwen_doc
+            instruction: "Review the uploaded file."
+            file {
+                name: "example.json"
+            }
+        }
+    };
+
+    assert_workflow_issues_contain!(
+        workflow,
+        ValidationIssue::MissingAgentFileContent { agent_name } if agent_name == "reviewer"
+    );
+}
+
+#[test]
+fn reports_unsupported_agent_file_property() {
+    let workflow = parse_inline_workflow! {
+        provider qwen from openai_compatible {}
+
+        model qwen_doc from qwen {
+            id: "qwen-doc-turbo"
+            wire_api: "chat/completion"
+        }
+
+        agent reviewer {
+            model: model.qwen_doc
+            file {
+                path: "example.json"
+                content: "content"
+            }
+        }
+    };
+
+    assert_workflow_issues_contain!(
+        workflow,
+        ValidationIssue::UnsupportedAgentFileProperty {
+            agent_name,
+            property_name
+        } if agent_name == "reviewer" && property_name == "path"
+    );
+}
+
+#[test]
 fn reports_unknown_agent_properties() {
     let workflow = parse_inline_workflow! {
         provider openai from openai {}

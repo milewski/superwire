@@ -4,7 +4,7 @@ use crate::semantic::support::types::{validate_value_against_type, WorkflowSchem
 use crate::semantic::WorkflowSemanticError;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use superwire_types::ast::{AgentDeclaration, Expression, ObjectField, OutputDeclaration, Workflow};
+use superwire_types::ast::{AgentDeclaration, Expression, ModelWireApi, ObjectField, OutputDeclaration, Workflow};
 
 #[derive(Debug, Clone)]
 pub struct PlannedAgent {
@@ -13,6 +13,7 @@ pub struct PlannedAgent {
     pub provider_name: String,
     pub model_name: String,
     pub model_id_expression: Expression,
+    pub wire_api: ModelWireApi,
     pub inference_fields: Vec<ObjectField>,
     pub iteration_output_type: WorkflowType,
     pub final_output_type: WorkflowType,
@@ -143,6 +144,7 @@ pub fn build_execution_plan(workflow: &Workflow, typed_workflow_ir: &TypedWorkfl
                 provider_name: typed_agent.provider_name.clone(),
                 model_name: typed_agent.model_name.clone(),
                 model_id_expression: typed_agent.model_id_expression.clone(),
+                wire_api: typed_agent.wire_api,
                 inference_fields: typed_agent.inference_fields.clone(),
                 iteration_output_type: typed_agent.iteration_output_type.clone(),
                 final_output_type: typed_agent.final_output_type.clone(),

@@ -12,6 +12,7 @@ pub enum PropertyValueKind {
     ModelUsage,
     ToolList,
     DynamicObject,
+    FileBlock,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -36,6 +37,7 @@ pub struct Model {
     pub id: ModelId,
     pub inference: Option<ModelInference>,
     pub assets: Option<ModelAssets>,
+    pub wire_api: Option<ModelWireApi>,
 }
 
 impl Model {
@@ -45,11 +47,12 @@ impl Model {
             id: ModelId,
             inference: Some(ModelInference),
             assets: Some(ModelAssets),
+            wire_api: Some(ModelWireApi),
         }
     }
 
     #[must_use]
-    pub fn properties(&self) -> [PropertyDefinition; 3] {
+    pub fn properties(&self) -> [PropertyDefinition; 4] {
         [
             self.id.definition(),
             self.inference
@@ -57,6 +60,10 @@ impl Model {
                 .expect("model structure should include inference")
                 .definition(),
             self.assets.as_ref().expect("model structure should include assets").definition(),
+            self.wire_api
+                .as_ref()
+                .expect("model structure should include wire_api")
+                .definition(),
         ]
     }
 }
@@ -246,6 +253,7 @@ pub struct Agent {
     pub instruction: AgentInstruction,
     pub context: Option<AgentContext>,
     pub uses: Vec<AgentUse>,
+    pub file: Vec<AgentFile>,
     pub output: Option<AgentOutput>,
     pub dynamic: Vec<AgentDynamic>,
 }
@@ -258,13 +266,14 @@ impl Agent {
             instruction: AgentInstruction,
             context: Some(AgentContext),
             uses: vec![AgentUse],
+            file: vec![AgentFile],
             output: Some(AgentOutput),
             dynamic: vec![AgentDynamic::default()],
         }
     }
 
     #[must_use]
-    pub fn properties(&self) -> [PropertyDefinition; 6] {
+    pub fn properties(&self) -> [PropertyDefinition; 7] {
         [
             self.dynamic[0].definition(),
             self.model.definition(),
@@ -272,6 +281,7 @@ impl Agent {
             self.output.as_ref().expect("agent structure should include output").definition(),
             self.context.as_ref().expect("agent structure should include context").definition(),
             self.uses[0].definition(),
+            self.file[0].definition(),
         ]
     }
 
@@ -364,6 +374,11 @@ impl Agent {
         property_name == self.uses[0].definition().name
     }
 
+    #[must_use]
+    pub fn property_is_file(&self, property_name: &str) -> bool {
+        property_name == self.file[0].definition().name
+    }
+
     fn max_typo_distance(property_name: &str) -> usize {
         let property_name_length = property_name.chars().count();
 
@@ -429,6 +444,23 @@ impl DslProperty for ModelAssets {
             repeatable: false,
             detail: "Supported asset kinds",
             documentation: "Declares which asset kinds this model profile can receive.",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ModelWireApi;
+
+impl DslProperty for ModelWireApi {
+    fn definition(&self) -> PropertyDefinition {
+        PropertyDefinition {
+            name: "wire_api",
+            value_kind: PropertyValueKind::Expression,
+            required: false,
+            repeatable: false,
+            detail: "Wire API endpoint",
+            documentation:
+                "Overrides the wire API for this model profile. Defaults to `responses`; use `chat/completion` for file directives.",
         }
     }
 }
@@ -724,6 +756,22 @@ impl DslProperty for AgentUse {
             repeatable: false,
             detail: "Usable capabilities expression",
             documentation: "Declares tool, MCP prompt, and MCP resource references available to this agent.",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AgentFile;
+
+impl DslProperty for AgentFile {
+    fn definition(&self) -> PropertyDefinition {
+        PropertyDefinition {
+            name: "file",
+            value_kind: PropertyValueKind::FileBlock,
+            required: false,
+            repeatable: true,
+            detail: "Uploaded file",
+            documentation: "Uploads content before the agent call and injects the returned file id into chat history.",
         }
     }
 }

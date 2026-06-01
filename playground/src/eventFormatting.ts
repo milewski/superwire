@@ -20,6 +20,28 @@ export function formatEventData(event: ExecutorEvent) {
   return JSON.stringify(event, null, 2);
 }
 
+export function formatEventSummary(event: ExecutorEvent) {
+  if (event.message) {
+    return event.message;
+  }
+
+  if ((event.kind === 'agent_file_created' || event.kind === 'agent_file_deleted') && isRecord(event.data)) {
+    const fileId = event.data.file_id;
+    const filename = event.data.filename;
+    const purpose = event.data.purpose;
+
+    if (typeof fileId === 'string') {
+      const action = event.kind === 'agent_file_created' ? 'Created' : 'Deleted';
+      const fileNameText = typeof filename === 'string' ? ` ${filename}` : '';
+      const purposeText = typeof purpose === 'string' ? ` for ${purpose}` : '';
+
+      return `${action} file${fileNameText}: ${fileId}${purposeText}`;
+    }
+  }
+
+  return 'View payload';
+}
+
 export function formatEventTimestamp(event: ExecutorEvent) {
   if (typeof event.timestamp_ms !== 'number') {
     return null;

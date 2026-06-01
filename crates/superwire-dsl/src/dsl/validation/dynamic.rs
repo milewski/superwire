@@ -137,6 +137,11 @@ pub(super) fn validate_agent_dependency_cycles(
                 AgentProperty::Context(agent_context) => {
                     agent_context.collect_agent_dependencies(&mut referenced_agents);
                 }
+                AgentProperty::File(agent_file) => {
+                    for file_field in &agent_file.fields {
+                        file_field.value.collect_agent_dependencies(&mut referenced_agents);
+                    }
+                }
                 AgentProperty::Model(model_usage) => {
                     for model_property in &model_usage.properties {
                         model_property.value.collect_agent_dependencies(&mut referenced_agents);

@@ -155,12 +155,13 @@ pub enum ModelDeclarationPropertyName {
     Id,
     Inference,
     Assets,
+    WireApi,
 }
 
 impl ModelDeclarationPropertyName {
     #[must_use]
-    pub fn all() -> [Self; 3] {
-        [Self::Id, Self::Inference, Self::Assets]
+    pub fn all() -> [Self; 4] {
+        [Self::Id, Self::Inference, Self::Assets, Self::WireApi]
     }
 
     #[must_use]
@@ -174,6 +175,7 @@ impl ModelDeclarationPropertyName {
             Self::Id => "id",
             Self::Inference => "inference",
             Self::Assets => "assets",
+            Self::WireApi => "wire_api",
         }
     }
 
@@ -189,6 +191,69 @@ impl ModelDeclarationPropertyName {
                 .assets
                 .expect("model structure should include assets")
                 .definition(),
+            Self::WireApi => structure::Model::new()
+                .wire_api
+                .expect("model structure should include wire_api")
+                .definition(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ModelWireApi {
+    Responses,
+    ChatCompletion,
+}
+
+impl ModelWireApi {
+    #[must_use]
+    pub fn default_value() -> Self {
+        Self::Responses
+    }
+
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        Self::all().into_iter().find(|wire_api| wire_api.as_str() == identifier)
+    }
+
+    #[must_use]
+    pub fn all() -> [Self; 2] {
+        [Self::Responses, Self::ChatCompletion]
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Responses => "responses",
+            Self::ChatCompletion => "chat/completion",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AgentFilePropertyName {
+    Name,
+    Content,
+    Purpose,
+}
+
+impl AgentFilePropertyName {
+    #[must_use]
+    pub fn all() -> [Self; 3] {
+        [Self::Name, Self::Content, Self::Purpose]
+    }
+
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        Self::all().into_iter().find(|property_name| property_name.as_str() == identifier)
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Name => "name",
+            Self::Content => "content",
+            Self::Purpose => "purpose",
         }
     }
 }

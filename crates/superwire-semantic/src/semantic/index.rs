@@ -5,8 +5,8 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use superwire_types::ast::{
     AgentDeclaration, Declaration, McpPromptImportDeclaration, McpResourceImportDeclaration, McpServerDeclaration, ModelDeclaration,
-    ObjectField, ProviderDeclaration, Reference, ReferenceRoot, SchemaDeclaration, SourceSpan, ToolDeclaration, ToolSource, TypeExpression,
-    TypedField, Workflow,
+    ModelWireApi, ObjectField, ProviderDeclaration, Reference, ReferenceRoot, SchemaDeclaration, SourceSpan, ToolDeclaration, ToolSource,
+    TypeExpression, TypedField, Workflow,
 };
 
 trait SemanticDeclarationNameValidationExt {
@@ -236,6 +236,7 @@ pub struct SemanticModel {
     pub name: String,
     pub provider_name: String,
     pub model_identifier: Option<String>,
+    pub wire_api: ModelWireApi,
     pub span: SourceSpan,
 }
 
@@ -246,6 +247,7 @@ impl SemanticModel {
             name: model_declaration.name.clone(),
             provider_name: model_declaration.provider_name.clone(),
             model_identifier: model_declaration.id_literal().map(str::to_string),
+            wire_api: model_declaration.wire_api(),
             span: model_declaration.span,
         }
     }

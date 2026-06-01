@@ -74,6 +74,8 @@ pub enum ExecutorEventKind {
     ContextCompactionStarted,
     ContextCompactionCompleted,
     ContextCompactionFailed,
+    AgentFileCreated,
+    AgentFileDeleted,
     AgentStarted,
     AgentCompleted,
     ToolCallStarted,
@@ -103,6 +105,8 @@ impl ExecutorEventKind {
             Self::ContextCompactionStarted => "context_compaction_started",
             Self::ContextCompactionCompleted => "context_compaction_completed",
             Self::ContextCompactionFailed => "context_compaction_failed",
+            Self::AgentFileCreated => "agent_file_created",
+            Self::AgentFileDeleted => "agent_file_deleted",
             Self::AgentStarted => "agent_started",
             Self::AgentCompleted => "agent_completed",
             Self::ToolCallStarted => "tool_call_started",
@@ -229,6 +233,34 @@ impl ExecutorEvent {
         Self::new(ExecutorEventKind::AgentStarted)
             .with_agent_name(agent_name)
             .with_data(Value::Object(event_data))
+    }
+
+    #[must_use]
+    pub fn agent_file_created(agent_name: String, file_id: String, filename: String, purpose: String, bytes: Option<u64>) -> Self {
+        let mut event_data = serde_json::Map::from_iter([
+            ("file_id".to_string(), Value::String(file_id)),
+            ("filename".to_string(), Value::String(filename)),
+            ("purpose".to_string(), Value::String(purpose)),
+        ]);
+
+        if let Some(bytes) = bytes {
+            event_data.insert("bytes".to_string(), serde_json::json!(bytes));
+        }
+
+        Self::new(ExecutorEventKind::AgentFileCreated)
+            .with_agent_name(agent_name)
+            .with_data(Value::Object(event_data))
+    }
+
+    #[must_use]
+    pub fn agent_file_deleted(agent_name: String, file_id: String, filename: String, purpose: String) -> Self {
+        Self::new(ExecutorEventKind::AgentFileDeleted)
+            .with_agent_name(agent_name)
+            .with_data(serde_json::json!({
+                "file_id": file_id,
+                "filename": filename,
+                "purpose": purpose,
+            }))
     }
 
     #[must_use]

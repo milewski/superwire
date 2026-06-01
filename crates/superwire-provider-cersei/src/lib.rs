@@ -9,12 +9,12 @@ use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
 use superwire_mcp::{normalize_mcp_tool_result, render_mcp_prompt_text_result, render_mcp_resource_text_result, McpServerConfig};
 use superwire_model::{
-    FinalizeCallKind, ModelAsset, ModelAssetSource, ModelPromptContent, ModelProvider, ModelProviderError as ProviderError, ModelRequest,
-    ModelResponse, ModelSchemaCache, ModelToolDefinition, ModelToolSource,
+    FinalizeCallKind, ModelAsset, ModelAssetSource, ModelFileAttachment, ModelPromptContent, ModelProvider,
+    ModelProviderError as ProviderError, ModelRequest, ModelResponse, ModelSchemaCache, ModelToolDefinition, ModelToolSource,
 };
 use superwire_protocol::event::{ExecutorEvent, McpCallEventDetails};
 use superwire_semantic::support::provider::{ProviderApiFormat, ProviderConfig, ProviderDriver};
-use superwire_types::ModelAssetKind;
+use superwire_types::{ModelAssetKind, ModelWireApi};
 
 const MAX_TOOL_CALL_ROUNDS: usize = 8;
 const DEFAULT_MAX_TOKENS: u32 = 16_384;
@@ -28,11 +28,29 @@ pub struct CerseiModelProvider;
 #[async_trait]
 impl ModelProvider for CerseiModelProvider {
     async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ProviderError> {
-        let provider = request.provider_config.build_provider(&request)?;
+        let uploaded_files = self.upload_files(&request).await?;
+        let generation_result = self.generate_with_uploaded_files(&request, &uploaded_files).await;
+        let cleanup_result = self.delete_uploaded_files(&request, &uploaded_files).await;
+
+        match (generation_result, cleanup_result) {
+            (Ok(model_response), Ok(())) => Ok(model_response),
+            (Err(error), Ok(())) => Err(error),
+            (Ok(_) | Err(_), Err(cleanup_error)) => Err(cleanup_error),
+        }
+    }
+}
+
+impl CerseiModelProvider {
+    async fn generate_with_uploaded_files(
+        &self,
+        request: &ModelRequest,
+        uploaded_files: &[UploadedProviderFile],
+    ) -> Result<ModelResponse, ProviderError> {
+        let provider = request.provider_config.build_provider(request)?;
         let mut schema_cache = ModelSchemaCache::new();
         let request_context = request.cersei_request_context(&mut schema_cache)?;
         let mut last_error = None;
-        let context_messages = request.cersei_context_messages()?;
+        let context_messages = request.cersei_context_messages(uploaded_files)?;
         let mut messages = context_messages.clone();
         let max_retries = request.provider_max_retries();
         let retry_base_delay = request.provider_retry_base_delay();
@@ -77,10 +95,10 @@ impl ModelProvider for CerseiModelProvider {
                     request.provider_config.driver.as_str(),
                     tool_calls.len()
                 );
-                let tool_call_round = self.execute_tool_calls(&request, &tool_calls, &mut schema_cache)?;
+                let tool_call_round = self.execute_tool_calls(request, &tool_calls, &mut schema_cache)?;
 
                 if let Some(finalize_result) = tool_call_round.finalize_result {
-                    return self.complete_generation(&request, &context_messages, finalize_result);
+                    return self.complete_generation(request, &context_messages, finalize_result);
                 }
 
                 messages.push(completion.message.without_empty_text_blocks());
@@ -100,7 +118,7 @@ impl ModelProvider for CerseiModelProvider {
         }
 
         Err(ProviderError::Model {
-            agent_name: request.agent_name,
+            agent_name: request.agent_name.clone(),
             message: last_error.unwrap_or_else(|| "model did not call finalize".to_string()),
         })
     }
@@ -194,18 +212,22 @@ impl CerseiRequestContext {
 }
 
 trait ModelRequestCerseiMessageExt {
-    fn cersei_context_messages(&self) -> Result<Vec<Message>, ProviderError>;
+    fn cersei_context_messages(&self, uploaded_files: &[UploadedProviderFile]) -> Result<Vec<Message>, ProviderError>;
     fn cersei_user_message(&self) -> Message;
     fn cersei_content_blocks(&self) -> Vec<ContentBlock>;
 }
 
 impl ModelRequestCerseiMessageExt for ModelRequest {
-    fn cersei_context_messages(&self) -> Result<Vec<Message>, ProviderError> {
+    fn cersei_context_messages(&self, uploaded_files: &[UploadedProviderFile]) -> Result<Vec<Message>, ProviderError> {
         let mut messages = if let Some(context_value) = &self.context {
             CerseiAgentContext::from_value(context_value, &self.agent_name)?.messages
         } else {
             Vec::new()
         };
+
+        for uploaded_file in uploaded_files {
+            messages.push(Message::system(format!("fileid://{}", uploaded_file.id)));
+        }
 
         messages.push(self.cersei_user_message());
 
@@ -293,6 +315,64 @@ impl ModelAssetCerseiExt for ModelAsset {
 }
 
 impl CerseiModelProvider {
+    async fn upload_files(&self, request: &ModelRequest) -> Result<Vec<UploadedProviderFile>, ProviderError> {
+        if request.file_attachments.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        if request.wire_api != ModelWireApi::ChatCompletion {
+            return Err(ProviderError::Model {
+                agent_name: request.agent_name.clone(),
+                message: format!(
+                    "agent `{}` file directives require `wire_api: \"{}\"`",
+                    request.agent_name,
+                    ModelWireApi::ChatCompletion.as_str()
+                ),
+            });
+        }
+
+        if request.provider_config.driver.api_format() != ProviderApiFormat::OpenAiCompatible {
+            return Err(ProviderError::Model {
+                agent_name: request.agent_name.clone(),
+                message: "file directives require an OpenAI-compatible provider".to_string(),
+            });
+        }
+
+        let upload_client = FileUploadClient::from_request(request)?;
+        let mut uploaded_files = Vec::new();
+
+        for file_attachment in &request.file_attachments {
+            match upload_client.upload(file_attachment, &request.agent_name).await {
+                Ok(uploaded_file) => {
+                    request.send_agent_file_created(&uploaded_file);
+                    uploaded_files.push(uploaded_file);
+                }
+                Err(error) => {
+                    self.delete_uploaded_files(request, &uploaded_files).await?;
+
+                    return Err(error);
+                }
+            }
+        }
+
+        Ok(uploaded_files)
+    }
+
+    async fn delete_uploaded_files(&self, request: &ModelRequest, uploaded_files: &[UploadedProviderFile]) -> Result<(), ProviderError> {
+        if uploaded_files.is_empty() {
+            return Ok(());
+        }
+
+        let upload_client = FileUploadClient::from_request(request)?;
+
+        for uploaded_file in uploaded_files.iter().rev() {
+            upload_client.delete(uploaded_file, &request.agent_name).await?;
+            request.send_agent_file_deleted(uploaded_file);
+        }
+
+        Ok(())
+    }
+
     async fn complete_with_retry(
         provider: &dyn Provider,
         request: &CompletionRequest,
@@ -562,6 +642,147 @@ enum ToolCallOutcome {
 enum FinalizeResult {
     Success(Value),
     Fail(String),
+}
+
+#[derive(Debug, Clone)]
+struct UploadedProviderFile {
+    id: String,
+    filename: String,
+    purpose: String,
+    bytes: Option<u64>,
+}
+
+struct FileUploadClient {
+    endpoint: String,
+    api_key: String,
+    client: reqwest::Client,
+}
+
+impl FileUploadClient {
+    fn from_request(request: &ModelRequest) -> Result<Self, ProviderError> {
+        let endpoint = request
+            .provider_config
+            .endpoint
+            .clone()
+            .or_else(|| request.provider_config.driver.default_endpoint().map(str::to_string))
+            .ok_or_else(|| ProviderError::Model {
+                agent_name: request.agent_name.clone(),
+                message: format!("provider `{}` requires an endpoint", request.provider_config.driver.as_str()),
+            })?;
+        let api_key = request
+            .provider_config
+            .api_key
+            .clone()
+            .or_else(|| request.provider_config.driver.api_key_from_environment())
+            .ok_or_else(|| ProviderError::Model {
+                agent_name: request.agent_name.clone(),
+                message: format!(
+                    "provider `{}` requires an api key for file uploads",
+                    request.provider_config.driver.as_str()
+                ),
+            })?;
+
+        Ok(Self {
+            endpoint,
+            api_key,
+            client: reqwest::Client::new(),
+        })
+    }
+
+    async fn upload(&self, file_attachment: &ModelFileAttachment, agent_name: &str) -> Result<UploadedProviderFile, ProviderError> {
+        let file_part = reqwest::multipart::Part::bytes(file_attachment.content.clone().into_bytes())
+            .file_name(file_attachment.name.clone())
+            .mime_str("text/plain")
+            .map_err(|error| ProviderError::Model {
+                agent_name: agent_name.to_string(),
+                message: format!("failed to prepare file upload: {error}"),
+            })?;
+        let form = reqwest::multipart::Form::new()
+            .part("file", file_part)
+            .text("purpose", file_attachment.purpose.clone());
+        let url = format!("{}/files", self.endpoint.trim_end_matches('/'));
+        let response = self
+            .client
+            .post(url)
+            .bearer_auth(&self.api_key)
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|error| ProviderError::Model {
+                agent_name: agent_name.to_string(),
+                message: format!("file upload request failed: {error}"),
+            })?;
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+
+        if !status.is_success() {
+            return Err(ProviderError::Model {
+                agent_name: agent_name.to_string(),
+                message: format!("file upload failed with HTTP {}: {body}", status.as_u16()),
+            });
+        }
+
+        let response_value = serde_json::from_str::<Value>(&body).map_err(|error| ProviderError::Model {
+            agent_name: agent_name.to_string(),
+            message: format!("file upload response was invalid JSON: {error}"),
+        })?;
+        let id = response_value
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| ProviderError::Model {
+                agent_name: agent_name.to_string(),
+                message: "file upload response did not include `id`".to_string(),
+            })?
+            .to_string();
+        let filename = response_value
+            .get("filename")
+            .and_then(Value::as_str)
+            .unwrap_or(file_attachment.name.as_str())
+            .to_string();
+        let purpose = response_value
+            .get("purpose")
+            .and_then(Value::as_str)
+            .unwrap_or(file_attachment.purpose.as_str())
+            .to_string();
+        let bytes = response_value.get("bytes").and_then(Value::as_u64);
+
+        Ok(UploadedProviderFile {
+            id,
+            filename,
+            purpose,
+            bytes,
+        })
+    }
+
+    async fn delete(&self, uploaded_file: &UploadedProviderFile, agent_name: &str) -> Result<(), ProviderError> {
+        let url = format!("{}/files/{}", self.endpoint.trim_end_matches('/'), uploaded_file.id);
+        let response = self
+            .client
+            .delete(url)
+            .bearer_auth(&self.api_key)
+            .send()
+            .await
+            .map_err(|error| ProviderError::Model {
+                agent_name: agent_name.to_string(),
+                message: format!("file delete request failed for `{}`: {error}", uploaded_file.id),
+            })?;
+
+        if response.status().is_success() {
+            return Ok(());
+        }
+
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+
+        Err(ProviderError::Model {
+            agent_name: agent_name.to_string(),
+            message: format!(
+                "file delete failed for `{}` with HTTP {}: {body}",
+                uploaded_file.id,
+                status.as_u16()
+            ),
+        })
+    }
 }
 
 struct McpToolTarget<'source> {
@@ -1166,6 +1387,10 @@ fn normalize_instance_path(instance_path: &str) -> String {
 }
 
 trait ToolCallEventSender {
+    fn send_agent_file_created(&self, uploaded_file: &UploadedProviderFile);
+
+    fn send_agent_file_deleted(&self, uploaded_file: &UploadedProviderFile);
+
     fn send_tool_call_failed(&self, tool_name: &str, error: &Value, duration: Duration);
 
     fn send_mcp_tool_validation_started(&self, tool_name: &str, arguments: &Value, input_schema: &Value);
@@ -1182,6 +1407,29 @@ trait ToolCallEventSender {
 }
 
 impl ToolCallEventSender for ModelRequest {
+    fn send_agent_file_created(&self, uploaded_file: &UploadedProviderFile) {
+        if let Some(event_sender) = &self.event_sender {
+            let _ = event_sender.try_send(ExecutorEvent::agent_file_created(
+                self.agent_name.clone(),
+                uploaded_file.id.clone(),
+                uploaded_file.filename.clone(),
+                uploaded_file.purpose.clone(),
+                uploaded_file.bytes,
+            ));
+        }
+    }
+
+    fn send_agent_file_deleted(&self, uploaded_file: &UploadedProviderFile) {
+        if let Some(event_sender) = &self.event_sender {
+            let _ = event_sender.try_send(ExecutorEvent::agent_file_deleted(
+                self.agent_name.clone(),
+                uploaded_file.id.clone(),
+                uploaded_file.filename.clone(),
+                uploaded_file.purpose.clone(),
+            ));
+        }
+    }
+
     fn send_tool_call_failed(&self, tool_name: &str, error: &Value, duration: Duration) {
         if let Some(event_sender) = &self.event_sender {
             let _ = event_sender.try_send(ExecutorEvent::tool_call_failed(

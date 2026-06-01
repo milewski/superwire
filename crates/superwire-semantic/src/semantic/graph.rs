@@ -903,6 +903,9 @@ impl PlannedAgent {
                 AgentProperty::Dynamic(dynamic_block) => {
                     bindings.extend(dynamic_block.fields.iter().map(ObjectField::execution_graph_binding));
                 }
+                AgentProperty::File(agent_file) => {
+                    bindings.extend(agent_file.fields.iter().map(ObjectField::execution_graph_binding));
+                }
                 AgentProperty::Model(_)
                 | AgentProperty::InvalidModel(_)
                 | AgentProperty::Output { fields: _, span: _ }
@@ -1027,6 +1030,11 @@ impl PlannedAgent {
                         return true;
                     }
                 }
+                AgentProperty::File(agent_file) => {
+                    if agent_file.fields.iter().any(ObjectField::references_runtime) {
+                        return true;
+                    }
+                }
                 AgentProperty::Output { fields: _, span: _ } | AgentProperty::Unknown { name: _, span: _ } => {}
             }
         }
@@ -1059,6 +1067,11 @@ impl PlannedAgent {
                     for dynamic_field in &dynamic_block.fields {
                         local_dynamic_fields.insert(dynamic_field.name.clone());
                         dynamic_field.value.collect_dynamic_dependencies(&mut dependencies);
+                    }
+                }
+                AgentProperty::File(agent_file) => {
+                    for file_field in &agent_file.fields {
+                        file_field.value.collect_dynamic_dependencies(&mut dependencies);
                     }
                 }
                 AgentProperty::Output { fields: _, span: _ } | AgentProperty::Unknown { name: _, span: _ } => {}

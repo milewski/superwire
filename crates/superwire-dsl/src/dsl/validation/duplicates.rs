@@ -327,6 +327,22 @@ impl WorkflowDuplicateValidationExt for Workflow {
                                     );
                                 }
                             }
+                            AgentProperty::File(agent_file) => {
+                                report_duplicate_object_field_names(
+                                    agent_file.fields.as_slice(),
+                                    agent_context.clone(),
+                                    Some(agent_file.span),
+                                    validation_report,
+                                );
+
+                                for file_field in &agent_file.fields {
+                                    file_field.value.report_duplicate_object_fields(
+                                        agent_context.clone(),
+                                        Some(agent_file.span),
+                                        validation_report,
+                                    );
+                                }
+                            }
                             AgentProperty::Model(model_usage) => {
                                 report_duplicate_object_field_names(
                                     model_usage.properties.as_slice(),

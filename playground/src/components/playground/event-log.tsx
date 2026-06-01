@@ -3,7 +3,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import JsonCodeEditor from '@/components/json-code-editor';
-import { eventTone, formatEventData, formatEventDuration, formatEventTimestamp } from '../../eventFormatting';
+import { eventTone, formatEventData, formatEventDuration, formatEventSummary, formatEventTimestamp } from '../../eventFormatting';
 import type { ExecutorEvent } from '../../types';
 
 export enum EventGroupingMode {
@@ -197,7 +197,7 @@ function EventLogEvent({ row, selected, onSelect }: { row: EventLogEventRow; sel
         {eventTimestamp ? <span className="events-log__item-time">{eventTimestamp}</span> : null}
         {eventDuration ? <Badge variant="outline" className="event-duration">{eventDuration}</Badge> : null}
       </span>
-      <span className="events-log__item-summary">{row.event.message ?? 'View payload'}</span>
+      <span className="events-log__item-summary">{formatEventSummary(row.event)}</span>
       <span className="events-log__item-expand">View</span>
     </button>
   );

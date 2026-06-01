@@ -119,6 +119,16 @@ pub(super) fn validate_agent_references(workflow: &Workflow, validation_index: &
                                 agent_context.clone(),
                             );
                         }
+                        AgentProperty::File(agent_file) => {
+                            for file_field in &agent_file.fields {
+                                keyword_reference_validation_state.validate_expression(
+                                    &file_field.value,
+                                    &agent_dynamic_field_types,
+                                    agent_context.clone(),
+                                    SecretReferencePolicy::Forbid,
+                                );
+                            }
+                        }
                         AgentProperty::Dynamic(dynamic_block) => {
                             for dynamic_field in &dynamic_block.fields {
                                 keyword_reference_validation_state.validate_expression(

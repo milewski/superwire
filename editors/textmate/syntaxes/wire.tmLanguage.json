@@ -21,7 +21,7 @@
       "patterns": [
         {
           "name": "keyword.control.wire",
-          "match": "(?<![.#-])\\b(provider|model|mcp|secrets|input|schema|tool|resource|prompt|from|dynamic|agent|for|in|output|as|call|read|render|match)\\b(?![.#-])"
+          "match": "(?<![.#-])\\b(provider|model|mcp|secrets|input|schema|tool|resource|prompt|from|dynamic|agent|file|for|in|output|as|call|read|render|match)\\b(?![.#-])"
         }
       ]
     },

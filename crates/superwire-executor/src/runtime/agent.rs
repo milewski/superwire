@@ -1,6 +1,7 @@
 use super::{AgentExecutionContext, CompletedAgentExecution, ExecutorError, ToolCallExecutionContext, WorkflowExecutor};
 use crate::model::{
-    ModelAsset, ModelPromptContent, ModelProvider, ModelRequest, ModelSchema, ModelSchemaCache, ModelToolDefinition, ToolCallTracker,
+    ModelAsset, ModelFileAttachment, ModelPromptContent, ModelProvider, ModelRequest, ModelSchema, ModelSchemaCache, ModelToolDefinition,
+    ToolCallTracker,
 };
 use crate::runtime::cache::{hash_serializable_value, AgentCacheKey, AgentCacheOptions, CachedAgentExecution};
 use crate::runtime::mcp::normalize_prompt;
@@ -11,7 +12,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
-use superwire_dsl::{AgentContext, AgentExpressionPropertyName, AgentProperty, Expression, ModelAssetKind, ObjectField};
+use superwire_dsl::{AgentContext, AgentExpressionPropertyName, AgentFile, AgentProperty, Expression, ModelAssetKind, ObjectField};
 use superwire_mcp::McpClientPool;
 use superwire_protocol::event::ExecutorEvent;
 use superwire_semantic::support::expression::{evaluate_expression, EvaluationContext};
@@ -32,10 +33,12 @@ struct PreparedAgentRequest {
     agent_name: String,
     provider_config: ProviderConfig,
     model_name: String,
+    wire_api: superwire_dsl::ModelWireApi,
     inference: HashMap<String, Value>,
     context: Option<Value>,
     prompt: String,
     prompt_content: Vec<ModelPromptContent>,
+    file_attachments: Vec<ModelFileAttachment>,
     supported_asset_kinds: Vec<ModelAssetKind>,
     output_schema: ModelSchema,
     output_injections: AgentOutputInjections,
@@ -80,6 +83,7 @@ impl PreparedAgentRequest {
             agent_name: self.agent_name.clone(),
             provider,
             model_name: self.model_name.clone(),
+            wire_api: self.wire_api.as_str().to_string(),
             inference,
             prompt: self.prompt.clone(),
             context: self.context.clone(),
@@ -87,6 +91,11 @@ impl PreparedAgentRequest {
                 .prompt_content
                 .iter()
                 .map(ModelPromptContent::fingerprint_value)
+                .collect::<Vec<_>>(),
+            file_attachments: self
+                .file_attachments
+                .iter()
+                .map(ModelFileAttachment::fingerprint_value)
                 .collect::<Vec<_>>(),
             supported_asset_kinds: self
                 .supported_asset_kinds
@@ -109,10 +118,12 @@ impl PreparedAgentRequest {
             agent_name: self.agent_name,
             provider_config: self.provider_config,
             model_name: self.model_name,
+            wire_api: self.wire_api,
             inference: self.inference,
             context: self.context,
             prompt: self.prompt,
             prompt_content: self.prompt_content,
+            file_attachments: self.file_attachments,
             output_schema: self.output_schema,
             tools: self.tool_definitions,
             event_sender,
@@ -168,6 +179,7 @@ struct PreparedCompactionRequest {
     source_agent_name: Option<String>,
     provider_config: ProviderConfig,
     model_name: String,
+    wire_api: superwire_dsl::ModelWireApi,
     inference: HashMap<String, Value>,
     source_context: Value,
     instruction: String,
@@ -216,6 +228,7 @@ impl PreparedCompactionRequest {
             source_agent_name: self.source_agent_name.clone(),
             provider,
             model_name: self.model_name.clone(),
+            wire_api: self.wire_api.as_str().to_string(),
             inference,
             source_context: self.source_context.clone(),
             instruction: self.instruction.clone(),
@@ -293,10 +306,12 @@ impl PreparedCompactionRequest {
             agent_name: self.model_request_agent_name(),
             provider_config: self.provider_config.clone(),
             model_name: self.model_name.clone(),
+            wire_api: self.wire_api,
             inference: self.inference.clone(),
             context: Some(self.source_context.clone()),
             prompt: self.instruction.clone(),
             prompt_content: vec![ModelPromptContent::text(self.instruction.clone())],
+            file_attachments: Vec::new(),
             output_schema: self.output_schema.clone(),
             tools: self.tool_definitions.clone(),
             event_sender,
@@ -316,10 +331,12 @@ struct PreparedAgentRequestCacheFingerprint {
     agent_name: String,
     provider: ProviderConfigCacheFingerprint,
     model_name: String,
+    wire_api: String,
     inference: BTreeMap<String, Value>,
     context: Option<Value>,
     prompt: String,
     prompt_content: Vec<Value>,
+    file_attachments: Vec<Value>,
     supported_asset_kinds: Vec<&'static str>,
     output_schema: Value,
     output_injections: Value,
@@ -333,6 +350,7 @@ struct PreparedCompactionRequestCacheFingerprint {
     source_agent_name: Option<String>,
     provider: ProviderConfigCacheFingerprint,
     model_name: String,
+    wire_api: String,
     inference: BTreeMap<String, Value>,
     source_context: Value,
     instruction: String,
@@ -625,10 +643,12 @@ impl WorkflowExecutor {
             agent_name: planned_agent.name.clone(),
             provider_config,
             model_name,
+            wire_api: planned_agent.wire_api,
             inference,
             context,
             prompt,
             prompt_content,
+            file_attachments: self.evaluate_agent_files(planned_agent, evaluation_context, &agent_execution_context.tool_call_tracker)?,
             supported_asset_kinds,
             output_schema,
             output_injections,
@@ -876,6 +896,7 @@ impl WorkflowExecutor {
             source_agent_name: agent_context.agent_name().map(str::to_string),
             provider_config,
             model_name,
+            wire_api: compaction_model.wire_api,
             inference,
             source_context,
             instruction,
@@ -968,6 +989,7 @@ impl WorkflowExecutor {
         Ok(CompactionModel {
             provider_name: &model_declaration.provider_name,
             model_id_expression,
+            wire_api: model_declaration.wire_api(),
             inference_fields: model_declaration.inference_fields().unwrap_or_default(),
         })
     }
@@ -1116,6 +1138,75 @@ impl WorkflowExecutor {
 
         Ok(inference)
     }
+
+    fn evaluate_agent_files(
+        &self,
+        planned_agent: &PlannedAgent,
+        evaluation_context: &EvaluationContext,
+        tool_call_tracker: &ToolCallTracker,
+    ) -> Result<Vec<ModelFileAttachment>, ExecutorError> {
+        let mut file_attachments = Vec::new();
+        let tool_call_execution_context = ToolCallExecutionContext::new(evaluation_context, None, tool_call_tracker);
+
+        for agent_file in planned_agent.declaration.file_properties() {
+            file_attachments.push(self.evaluate_agent_file(planned_agent, agent_file, tool_call_execution_context)?);
+        }
+
+        Ok(file_attachments)
+    }
+
+    fn evaluate_agent_file(
+        &self,
+        planned_agent: &PlannedAgent,
+        agent_file: &AgentFile,
+        tool_call_execution_context: ToolCallExecutionContext<'_>,
+    ) -> Result<ModelFileAttachment, ExecutorError> {
+        let name = self.evaluate_optional_agent_file_string(
+            agent_file.name_expression(),
+            AgentFile::DEFAULT_NAME,
+            tool_call_execution_context,
+            &format!("file name for agent `{}`", planned_agent.name),
+        )?;
+        let content_expression = agent_file.content_expression().ok_or_else(|| ExecutorError::Other {
+            message: format!("file directive for agent `{}` must declare `content`", planned_agent.name),
+        })?;
+        let content_value = self.evaluate_runtime_expression(
+            content_expression,
+            tool_call_execution_context,
+            &format!("file content for agent `{}`", planned_agent.name),
+        )?;
+        let content = match content_value {
+            Value::String(content) => content,
+            value => serde_json::to_string(&value).map_err(|error| ExecutorError::Other {
+                message: format!("failed to JSON serialize file content for agent `{}`: {error}", planned_agent.name),
+            })?,
+        };
+        let purpose = self.evaluate_optional_agent_file_string(
+            agent_file.purpose_expression(),
+            AgentFile::DEFAULT_PURPOSE,
+            tool_call_execution_context,
+            &format!("file purpose for agent `{}`", planned_agent.name),
+        )?;
+
+        Ok(ModelFileAttachment { name, content, purpose })
+    }
+
+    fn evaluate_optional_agent_file_string(
+        &self,
+        expression: Option<&Expression>,
+        default_value: &str,
+        tool_call_execution_context: ToolCallExecutionContext<'_>,
+        context: &str,
+    ) -> Result<String, ExecutorError> {
+        let Some(expression) = expression else {
+            return Ok(default_value.to_string());
+        };
+        let value = self.evaluate_runtime_expression(expression, tool_call_execution_context, context)?;
+
+        value.as_str().map(str::to_string).ok_or_else(|| ExecutorError::Other {
+            message: format!("{context} must resolve to string"),
+        })
+    }
 }
 
 trait PlannedAgentRuntimeExt {
@@ -1139,6 +1230,7 @@ impl PlannedAgentRuntimeExt for PlannedAgent {
 struct CompactionModel<'a> {
     provider_name: &'a str,
     model_id_expression: &'a Expression,
+    wire_api: superwire_dsl::ModelWireApi,
     inference_fields: &'a [ObjectField],
 }
 
@@ -1147,6 +1239,7 @@ impl<'a> CompactionModel<'a> {
         Self {
             provider_name: &planned_agent.provider_name,
             model_id_expression: &planned_agent.model_id_expression,
+            wire_api: planned_agent.wire_api,
             inference_fields: planned_agent.inference_fields.as_slice(),
         }
     }

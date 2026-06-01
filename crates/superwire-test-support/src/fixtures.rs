@@ -58,6 +58,7 @@ pub const AGENT_CONTEXT_EXPRESSION_COMPACTION: &str = include_str!("../fixtures/
 pub const AGENT_CONTEXT_EXPRESSION_PROMPT: &str = include_str!("../fixtures/048_agent_context_expression_prompt.wire");
 pub const AGENT_VARIANT_OUTPUT_SCHEMA: &str = include_str!("../fixtures/049_agent_variant_output_schema.wire");
 pub const MCP_HEADER_DYNAMIC_INTERPOLATION: &str = include_str!("../fixtures/050_mcp_header_dynamic_interpolation.wire");
+pub const AGENT_FILE_DIRECTIVE: &str = include_str!("../fixtures/051_agent_file_directive.wire");
 
 pub const MCP_TOOL_OUTPUT_SCHEMA_OVERRIDE_NON_ITERABLE: &str =
     include_str!("../fixtures/negative/001_mcp_tool_output_schema_non_iterable_negative.wire");

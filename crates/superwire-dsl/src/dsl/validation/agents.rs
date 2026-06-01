@@ -1,6 +1,6 @@
 use super::super::ast::{
-    AgentContext, AgentContextPropertyName, AgentDeclaration, AgentProperty, Declaration, ModelUsage, ModelUsagePropertyName, ObjectField,
-    ReferenceKeyword, SourceSpan, Workflow,
+    AgentContext, AgentContextPropertyName, AgentDeclaration, AgentFile, AgentProperty, Declaration, ModelUsage, ModelUsagePropertyName,
+    ModelWireApi, ObjectField, ReferenceKeyword, SourceSpan, Workflow,
 };
 use super::issues::AgentDeclarationIssuesExt;
 use super::{ValidationIssue, ValidationReport};
@@ -40,6 +40,7 @@ pub(super) fn validate_agent_inference_settings(workflow: &Workflow, validation_
                         AgentProperty::Dynamic(_)
                         | AgentProperty::InvalidModel(_)
                         | AgentProperty::Instruction(_)
+                        | AgentProperty::File(_)
                         | AgentProperty::Output { fields: _, span: _ }
                         | AgentProperty::Context(_)
                         | AgentProperty::Uses(_)
@@ -108,15 +109,21 @@ pub(super) fn validate_agent_model_bindings(
         };
 
         let mut has_model_property = false;
+        let mut model_usage_for_file = None;
+        let mut agent_files = Vec::new();
 
         for agent_property in &agent_declaration.properties {
             match agent_property {
                 AgentProperty::Model(model_usage) => {
                     has_model_property = true;
                     validate_model_usage(agent_declaration, model_usage, validation_index, validation_report);
+                    model_usage_for_file = Some(model_usage);
                 }
                 AgentProperty::Context(agent_context) => {
                     validate_compact_agent_context(agent_declaration, agent_context, validation_index, validation_report);
+                }
+                AgentProperty::File(agent_file) => {
+                    agent_files.push(agent_file);
                 }
                 AgentProperty::InvalidModel(_) => {
                     has_model_property = true;
@@ -134,7 +141,64 @@ pub(super) fn validate_agent_model_bindings(
         if !has_model_property {
             validation_report.push_issue_with_span(agent_declaration.invalid_model_expression_issue(), Some(agent_declaration.span));
         }
+
+        for agent_file in agent_files {
+            validate_agent_file(
+                agent_declaration,
+                agent_file,
+                model_usage_for_file,
+                validation_index,
+                validation_report,
+            );
+        }
     }
+}
+
+fn validate_agent_file(
+    agent_declaration: &AgentDeclaration,
+    agent_file: &AgentFile,
+    model_usage: Option<&ModelUsage>,
+    validation_index: &ValidationIndex,
+    validation_report: &mut ValidationReport,
+) {
+    for field in agent_file.unsupported_fields() {
+        validation_report.push_issue_with_span(
+            ValidationIssue::UnsupportedAgentFileProperty {
+                agent_name: agent_declaration.name.clone(),
+                property_name: field.name.clone(),
+            },
+            Some(field.span),
+        );
+    }
+
+    if agent_file.content_expression().is_none() {
+        validation_report.push_issue_with_span(
+            ValidationIssue::MissingAgentFileContent {
+                agent_name: agent_declaration.name.clone(),
+            },
+            Some(agent_file.span),
+        );
+    }
+
+    let Some(model_name) = model_usage.and_then(ModelUsage::model_name) else {
+        return;
+    };
+    let Some(model) = validation_index.model(model_name) else {
+        return;
+    };
+
+    if model.wire_api == ModelWireApi::ChatCompletion {
+        return;
+    }
+
+    validation_report.push_issue_with_span(
+        ValidationIssue::InvalidAgentFileWireApi {
+            agent_name: agent_declaration.name.clone(),
+            model_name: model_name.to_string(),
+            wire_api: model.wire_api.as_str().to_string(),
+        },
+        Some(agent_file.span),
+    );
 }
 
 fn validate_compact_agent_context(

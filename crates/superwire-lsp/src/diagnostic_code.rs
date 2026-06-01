@@ -50,6 +50,12 @@ pub enum DiagnosticCode {
     UnknownAgentProperty,
     #[serde(rename = "unsupported_agent_context_property")]
     UnsupportedAgentContextProperty,
+    #[serde(rename = "unsupported_agent_file_property")]
+    UnsupportedAgentFileProperty,
+    #[serde(rename = "missing_agent_file_content")]
+    MissingAgentFileContent,
+    #[serde(rename = "invalid_agent_file_wire_api")]
+    InvalidAgentFileWireApi,
     #[serde(rename = "invalid_inference_setting_value_type")]
     InvalidInferenceSettingValueType,
     #[serde(rename = "invalid_model_expression")]

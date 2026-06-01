@@ -1,8 +1,8 @@
 use lsp_types::CompletionItemKind;
 use superwire_dsl::{
-    structure, AssetPropertyName, DeclarationKeyword, ExpressionKeyword, ForClauseKeyword, ImportKeyword, McpImportPropertyName,
-    McpServerPropertyName, ModelDeclarationPropertyName, ModelUsagePropertyName, ReferenceKeyword, SingletonDeclarationKind,
-    ToolPropertyName,
+    structure, AgentFilePropertyName, AssetPropertyName, DeclarationKeyword, ExpressionKeyword, ForClauseKeyword, ImportKeyword,
+    McpImportPropertyName, McpServerPropertyName, ModelDeclarationPropertyName, ModelUsagePropertyName, ReferenceKeyword,
+    SingletonDeclarationKind, ToolPropertyName,
 };
 use superwire_semantic::InferenceSetting;
 
@@ -17,6 +17,7 @@ pub enum CompletionScope {
     ModelUsageProperties,
     McpServerProperties,
     AgentProperties,
+    AgentFileProperties,
     ToolProperties,
     McpToolBatchImport,
     McpPromptImport,
@@ -31,6 +32,7 @@ enum ScopeBlock {
     Other,
     Provider,
     Agent,
+    AgentFile,
     Model,
     ModelUsage,
     McpServer,
@@ -90,6 +92,7 @@ pub fn completion_scope_at_offset(source_text: &str, cursor_offset: usize) -> Co
         Some(ScopeBlock::ModelUsage) => CompletionScope::ModelUsageProperties,
         Some(ScopeBlock::McpServer) => CompletionScope::McpServerProperties,
         Some(ScopeBlock::Agent) => CompletionScope::AgentProperties,
+        Some(ScopeBlock::AgentFile) => CompletionScope::AgentFileProperties,
         Some(ScopeBlock::Tool) => CompletionScope::ToolProperties,
         Some(ScopeBlock::McpToolBatchImport) => CompletionScope::McpToolBatchImport,
         Some(ScopeBlock::McpPromptImport) => CompletionScope::McpPromptImport,
@@ -293,6 +296,10 @@ impl ScopeScannerTokenState {
 
         if parent_block == Some(ScopeBlock::Agent) && agent.property_is_output(last_identifier) {
             return Some(ScopeBlock::TypedDeclaration);
+        }
+
+        if parent_block == Some(ScopeBlock::Agent) && agent.property_is_file(last_identifier) {
+            return Some(ScopeBlock::AgentFile);
         }
 
         if let Some(pending_property) = &self.pending_property {
@@ -509,6 +516,22 @@ pub fn agent_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSugg
     let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
 
     property_definition_suggestions(property_prefix, &structure::Agent::new().properties())
+}
+
+pub fn agent_file_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
+    let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
+
+    AgentFilePropertyName::all()
+        .into_iter()
+        .filter(|property_name| property_name.as_str().starts_with(property_prefix))
+        .map(|property_name| CompletionSuggestion {
+            label: property_name.as_str().to_string(),
+            kind: CompletionItemKind::PROPERTY,
+            detail: "File upload property".to_string(),
+            documentation: "Agent file upload directive property.".to_string(),
+            insert_text: property_name.as_str().to_string(),
+        })
+        .collect()
 }
 
 pub fn model_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {

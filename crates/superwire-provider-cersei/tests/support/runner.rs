@@ -159,6 +159,8 @@ struct ProviderServerState {
     models: BTreeMap<String, ModelScript>,
     requests: Vec<Value>,
     errors: Vec<String>,
+    uploaded_files: Vec<String>,
+    deleted_files: Vec<String>,
 }
 
 impl TestRunner {
@@ -645,6 +647,8 @@ impl ProviderServer {
             models: script.models.clone(),
             requests: Vec::new(),
             errors: Vec::new(),
+            uploaded_files: Vec::new(),
+            deleted_files: Vec::new(),
         }));
         let thread_state = Arc::clone(&state);
         let expected_api_key = script.api_key.clone();
@@ -679,7 +683,7 @@ impl Clone for ModelTurn {
 }
 
 fn handle_provider_request(mut stream: TcpStream, state: &Arc<Mutex<ProviderServerState>>, expected_api_key: &str) {
-    let Some(request) = read_http_json_request(&stream) else {
+    let Some(request) = read_http_request(&stream) else {
         return;
     };
     let response = build_provider_response(&request, state, expected_api_key).unwrap_or_else(|message| {
@@ -695,7 +699,7 @@ fn handle_provider_request(mut stream: TcpStream, state: &Arc<Mutex<ProviderServ
 }
 
 fn build_provider_response(
-    request: &HttpJsonRequest,
+    request: &HttpRequest,
     state: &Arc<Mutex<ProviderServerState>>,
     expected_api_key: &str,
 ) -> Result<String, String> {
@@ -708,18 +712,61 @@ fn build_provider_response(
         ));
     }
 
-    let model_name = request
-        .body
+    if request.method == "POST" && request.path == "/v1/files" {
+        let mut state = state.lock().expect("provider state lock should not be poisoned");
+        let file_id = format!("file-fe-test-{}", state.uploaded_files.len() + 1);
+
+        state.uploaded_files.push(file_id.clone());
+
+        return Ok(http_json_response(
+            200,
+            json!({
+                "id": file_id,
+                "bytes": request.body.len(),
+                "created_at": 1_729_065_448,
+                "filename": "uploaded.txt",
+                "object": "file",
+                "purpose": "file-extract",
+                "status": "processed",
+                "status_details": null
+            }),
+        ));
+    }
+
+    if request.method == "DELETE" {
+        if let Some(file_id) = request.path.strip_prefix("/v1/files/") {
+            state
+                .lock()
+                .expect("provider state lock should not be poisoned")
+                .deleted_files
+                .push(file_id.to_string());
+
+            return Ok(http_json_response(
+                200,
+                json!({
+                    "id": file_id,
+                    "deleted": true,
+                    "object": "file"
+                }),
+            ));
+        }
+    }
+
+    if request.method != "POST" || request.path != "/v1/chat/completions" {
+        return Err(format!("unexpected provider request {} {}", request.method, request.path));
+    }
+
+    let request_body = serde_json::from_slice::<Value>(&request.body).map_err(|error| format!("request body should be JSON: {error}"))?;
+    let model_name = request_body
         .get("model")
         .and_then(Value::as_str)
         .ok_or_else(|| "provider request missing model".to_string())?;
-    let messages = request
-        .body
+    let messages = request_body
         .get("messages")
         .and_then(Value::as_array)
         .ok_or_else(|| "provider request missing messages".to_string())?;
     let mut state = state.lock().expect("provider state lock should not be poisoned");
-    state.requests.push(request.body.clone());
+    state.requests.push(request_body.clone());
     let model = state
         .models
         .get_mut(model_name)
@@ -729,7 +776,7 @@ fn build_provider_response(
         .front()
         .ok_or_else(|| format!("unexpected provider turn for model `{model_name}`"))?;
 
-    turn.assert_request(&request.body, messages)?;
+    turn.assert_request(&request_body, messages)?;
     let turn = model
         .turns
         .pop_front()
@@ -795,16 +842,25 @@ impl ModelTurnResponse {
 }
 
 #[derive(Debug)]
-struct HttpJsonRequest {
+struct HttpRequest {
+    method: String,
+    path: String,
     headers: BTreeMap<String, String>,
-    body: Value,
+    body: Vec<u8>,
 }
 
-fn read_http_json_request(stream: &TcpStream) -> Option<HttpJsonRequest> {
+fn read_http_request(stream: &TcpStream) -> Option<HttpRequest> {
     let mut reader = BufReader::new(stream.try_clone().expect("stream clone should succeed"));
+    let mut request_line = String::new();
     let mut headers = BTreeMap::new();
     let mut content_length = 0_usize;
     let mut header_line = String::new();
+
+    reader.read_line(&mut request_line).expect("request line should read");
+
+    let mut request_line_parts = request_line.split_whitespace();
+    let method = request_line_parts.next()?.to_string();
+    let path = request_line_parts.next()?.to_string();
 
     loop {
         header_line.clear();
@@ -826,15 +882,15 @@ fn read_http_json_request(stream: &TcpStream) -> Option<HttpJsonRequest> {
         }
     }
 
-    if content_length == 0 {
-        return None;
-    }
-
     let mut request_body = vec![0_u8; content_length];
     reader.read_exact(&mut request_body).expect("request body should read");
-    let body = serde_json::from_slice(&request_body).expect("request body should be JSON");
 
-    Some(HttpJsonRequest { headers, body })
+    Some(HttpRequest {
+        method,
+        path,
+        headers,
+        body: request_body,
+    })
 }
 
 fn http_json_response(status: u16, body: Value) -> String {
@@ -955,6 +1011,10 @@ fn verify_provider_servers(provider_servers: &BTreeMap<String, ProviderServer>) 
             let state = server.state.lock().expect("provider state lock should not be poisoned");
 
             assert!(state.errors.is_empty(), "provider `{provider_name}` errors: {:?}", state.errors);
+            assert_eq!(
+                state.uploaded_files, state.deleted_files,
+                "provider `{provider_name}` should delete every uploaded file"
+            );
 
             for (model_name, model) in &state.models {
                 assert!(

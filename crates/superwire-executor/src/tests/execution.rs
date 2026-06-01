@@ -114,6 +114,28 @@ async fn inference_settings_are_sent_with_model_request() {
 }
 
 #[tokio::test]
+async fn agent_file_directive_is_sent_with_model_request() {
+    let model_provider = TrackingModelProvider::new(vec![json!({ "value": "first" }), json!({ "value": "second" })]);
+    let service = ExecutorService::new(model_provider.clone());
+
+    service
+        .execute(request(fixtures::AGENT_FILE_DIRECTIVE))
+        .await
+        .expect("workflow should execute");
+
+    let recorded_requests = model_provider
+        .recorded_requests
+        .lock()
+        .expect("recorded requests lock should not be poisoned");
+    let request = recorded_requests.get(1).expect("reviewer request should be recorded");
+
+    assert_eq!(request.file_attachments.len(), 1);
+    assert_eq!(request.file_attachments[0].name, "example.json");
+    assert_eq!(request.file_attachments[0].purpose, "file-extract");
+    assert_eq!(request.file_attachments[0].content, "{\"value\":\"first\"}");
+}
+
+#[tokio::test]
 async fn direct_agent_context_is_sent_without_rewriting_history() {
     let model_provider = TrackingModelProvider::new(vec![json!({ "value": "research" }), json!({ "value": "continued" })]);
     let service = ExecutorService::new(model_provider.clone());

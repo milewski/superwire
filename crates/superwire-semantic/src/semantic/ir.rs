@@ -12,7 +12,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use superwire_types::ast::{
     AgentDeclaration, AgentExpressionPropertyName, AgentForLoop, AgentForLoopPattern, AgentProperty, Declaration, Expression,
-    InputDeclaration, ModelDeclaration, ModelUsage, ObjectField, OutputDeclaration, ProviderDeclaration, SecretsDeclaration,
+    InputDeclaration, ModelDeclaration, ModelUsage, ModelWireApi, ObjectField, OutputDeclaration, ProviderDeclaration, SecretsDeclaration,
     ToolDeclaration, TypeExpression, Workflow,
 };
 use superwire_types::{structure, DslProperty};
@@ -43,6 +43,7 @@ pub struct TypedAgentIr {
     pub provider_name: String,
     pub model_name: String,
     pub model_id_expression: Expression,
+    pub wire_api: ModelWireApi,
     pub inference_fields: Vec<ObjectField>,
     pub iteration_output_type: WorkflowType,
     pub final_output_type: WorkflowType,
@@ -352,6 +353,7 @@ fn collect_typed_agents(
             })?
             .clone();
         let provider_name = model_declaration.provider_name.clone();
+        let wire_api = model_declaration.wire_api();
         required_agent_property_expression(agent_declaration, AgentExpressionPropertyName::Instruction)?;
 
         let provider_declaration = provider_declarations.get(provider_name.as_str()).copied();
@@ -364,6 +366,7 @@ fn collect_typed_agents(
             provider_name,
             model_name: model_name.to_string(),
             model_id_expression,
+            wire_api,
             inference_fields,
             iteration_output_type,
             final_output_type: final_output_type.clone(),
@@ -471,6 +474,11 @@ fn collect_dependencies_for_agent(
             }
             AgentProperty::Context(agent_context) => {
                 agent_context.collect_agent_dependencies(&mut dependencies);
+            }
+            AgentProperty::File(agent_file) => {
+                for file_field in &agent_file.fields {
+                    file_field.value.collect_agent_dependencies(&mut dependencies);
+                }
             }
             AgentProperty::Model(model_usage) => {
                 for model_property in &model_usage.properties {

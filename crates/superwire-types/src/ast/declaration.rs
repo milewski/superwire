@@ -1,7 +1,7 @@
 use super::{
     AgentDeclaration, Expression, McpBatchImportDeclaration, McpPromptBatchImportDeclaration, McpPromptImportDeclaration,
     McpResourceBatchImportDeclaration, McpResourceImportDeclaration, McpToolBatchImportDeclaration, ModelAssetKind,
-    ModelDeclarationPropertyName, ObjectField, SourceSpan, ToolDeclaration, TypeExpression, TypedField, Workflow,
+    ModelDeclarationPropertyName, ModelWireApi, ObjectField, SourceSpan, ToolDeclaration, TypeExpression, TypedField, Workflow,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,6 +121,17 @@ impl ModelDeclaration {
         };
 
         Some(fields.as_slice())
+    }
+
+    #[must_use]
+    pub fn wire_api(&self) -> ModelWireApi {
+        let Some(Expression::StringLiteral(wire_api)) =
+            self.property(ModelDeclarationPropertyName::WireApi).map(|property| &property.value)
+        else {
+            return ModelWireApi::default_value();
+        };
+
+        ModelWireApi::from_identifier(wire_api).unwrap_or_else(ModelWireApi::default_value)
     }
 
     pub fn supported_asset_kinds(&self) -> Result<Vec<ModelAssetKind>, ModelAssetKindSupportError> {

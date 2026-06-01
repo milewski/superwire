@@ -1,7 +1,7 @@
 use super::{source_span_from_pair, AstVisitor};
 use crate::dsl::ast::{
-    AgentContext, AgentContextReference, AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, CompactAgentContext,
-    Declaration, DynamicBlock, Expression, ModelUsage, SourceSpan, ToolCall, ToolCallPropertyName,
+    AgentContext, AgentContextReference, AgentDeclaration, AgentFile, AgentForLoop, AgentForLoopPattern, AgentProperty,
+    CompactAgentContext, Declaration, DynamicBlock, Expression, ModelUsage, ObjectField, SourceSpan, ToolCall, ToolCallPropertyName,
 };
 use crate::dsl::parser::{DslParseError, Rule};
 use crate::dsl::structure;
@@ -95,6 +95,7 @@ impl AstVisitor {
 
         match property_pair.as_rule() {
             Rule::model_agent_property => self.visit_agent_model_property(property_pair),
+            Rule::agent_file_property => self.visit_agent_file_property(property_pair),
             Rule::agent_output_property => self.visit_agent_output_property(property_pair),
             Rule::named_agent_context_property => self.visit_agent_context_property(property_pair),
             Rule::named_object_property => self.visit_agent_object_property(property_pair, property_span),
@@ -109,6 +110,24 @@ impl AstVisitor {
         let model_usage = self.visit_model_usage(model_usage_pair)?;
 
         Ok(AgentProperty::Model(model_usage))
+    }
+
+    pub(super) fn visit_agent_file_property(&self, property_pair: Pair<'_, Rule>) -> Result<AgentProperty, DslParseError> {
+        let file_span = source_span_from_pair(&property_pair);
+        let block_pair = self.first_inner_pair(property_pair, "agent file property")?;
+        let fields = self.visit_agent_file_block(block_pair)?;
+
+        Ok(AgentProperty::File(AgentFile { fields, span: file_span }))
+    }
+
+    pub(super) fn visit_agent_file_block(&self, block_pair: Pair<'_, Rule>) -> Result<Vec<ObjectField>, DslParseError> {
+        let mut fields = Vec::new();
+
+        for field_pair in block_pair.into_inner() {
+            fields.push(self.visit_object_field(field_pair)?);
+        }
+
+        Ok(fields)
     }
 
     pub(super) fn visit_model_usage(&self, model_usage_pair: Pair<'_, Rule>) -> Result<ModelUsage, DslParseError> {

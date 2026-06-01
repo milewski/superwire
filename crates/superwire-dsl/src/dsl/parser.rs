@@ -649,6 +649,41 @@ mod tests {
     }
 
     #[test]
+    fn parses_agent_file_directive() {
+        let workflow = parse_inline_workflow! {
+            agent reviewer {
+                file {
+                    name: "example.json"
+                    content: agent.summarizer
+                    purpose: "file-extract"
+                }
+            }
+        };
+
+        let reviewer_agent = workflow.find_agent("reviewer").expect("missing agent declaration: reviewer");
+        let file_property = reviewer_agent
+            .properties
+            .iter()
+            .find_map(|agent_property| match agent_property {
+                AgentProperty::File(agent_file) => Some(agent_file),
+                AgentProperty::Dynamic(_)
+                | AgentProperty::Model(_)
+                | AgentProperty::InvalidModel(_)
+                | AgentProperty::Instruction(_)
+                | AgentProperty::Output { fields: _, span: _ }
+                | AgentProperty::Context(_)
+                | AgentProperty::Uses(_)
+                | AgentProperty::Unknown { name: _, span: _ } => None,
+            })
+            .expect("file directive should parse");
+
+        assert_eq!(file_property.fields.len(), 3);
+        assert!(file_property.name_expression().is_some());
+        assert!(file_property.content_expression().is_some());
+        assert!(file_property.purpose_expression().is_some());
+    }
+
+    #[test]
     fn rejects_call_style_tool_binding_overrides_inside_uses_property() {
         let workflow_source = workflow_source! {
             agent assistant_with_tools {

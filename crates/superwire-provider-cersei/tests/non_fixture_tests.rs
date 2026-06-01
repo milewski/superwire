@@ -9,3 +9,6 @@ mod numbered_fixture_pairs;
 
 #[path = "non_fixture_tests/provider_retry.rs"]
 mod provider_retry;
+
+#[path = "non_fixture_tests/file_upload.rs"]
+mod file_upload;

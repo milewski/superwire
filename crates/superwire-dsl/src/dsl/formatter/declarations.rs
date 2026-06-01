@@ -1,6 +1,6 @@
 use crate::dsl::ast::{
-    AgentContext, AgentDeclaration, AgentForLoopPattern, AgentProperty, Declaration, DeclarationKeyword, DynamicBlock, Expression,
-    ExpressionKeyword, ForClauseKeyword, ModelUsage, TypedField, Workflow,
+    AgentContext, AgentDeclaration, AgentFile, AgentForLoopPattern, AgentProperty, Declaration, DeclarationKeyword, DynamicBlock,
+    Expression, ExpressionKeyword, ForClauseKeyword, ModelUsage, TypedField, Workflow,
 };
 use crate::dsl::structure::{self, DslProperty};
 
@@ -224,6 +224,7 @@ impl AgentPropertyDeclarationsExt for AgentProperty {
             Self::Instruction(expression) => {
                 formatter.push_agent_property_expression(structure::Agent::new().instruction.definition().name, expression);
             }
+            Self::File(agent_file) => agent_file.push_to_formatter(formatter),
             Self::Output { fields, span: _ } => {
                 let agent = structure::Agent::new();
 
@@ -381,6 +382,29 @@ impl DslFormatter {
                 self.push_newline();
             }
         }
+    }
+}
+
+trait AgentFileDeclarationsExt {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter);
+}
+
+impl AgentFileDeclarationsExt for AgentFile {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        formatter.push_indent();
+        formatter.output.push_str(structure::Agent::new().file[0].definition().name);
+        formatter.output.push_str(" {");
+        formatter.push_newline();
+        formatter.indentation_depth += 1;
+
+        for field in &self.fields {
+            field.push_to_formatter(formatter);
+        }
+
+        formatter.indentation_depth -= 1;
+        formatter.push_indent();
+        formatter.output.push('}');
+        formatter.push_newline();
     }
 }
 

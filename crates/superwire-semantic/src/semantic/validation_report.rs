@@ -198,6 +198,18 @@ pub enum ValidationIssue {
         agent_name: String,
         property_name: String,
     },
+    UnsupportedAgentFileProperty {
+        agent_name: String,
+        property_name: String,
+    },
+    MissingAgentFileContent {
+        agent_name: String,
+    },
+    InvalidAgentFileWireApi {
+        agent_name: String,
+        model_name: String,
+        wire_api: String,
+    },
     InvalidInferenceSettingValueType {
         agent_name: String,
         inference_setting: InferenceSetting,
@@ -330,6 +342,9 @@ impl ValidationIssue {
             Self::DuplicateProperty { .. } => "duplicate_property",
             Self::UnknownAgentProperty { .. } => "unknown_agent_property",
             Self::UnsupportedAgentContextProperty { .. } => "unsupported_agent_context_property",
+            Self::UnsupportedAgentFileProperty { .. } => "unsupported_agent_file_property",
+            Self::MissingAgentFileContent { .. } => "missing_agent_file_content",
+            Self::InvalidAgentFileWireApi { .. } => "invalid_agent_file_wire_api",
             Self::InvalidInferenceSettingValueType { .. } => "invalid_inference_setting_value_type",
             Self::InvalidModelExpression { .. } => "invalid_model_expression",
             Self::UnknownProviderInModel { .. } => "unknown_provider_in_model",
@@ -426,6 +441,21 @@ impl ValidationIssue {
             }
             Self::UnsupportedAgentContextProperty { agent_name, property_name } => {
                 format!("Agent `{agent_name}` compact context block cannot declare `{property_name}`.")
+            }
+            Self::UnsupportedAgentFileProperty { agent_name, property_name } => {
+                format!("Agent `{agent_name}` file block cannot declare `{property_name}`.")
+            }
+            Self::MissingAgentFileContent { agent_name } => {
+                format!("Agent `{agent_name}` file block must declare `content`.")
+            }
+            Self::InvalidAgentFileWireApi {
+                agent_name,
+                model_name,
+                wire_api,
+            } => {
+                format!(
+                    "Agent `{agent_name}` file directive requires model `{model_name}` to use `wire_api: \"chat/completion\"`, found `{wire_api}`."
+                )
             }
             Self::InvalidInferenceSettingValueType {
                 agent_name,
@@ -587,6 +617,12 @@ impl ValidationIssue {
                 agent_name: _,
                 property_name: _,
             } => Some("Use only `model` and `instruction` inside a compact context block.".to_string()),
+            Self::UnsupportedAgentFileProperty {
+                agent_name: _,
+                property_name: _,
+            } => Some("Use only `name`, `content`, and `purpose` inside a file block.".to_string()),
+            Self::MissingAgentFileContent { agent_name: _ } => Some("Add `content: <expression>` inside the file block.".to_string()),
+            Self::InvalidAgentFileWireApi { .. } => Some(self.agent_model_help_message()),
             Self::InvalidProviderName { .. } => Some("Rename the provider using lowercase snake_case, such as `openai_cloud`.".to_string()),
             Self::InvalidModelName { .. } => Some("Rename the model using lowercase snake_case, such as `fast`.".to_string()),
             Self::UnknownProviderDriver { .. }
@@ -951,6 +987,16 @@ impl From<&ValidationIssue> for DiagnosticCode {
                 agent_name: _,
                 property_name: _,
             } => Self::UnsupportedAgentContextProperty,
+            ValidationIssue::UnsupportedAgentFileProperty {
+                agent_name: _,
+                property_name: _,
+            } => Self::UnsupportedAgentFileProperty,
+            ValidationIssue::MissingAgentFileContent { agent_name: _ } => Self::MissingAgentFileContent,
+            ValidationIssue::InvalidAgentFileWireApi {
+                agent_name: _,
+                model_name: _,
+                wire_api: _,
+            } => Self::InvalidAgentFileWireApi,
             ValidationIssue::InvalidInferenceSettingValueType {
                 agent_name: _,
                 inference_setting: _,

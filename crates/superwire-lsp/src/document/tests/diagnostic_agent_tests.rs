@@ -52,6 +52,26 @@ fn reports_direct_agent_inference_as_unknown_property() {
 }
 
 #[test]
+fn reports_agent_file_requires_chat_completion_wire_api() {
+    let diagnostics = inline_diagnostics! {
+        provider qwen from openai_compatible {}
+
+        model qwen_doc from qwen {
+            id: "qwen-doc-turbo"
+        }
+
+        agent reviewer {
+            model: model.qwen_doc
+            file {
+                content: "content"
+            }
+        }
+    };
+
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::InvalidAgentFileWireApi);
+}
+
+#[test]
 fn reports_duplicate_property_diagnostic() {
     let diagnostics = inline_diagnostics! {
         agent greeting {

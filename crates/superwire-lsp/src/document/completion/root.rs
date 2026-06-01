@@ -10,9 +10,9 @@ use super::super::completion_context::{
 use super::super::position::byte_offset_for_position;
 use super::super::reference::ReferenceCompletionPath;
 use super::super::scope::{
-    agent_property_scope_suggestions, asset_option_scope_suggestions, completion_scope_at_offset, inference_setting_scope_suggestions,
-    mcp_prompt_import_scope_suggestions, mcp_server_property_scope_suggestions, mcp_tool_batch_import_scope_suggestions,
-    model_property_scope_suggestions, model_usage_property_scope_suggestions, CompletionScope,
+    agent_file_property_scope_suggestions, agent_property_scope_suggestions, asset_option_scope_suggestions, completion_scope_at_offset,
+    inference_setting_scope_suggestions, mcp_prompt_import_scope_suggestions, mcp_server_property_scope_suggestions,
+    mcp_tool_batch_import_scope_suggestions, model_property_scope_suggestions, model_usage_property_scope_suggestions, CompletionScope,
 };
 use super::super::semantic_index::SemanticIndex;
 use super::super::text_utils::{
@@ -437,6 +437,7 @@ impl DocumentState {
                 | CompletionScope::ModelUsageProperties
                 | CompletionScope::McpServerProperties
                 | CompletionScope::AgentProperties
+                | CompletionScope::AgentFileProperties
                 | CompletionScope::ToolProperties
                 | CompletionScope::McpToolBatchImport
                 | CompletionScope::McpPromptImport
@@ -577,6 +578,7 @@ impl DocumentState {
             CompletionScope::InferenceSettings => Some(inference_setting_scope_suggestions(line_prefix)),
             CompletionScope::AssetOptions => Some(asset_option_scope_suggestions(line_prefix)),
             CompletionScope::AgentProperties => Some(agent_property_scope_suggestions(line_prefix)),
+            CompletionScope::AgentFileProperties => Some(agent_file_property_scope_suggestions(line_prefix)),
             CompletionScope::ToolProperties => Some(self.tool_property_suggestions(semantic_index, line_prefix, position)),
             CompletionScope::McpToolBatchImport => {
                 let allowed_keywords = self.mcp_batch_import_allowed_keywords_at_position(position)?;

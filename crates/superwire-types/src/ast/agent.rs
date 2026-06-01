@@ -1,6 +1,6 @@
 use super::{
-    AgentContextPropertyName, AgentExpressionPropertyName, DynamicBlock, Expression, ModelDeclaration, ModelUsagePropertyName, ObjectField,
-    ProviderDeclaration, Reference, ReferenceKeyword, SourceSpan, TypeExpression, TypedField,
+    AgentContextPropertyName, AgentExpressionPropertyName, AgentFilePropertyName, DynamicBlock, Expression, ModelDeclaration,
+    ModelUsagePropertyName, ObjectField, ProviderDeclaration, Reference, ReferenceKeyword, SourceSpan, TypeExpression, TypedField,
 };
 use crate::structure::{self, DslProperty, PropertyDefinition as DslPropertyDefinition};
 use std::collections::HashSet;
@@ -21,6 +21,7 @@ impl AgentDeclaration {
             AgentProperty::Model(_)
             | AgentProperty::InvalidModel(_)
             | AgentProperty::Instruction(_)
+            | AgentProperty::File(_)
             | AgentProperty::Output { fields: _, span: _ }
             | AgentProperty::Context(_)
             | AgentProperty::Uses(_)
@@ -40,6 +41,7 @@ impl AgentDeclaration {
                 AgentProperty::Model(_)
                 | AgentProperty::InvalidModel(_)
                 | AgentProperty::Instruction(_)
+                | AgentProperty::File(_)
                 | AgentProperty::Output { fields: _, span: _ }
                 | AgentProperty::Context(_)
                 | AgentProperty::Uses(_)
@@ -58,6 +60,7 @@ impl AgentDeclaration {
             | AgentProperty::Model(_)
             | AgentProperty::InvalidModel(_)
             | AgentProperty::Instruction(_)
+            | AgentProperty::File(_)
             | AgentProperty::Output { fields: _, span: _ }
             | AgentProperty::Uses(_)
             | AgentProperty::Unknown { name: _, span: _ } => None,
@@ -73,6 +76,20 @@ impl AgentDeclaration {
         }
 
         None
+    }
+
+    pub fn file_properties(&self) -> impl Iterator<Item = &AgentFile> {
+        self.properties.iter().filter_map(|agent_property| match agent_property {
+            AgentProperty::File(agent_file) => Some(agent_file),
+            AgentProperty::Dynamic(_)
+            | AgentProperty::Model(_)
+            | AgentProperty::InvalidModel(_)
+            | AgentProperty::Instruction(_)
+            | AgentProperty::Output { fields: _, span: _ }
+            | AgentProperty::Context(_)
+            | AgentProperty::Uses(_)
+            | AgentProperty::Unknown { name: _, span: _ } => None,
+        })
     }
 
     #[must_use]
@@ -174,6 +191,7 @@ pub enum AgentProperty {
     Model(ModelUsage),
     InvalidModel(Expression),
     Instruction(Expression),
+    File(AgentFile),
     Output { fields: Vec<TypedField>, span: SourceSpan },
     Context(AgentContext),
     Uses(Expression),
@@ -189,6 +207,7 @@ impl AgentProperty {
             | Self::Model(_)
             | Self::InvalidModel(_)
             | Self::Instruction(_)
+            | Self::File(_)
             | Self::Context(_)
             | Self::Uses(_)
             | Self::Unknown { name: _, span: _ } => None,
@@ -203,6 +222,7 @@ impl AgentProperty {
             Self::Dynamic(_) => agent.dynamic[0].definition(),
             Self::Model(_) | Self::InvalidModel(_) => agent.model.definition(),
             Self::Instruction(_) => agent.instruction.definition(),
+            Self::File(_) => agent.file[0].definition(),
             Self::Output { fields: _, span: _ } => agent.output.expect("agent structure should include output").definition(),
             Self::Context(_) => agent.context.expect("agent structure should include context").definition(),
             Self::Uses(_) => agent.uses[0].definition(),
@@ -228,6 +248,45 @@ pub struct ModelUsage {
     pub reference: Reference,
     pub properties: Vec<ObjectField>,
     pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentFile {
+    pub fields: Vec<ObjectField>,
+    pub span: SourceSpan,
+}
+
+impl AgentFile {
+    pub const DEFAULT_NAME: &'static str = "file.txt";
+    pub const DEFAULT_PURPOSE: &'static str = "file-extract";
+
+    #[must_use]
+    pub fn field(&self, property_name: AgentFilePropertyName) -> Option<&ObjectField> {
+        self.fields
+            .iter()
+            .find(|field| AgentFilePropertyName::from_identifier(field.name.as_str()) == Some(property_name))
+    }
+
+    #[must_use]
+    pub fn name_expression(&self) -> Option<&Expression> {
+        self.field(AgentFilePropertyName::Name).map(|field| &field.value)
+    }
+
+    #[must_use]
+    pub fn content_expression(&self) -> Option<&Expression> {
+        self.field(AgentFilePropertyName::Content).map(|field| &field.value)
+    }
+
+    #[must_use]
+    pub fn purpose_expression(&self) -> Option<&Expression> {
+        self.field(AgentFilePropertyName::Purpose).map(|field| &field.value)
+    }
+
+    pub fn unsupported_fields(&self) -> impl Iterator<Item = &ObjectField> {
+        self.fields
+            .iter()
+            .filter(|field| AgentFilePropertyName::from_identifier(field.name.as_str()).is_none())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

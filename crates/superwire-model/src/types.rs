@@ -5,7 +5,7 @@ use superwire_mcp::McpClientPool;
 use superwire_protocol::event::ExecutorEvent;
 use superwire_semantic::support::provider::ProviderConfig;
 use superwire_semantic::support::types::{WorkflowSchemaCache, WorkflowType};
-use superwire_types::ModelAssetKind;
+use superwire_types::{ModelAssetKind, ModelWireApi};
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
@@ -13,15 +13,35 @@ pub struct ModelRequest {
     pub agent_name: String,
     pub provider_config: ProviderConfig,
     pub model_name: String,
+    pub wire_api: ModelWireApi,
     pub inference: HashMap<String, Value>,
     pub context: Option<Value>,
     pub prompt: String,
     pub prompt_content: Vec<ModelPromptContent>,
+    pub file_attachments: Vec<ModelFileAttachment>,
     pub output_schema: ModelSchema,
     pub tools: Vec<ModelToolDefinition>,
     pub event_sender: Option<mpsc::Sender<ExecutorEvent>>,
     pub mcp_pool: McpClientPool,
     pub tool_call_tracker: ToolCallTracker,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelFileAttachment {
+    pub name: String,
+    pub content: String,
+    pub purpose: String,
+}
+
+impl ModelFileAttachment {
+    #[must_use]
+    pub fn fingerprint_value(&self) -> Value {
+        serde_json::json!({
+            "name": self.name,
+            "content": self.content,
+            "purpose": self.purpose,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -3,8 +3,8 @@ use crate::diagnostic_code::DiagnosticCode;
 use lsp_types::CompletionItemKind;
 use std::collections::BTreeMap;
 use superwire_dsl::{
-    AgentExpressionPropertyName, BuiltinFunctionName, DeclarationKeyword, ExpressionKeyword, ForClauseKeyword, McpCallOperation,
-    ReferenceKeyword, SingletonDeclarationKind, ToolCallKeyword,
+    AgentExpressionPropertyName, AgentFilePropertyName, BuiltinFunctionName, DeclarationKeyword, ExpressionKeyword, ForClauseKeyword,
+    McpCallOperation, ReferenceKeyword, SingletonDeclarationKind, ToolCallKeyword,
 };
 use superwire_mcp::{McpLock, McpPromptArgumentLock, McpServerLock, McpToolLock};
 use superwire_semantic::InferenceSetting;
@@ -198,6 +198,12 @@ impl CompletionLabelGroup for SingletonDeclarationKind {
 }
 
 impl CompletionLabel for AgentExpressionPropertyName {
+    fn completion_label(self) -> &'static str {
+        self.as_str()
+    }
+}
+
+impl CompletionLabel for AgentFilePropertyName {
     fn completion_label(self) -> &'static str {
         self.as_str()
     }
