@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use superwire_mcp::{normalize_mcp_tool_result, render_mcp_prompt_text_result, render_mcp_resource_text_result, McpServerConfig};
 use superwire_model::{
     FinalizeCallKind, ModelAsset, ModelAssetSource, ModelFileAttachment, ModelPromptContent, ModelProvider,
-    ModelProviderError as ProviderError, ModelRequest, ModelResponse, ModelSchemaCache, ModelToolDefinition, ModelToolSource,
+    ModelProviderError as ProviderError, ModelRequest, ModelResponse, ModelSchema, ModelSchemaCache, ModelToolDefinition, ModelToolSource,
 };
 use superwire_protocol::event::{ExecutorEvent, McpCallEventDetails};
 use superwire_semantic::support::provider::{ProviderApiFormat, ProviderConfig, ProviderDriver};
@@ -29,8 +29,9 @@ pub struct CerseiModelProvider;
 impl ModelProvider for CerseiModelProvider {
     async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ProviderError> {
         let uploaded_files = self.upload_files(&request).await?;
-        let generation_result = self.generate_with_uploaded_files(&request, &uploaded_files).await;
-        let cleanup_result = self.delete_uploaded_files(&request, &uploaded_files).await;
+        let mut cleanup_guard = UploadedProviderFileCleanup::new(self.clone(), request.clone(), uploaded_files);
+        let generation_result = self.generate_with_uploaded_files(&request, cleanup_guard.uploaded_files()).await;
+        let cleanup_result = cleanup_guard.cleanup_now().await;
 
         match (generation_result, cleanup_result) {
             (Ok(model_response), Ok(())) => Ok(model_response),
@@ -46,6 +47,10 @@ impl CerseiModelProvider {
         request: &ModelRequest,
         uploaded_files: &[UploadedProviderFile],
     ) -> Result<ModelResponse, ProviderError> {
+        if request.should_generate_file_attachments_without_tools() {
+            return self.generate_file_response_with_uploaded_files(request, uploaded_files).await;
+        }
+
         let provider = request.provider_config.build_provider(request)?;
         let mut schema_cache = ModelSchemaCache::new();
         let request_context = request.cersei_request_context(&mut schema_cache)?;
@@ -120,6 +125,63 @@ impl CerseiModelProvider {
         Err(ProviderError::Model {
             agent_name: request.agent_name.clone(),
             message: last_error.unwrap_or_else(|| "model did not call finalize".to_string()),
+        })
+    }
+
+    async fn generate_file_response_with_uploaded_files(
+        &self,
+        request: &ModelRequest,
+        uploaded_files: &[UploadedProviderFile],
+    ) -> Result<ModelResponse, ProviderError> {
+        let provider = request.provider_config.build_provider(request)?;
+        let mut schema_cache = ModelSchemaCache::new();
+        let context_messages = request.cersei_context_messages(uploaded_files)?;
+        let output_schema_text = request
+            .output_schema
+            .json_string_with_cache(&mut schema_cache)
+            .map_err(|error| ProviderError::Model {
+                agent_name: request.agent_name.clone(),
+                message: format!("failed to serialize output schema: {error}"),
+            })?;
+        let mut completion_request = CompletionRequest::new(request.model_name.clone());
+        let max_retries = request.provider_max_retries();
+        let retry_base_delay = request.provider_retry_base_delay();
+
+        completion_request.system = Some(format!(
+            "You are executing a deterministic workflow agent. Uploaded files may appear as `fileid://...` system messages in this conversation. Answer the user's instruction using those files. Return only a JSON value matching this JSON Schema: {output_schema_text}. Do not call tools."
+        ));
+        completion_request.messages = context_messages.clone();
+        completion_request.max_tokens = request.max_tokens();
+        completion_request.temperature = request.temperature();
+
+        log::info!(
+            "starting Cersei file generation without tools: agent={}, provider={}, model={}, max_retries={}",
+            request.agent_name,
+            request.provider_config.driver.as_str(),
+            request.model_name,
+            max_retries
+        );
+
+        let completion = Self::complete_with_retry(&provider, &completion_request, &request.agent_name, max_retries, retry_base_delay)
+            .await
+            .map_err(|message| ProviderError::Model {
+                agent_name: request.agent_name.clone(),
+                message,
+            })?;
+        let response_text = completion.message.non_empty_text().ok_or_else(|| ProviderError::Model {
+            agent_name: request.agent_name.clone(),
+            message: "file response did not include text".to_string(),
+        })?;
+        let output = request
+            .output_schema
+            .parse_chat_completion_text_output(&response_text, &request.agent_name, &mut schema_cache)?;
+        let mut messages = context_messages;
+
+        messages.push(Message::assistant(response_text));
+
+        Ok(ModelResponse {
+            output,
+            context: CerseiAgentContext { messages }.into_value(),
         })
     }
 }
@@ -314,6 +376,49 @@ impl ModelAssetCerseiExt for ModelAsset {
     }
 }
 
+trait ModelFileAttachmentsCerseiExt {
+    fn cersei_provider_uploads(&self) -> Vec<ModelFileAttachment>;
+
+    fn cersei_bundled_provider_upload(&self) -> ModelFileAttachment;
+}
+
+impl ModelFileAttachmentsCerseiExt for [ModelFileAttachment] {
+    fn cersei_provider_uploads(&self) -> Vec<ModelFileAttachment> {
+        if self.len() <= 1 {
+            return self.to_vec();
+        }
+
+        vec![self.cersei_bundled_provider_upload()]
+    }
+
+    fn cersei_bundled_provider_upload(&self) -> ModelFileAttachment {
+        let mut content = String::from("Superwire uploaded files\n");
+
+        for (file_index, file_attachment) in self.iter().enumerate() {
+            content.push('\n');
+            content.push_str("File ");
+            content.push_str(&(file_index + 1).to_string());
+            content.push_str(": ");
+            content.push_str(&file_attachment.name);
+            content.push('\n');
+            content.push_str("Purpose: ");
+            content.push_str(&file_attachment.purpose);
+            content.push('\n');
+            content.push_str("Content:\n");
+            content.push_str(&file_attachment.content);
+            content.push('\n');
+        }
+
+        ModelFileAttachment {
+            name: "superwire-files.txt".to_string(),
+            content,
+            purpose: self
+                .first()
+                .map_or_else(|| "file-extract".to_string(), |file_attachment| file_attachment.purpose.clone()),
+        }
+    }
+}
+
 impl CerseiModelProvider {
     async fn upload_files(&self, request: &ModelRequest) -> Result<Vec<UploadedProviderFile>, ProviderError> {
         if request.file_attachments.is_empty() {
@@ -339,9 +444,10 @@ impl CerseiModelProvider {
         }
 
         let upload_client = FileUploadClient::from_request(request)?;
+        let file_uploads = request.file_attachments.as_slice().cersei_provider_uploads();
         let mut uploaded_files = Vec::new();
 
-        for file_attachment in &request.file_attachments {
+        for file_attachment in &file_uploads {
             match upload_client.upload(file_attachment, &request.agent_name).await {
                 Ok(uploaded_file) => {
                     request.send_agent_file_created(&uploaded_file);
@@ -652,6 +758,54 @@ struct UploadedProviderFile {
     bytes: Option<u64>,
 }
 
+struct UploadedProviderFileCleanup {
+    provider: CerseiModelProvider,
+    request: ModelRequest,
+    uploaded_files: Vec<UploadedProviderFile>,
+    cleanup_completed: bool,
+}
+
+impl UploadedProviderFileCleanup {
+    fn new(provider: CerseiModelProvider, request: ModelRequest, uploaded_files: Vec<UploadedProviderFile>) -> Self {
+        Self {
+            provider,
+            request,
+            uploaded_files,
+            cleanup_completed: false,
+        }
+    }
+
+    fn uploaded_files(&self) -> &[UploadedProviderFile] {
+        &self.uploaded_files
+    }
+
+    async fn cleanup_now(&mut self) -> Result<(), ProviderError> {
+        let cleanup_result = self.provider.delete_uploaded_files(&self.request, &self.uploaded_files).await;
+
+        self.cleanup_completed = true;
+
+        cleanup_result
+    }
+}
+
+impl Drop for UploadedProviderFileCleanup {
+    fn drop(&mut self) {
+        if self.cleanup_completed || self.uploaded_files.is_empty() {
+            return;
+        }
+
+        let provider = self.provider.clone();
+        let request = self.request.clone();
+        let uploaded_files = self.uploaded_files.clone();
+
+        tokio::spawn(async move {
+            if let Err(error) = provider.delete_uploaded_files(&request, &uploaded_files).await {
+                log::warn!("failed to clean up uploaded files after generation was dropped: {error}");
+            }
+        });
+    }
+}
+
 struct FileUploadClient {
     endpoint: String,
     api_key: String,
@@ -807,6 +961,7 @@ trait ModelRequestCerseiContextExt {
     fn call_limit_error(&self, tool_definition: &ModelToolDefinition) -> Option<Value>;
     fn provider_max_retries(&self) -> u32;
     fn provider_retry_base_delay(&self) -> Duration;
+    fn should_generate_file_attachments_without_tools(&self) -> bool;
 }
 
 impl ModelRequestCerseiContextExt for ModelRequest {
@@ -896,6 +1051,15 @@ impl ModelRequestCerseiContextExt for ModelRequest {
             .unwrap_or(DEFAULT_PROVIDER_RETRY_BASE_DELAY_MS);
 
         Duration::from_millis(milliseconds)
+    }
+
+    fn should_generate_file_attachments_without_tools(&self) -> bool {
+        !self.file_attachments.is_empty()
+            && self.wire_api == ModelWireApi::ChatCompletion
+            && self
+                .tools
+                .iter()
+                .all(|tool_definition| matches!(tool_definition.source, ModelToolSource::Finalize))
     }
 }
 
@@ -1192,6 +1356,132 @@ impl ModelToolDefinitionCerseiExt for ModelToolDefinition {
         request.send_mcp_call_completed(call_details, rendered_result.clone(), result, started_at.elapsed());
 
         Ok(ToolCallOutcome::Continue(rendered_result))
+    }
+}
+
+trait ModelSchemaChatCompletionOutputExt {
+    fn parse_chat_completion_text_output(
+        &self,
+        response_text: &str,
+        agent_name: &str,
+        schema_cache: &mut ModelSchemaCache,
+    ) -> Result<Value, ProviderError>;
+
+    fn validate_chat_completion_output(
+        &self,
+        output: Value,
+        agent_name: &str,
+        schema_cache: &mut ModelSchemaCache,
+    ) -> Result<Value, ProviderError>;
+
+    fn single_required_string_property_name(&self, schema_cache: &mut ModelSchemaCache) -> Option<String>;
+}
+
+impl ModelSchemaChatCompletionOutputExt for ModelSchema {
+    fn parse_chat_completion_text_output(
+        &self,
+        response_text: &str,
+        agent_name: &str,
+        schema_cache: &mut ModelSchemaCache,
+    ) -> Result<Value, ProviderError> {
+        if let Some(parsed_output) = response_text.parse_json_response_value() {
+            if let Ok(output) = self.validate_chat_completion_output(parsed_output, agent_name, schema_cache) {
+                return Ok(output);
+            }
+        }
+
+        if self.schema_type_name_with_cache(schema_cache).as_deref() == Some("string") {
+            return self.validate_chat_completion_output(Value::String(response_text.trim().to_string()), agent_name, schema_cache);
+        }
+
+        if let Some(property_name) = self.single_required_string_property_name(schema_cache) {
+            let mut output_object = serde_json::Map::new();
+
+            output_object.insert(property_name, Value::String(response_text.trim().to_string()));
+
+            return self.validate_chat_completion_output(Value::Object(output_object), agent_name, schema_cache);
+        }
+
+        Err(ProviderError::Model {
+            agent_name: agent_name.to_string(),
+            message: "file response did not match the declared output schema".to_string(),
+        })
+    }
+
+    fn validate_chat_completion_output(
+        &self,
+        output: Value,
+        agent_name: &str,
+        schema_cache: &mut ModelSchemaCache,
+    ) -> Result<Value, ProviderError> {
+        let output_schema = self.json_value_with_cache(schema_cache);
+        let validator = jsonschema::validator_for(&output_schema).map_err(|error| ProviderError::Model {
+            agent_name: agent_name.to_string(),
+            message: format!("output schema could not be compiled: {error}"),
+        })?;
+        let mut validation_issues = validator.iter_errors(&output).map(format_validation_issue).collect::<Vec<_>>();
+
+        if validation_issues.is_empty() {
+            return Ok(self.project_json_value(&output));
+        }
+
+        validation_issues.sort();
+        validation_issues.dedup();
+
+        Err(ProviderError::Model {
+            agent_name: agent_name.to_string(),
+            message: format!(
+                "file response did not match the declared output schema: {}",
+                validation_issues.join("; ")
+            ),
+        })
+    }
+
+    fn single_required_string_property_name(&self, schema_cache: &mut ModelSchemaCache) -> Option<String> {
+        let output_schema = self.json_value_with_cache(schema_cache);
+
+        if output_schema.get("type").and_then(Value::as_str) != Some("object") {
+            return None;
+        }
+
+        let properties = output_schema.get("properties").and_then(Value::as_object)?;
+
+        if properties.len() != 1 {
+            return None;
+        }
+
+        let (property_name, property_schema) = properties.iter().next()?;
+
+        if property_schema.get("type").and_then(Value::as_str) != Some("string") {
+            return None;
+        }
+
+        let required_fields = output_schema.get("required").and_then(Value::as_array)?;
+        let property_is_required = required_fields
+            .iter()
+            .any(|required_field| required_field.as_str() == Some(property_name));
+
+        property_is_required.then(|| property_name.clone())
+    }
+}
+
+trait ResponseTextJsonExt {
+    fn parse_json_response_value(&self) -> Option<Value>;
+}
+
+impl ResponseTextJsonExt for str {
+    fn parse_json_response_value(&self) -> Option<Value> {
+        let trimmed_text = self.trim();
+
+        if let Ok(value) = serde_json::from_str::<Value>(trimmed_text) {
+            return Some(value);
+        }
+
+        let fenced_text = trimmed_text.strip_prefix("```")?;
+        let (_, fenced_body) = fenced_text.split_once('\n')?;
+        let json_text = fenced_body.strip_suffix("```")?.trim();
+
+        serde_json::from_str::<Value>(json_text).ok()
     }
 }
 

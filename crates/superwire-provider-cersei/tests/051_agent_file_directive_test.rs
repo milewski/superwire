@@ -22,7 +22,7 @@ async fn uploads_agent_file_and_injects_file_id_message() {
                                     .is_some_and(|content| content.starts_with("fileid://file-fe-test-"))
                         }));
                     })
-                    .respond_json(json!({ "value": "second" }));
+                    .respond_text("second");
             });
         })
         .run()

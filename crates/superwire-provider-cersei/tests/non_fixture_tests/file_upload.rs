@@ -4,6 +4,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 use superwire_mcp::McpClientPool;
 use superwire_model::{ModelFileAttachment, ModelProvider, ModelRequest, ModelSchema, ModelToolDefinition, ToolCallTracker};
 use superwire_protocol::event::{ExecutorEvent, ExecutorEventKind};
@@ -40,6 +41,10 @@ async fn uploads_file_injects_file_id_message_and_deletes_file() {
         message.get("role").and_then(Value::as_str) == Some("system")
             && message.get("content").and_then(Value::as_str) == Some("fileid://file-fe-test")
     }));
+    assert!(
+        chat_request.body_json.get("tools").is_none(),
+        "file-only chat completion should not force tool calling"
+    );
 
     let created_event = event_receiver.recv().await.expect("file created event should be sent");
     let deleted_event = event_receiver.recv().await.expect("file deleted event should be sent");
@@ -69,6 +74,53 @@ async fn uploads_file_injects_file_id_message_and_deletes_file() {
 }
 
 #[tokio::test]
+async fn bundles_multiple_file_attachments_into_one_uploaded_file() {
+    let server = FileProviderServer::spawn(ChatResponseMode::Success);
+    let mut request = model_request(server.endpoint.clone(), None);
+
+    request.file_attachments = vec![
+        ModelFileAttachment {
+            name: "dog.txt".to_string(),
+            content: "dog joke".to_string(),
+            purpose: "file-extract".to_string(),
+        },
+        ModelFileAttachment {
+            name: "cat.txt".to_string(),
+            content: "cat joke".to_string(),
+            purpose: "file-extract".to_string(),
+        },
+    ];
+
+    let response = CerseiModelProvider.generate(request).await.expect("provider should complete");
+
+    assert_eq!(response.output, json!({ "value": "done" }));
+
+    let requests = server.requests();
+    let upload_request_count = requests
+        .iter()
+        .filter(|request| request.method == "POST" && request.path == "/v1/files")
+        .count();
+    let chat_request = requests
+        .iter()
+        .find(|request| request.method == "POST" && request.path == "/v1/chat/completions")
+        .expect("chat request should be recorded");
+    let messages = chat_request.body_json["messages"].as_array().expect("messages should be an array");
+    let file_identifier_message_count = messages
+        .iter()
+        .filter(|message| {
+            message.get("role").and_then(Value::as_str) == Some("system")
+                && message
+                    .get("content")
+                    .and_then(Value::as_str)
+                    .is_some_and(|content| content.starts_with("fileid://"))
+        })
+        .count();
+
+    assert_eq!(upload_request_count, 1);
+    assert_eq!(file_identifier_message_count, 1);
+}
+
+#[tokio::test]
 async fn deletes_file_when_chat_completion_fails() {
     let server = FileProviderServer::spawn(ChatResponseMode::Failure);
     let mut request = model_request(server.endpoint.clone(), None);
@@ -88,6 +140,40 @@ async fn deletes_file_when_chat_completion_fails() {
     assert!(requests
         .iter()
         .any(|request| request.method == "DELETE" && request.path == "/v1/files/file-fe-test"));
+}
+
+#[tokio::test]
+async fn deletes_file_when_generation_is_cancelled() {
+    let server = FileProviderServer::spawn(ChatResponseMode::Slow);
+    let request = model_request(server.endpoint.clone(), None);
+    let generation_task = tokio::spawn(async move { CerseiModelProvider.generate(request).await });
+
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while !server
+            .requests()
+            .iter()
+            .any(|request| request.method == "POST" && request.path == "/v1/chat/completions")
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("chat completion request should start before cancellation");
+
+    generation_task.abort();
+    let _ = generation_task.await;
+
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while !server
+            .requests()
+            .iter()
+            .any(|request| request.method == "DELETE" && request.path == "/v1/files/file-fe-test")
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("cancelled generation should delete uploaded file");
 }
 
 fn model_request(endpoint: String, event_sender: Option<mpsc::Sender<ExecutorEvent>>) -> ModelRequest {
@@ -127,12 +213,14 @@ struct FileProviderServer {
 enum ChatResponseMode {
     Success,
     Failure,
+    Slow,
 }
 
 impl ChatResponseMode {
     fn expected_request_count(self) -> usize {
         match self {
             Self::Success | Self::Failure => 3,
+            Self::Slow => 3,
         }
     }
 }
@@ -153,12 +241,19 @@ impl FileProviderServer {
 
         thread::spawn(move || {
             for incoming_stream in listener.incoming().take(chat_response_mode.expected_request_count()) {
-                let mut stream = incoming_stream.expect("provider stream should open");
-                let request = read_http_request(&stream).expect("request should parse");
-                let response = response_for_request(&request, chat_response_mode);
+                let thread_requests = Arc::clone(&thread_requests);
 
-                thread_requests.lock().expect("requests lock should not be poisoned").push(request);
-                stream.write_all(response.as_bytes()).expect("response should write");
+                thread::spawn(move || {
+                    let mut stream = incoming_stream.expect("provider stream should open");
+                    let request = read_http_request(&stream).expect("request should parse");
+
+                    thread_requests
+                        .lock()
+                        .expect("requests lock should not be poisoned")
+                        .push(request.clone());
+                    let response = response_for_request(&request, chat_response_mode);
+                    let _ = stream.write_all(response.as_bytes());
+                });
             }
         });
 
@@ -223,6 +318,10 @@ fn response_for_request(request: &RecordedRequest, chat_response_mode: ChatRespo
         ("POST", "/v1/chat/completions") => match chat_response_mode {
             ChatResponseMode::Success => http_sse_response(),
             ChatResponseMode::Failure => http_error_response(),
+            ChatResponseMode::Slow => {
+                thread::sleep(Duration::from_secs(30));
+                http_sse_response()
+            }
         },
         _ => http_json_response(json!({ "error": { "message": "unexpected request" } })),
     }
@@ -253,15 +352,7 @@ fn http_sse_response() -> String {
         "choices": [{
             "index": 0,
             "delta": {
-                "tool_calls": [{
-                    "index": 0,
-                    "id": "call_1",
-                    "type": "function",
-                    "function": {
-                        "name": "finalize",
-                        "arguments": "{\"type\":\"success\",\"output\":{\"value\":\"done\"}}"
-                    }
-                }]
+                "content": "{\"value\":\"done\"}"
             },
             "finish_reason": null
         }]
