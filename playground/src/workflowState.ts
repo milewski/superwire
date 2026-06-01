@@ -125,10 +125,7 @@ function sourceContainsMarkers(source: string) {
 }
 
 export function recoverWorkflowTabAfterReload(tab: unknown): WorkflowTab {
-  const normalizedTab = {
-    ...normalizeWorkflowTab(tab),
-    cacheKey: uniqueId(),
-  };
+  const normalizedTab = normalizeWorkflowTab(tab);
 
   if (normalizedTab.runState !== 'running') {
     return normalizedTab;

@@ -90,7 +90,11 @@ export default function WorkflowGraphView({ graph, source, graphState, runState,
   const graphSignature = displayGraph ? workflowGraphSignature(displayGraph) : 'empty';
 
   useEffect(() => {
-    localStorage.setItem(graphConfigStorageKey, JSON.stringify(config));
+    try {
+      localStorage.setItem(graphConfigStorageKey, JSON.stringify(config));
+    } catch (error) {
+      console.warn('Unable to persist workflow graph config.', error);
+    }
   }, [config]);
 
   return (
@@ -2940,7 +2944,7 @@ function outputDescription(node: WorkflowExecutionGraphNode, outputEntries: Grap
 }
 
 function restoreGraphConfig(): GraphConfig {
-  const savedConfig = localStorage.getItem(graphConfigStorageKey);
+  const savedConfig = localStorageValue(graphConfigStorageKey);
 
   if (!savedConfig) {
     return defaultGraphConfig;
@@ -2961,7 +2965,7 @@ function restoreGraphConfig(): GraphConfig {
 }
 
 function restoreGraphViewport(): Viewport | null {
-  const savedViewport = localStorage.getItem(graphViewportStorageKey);
+  const savedViewport = localStorageValue(graphViewportStorageKey);
 
   if (!savedViewport) {
     return null;
@@ -2980,8 +2984,22 @@ function restoreGraphViewport(): Viewport | null {
   return null;
 }
 
+function localStorageValue(storageKey: string) {
+  try {
+    return localStorage.getItem(storageKey);
+  } catch (error) {
+    console.warn(`Unable to read ${storageKey} from local storage.`, error);
+
+    return null;
+  }
+}
+
 function storeGraphViewport(viewport: Viewport) {
-  localStorage.setItem(graphViewportStorageKey, JSON.stringify(viewport));
+  try {
+    localStorage.setItem(graphViewportStorageKey, JSON.stringify(viewport));
+  } catch (error) {
+    console.warn('Unable to persist workflow graph viewport.', error);
+  }
 }
 
 function preserveGraphViewport(reactFlowInstance: ReturnType<typeof useReactFlow>, currentViewportRef: MutableRefObject<Viewport>, preservedViewport: Viewport) {

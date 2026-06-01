@@ -34,6 +34,7 @@ const activeTabStorageKey = 'superwire.playground.activeTab.v3';
 const themeStorageKey = 'superwire.playground.theme';
 const runIdentifierHeader = 'x-superwire-run-id';
 const streamReconnectDelayMilliseconds = 1000;
+const defaultGraphMessage = 'Open the graph view to generate a visual workflow plan.';
 
 type RenameDialogTarget =
   | { kind: 'workflow'; tabId: string }
@@ -101,9 +102,7 @@ export default function App() {
       return;
     }
 
-    localStorage.setItem(tabsStorageKey, JSON.stringify(tabs));
-    localStorage.setItem(activeTabStorageKey, activeTabId);
-    localStorage.setItem(themeStorageKey, darkMode ? 'dark' : 'light');
+    persistPlaygroundState(tabs, activeTabId, darkMode);
   }, [tabs, activeTabId, darkMode]);
 
   useEffect(() => {
@@ -232,7 +231,7 @@ export default function App() {
       outputJson: '',
       eventLog: [],
       graphState: 'idle',
-      graphMessage: 'Open the graph view to generate a visual workflow plan.',
+      graphMessage: defaultGraphMessage,
       graphData: null,
       updatedAt: Date.now(),
     };
@@ -1317,17 +1316,82 @@ export default function App() {
   );
 }
 
-function restoreFromStorage(setTabs: (tabs: WorkflowTab[]) => void, setActiveTabId: (tabId: string) => void, setDarkMode: (darkMode: boolean) => void) {
-  setDarkMode(localStorage.getItem(themeStorageKey) !== 'light');
+function persistPlaygroundState(tabs: WorkflowTab[], activeTabId: string, darkMode: boolean) {
+  const persistedTabs = tabs.map(persistableWorkflowTab);
+  const persistedItems: [string, string][] = [
+    [tabsStorageKey, JSON.stringify(persistedTabs)],
+    [activeTabStorageKey, activeTabId],
+    [themeStorageKey, darkMode ? 'dark' : 'light'],
+  ];
 
-  const savedTabs = localStorage.getItem(tabsStorageKey);
-  const restoredTabs = savedTabs ? (JSON.parse(savedTabs) as unknown[]).map(recoverWorkflowTabAfterReload) : [createWorkflowTab('Launch brief')];
+  try {
+    for (const [storageKey, storageValue] of persistedItems) {
+      localStorage.setItem(storageKey, storageValue);
+    }
+  } catch (error) {
+    try {
+      localStorage.removeItem(tabsStorageKey);
+
+      for (const [storageKey, storageValue] of persistedItems) {
+        localStorage.setItem(storageKey, storageValue);
+      }
+    } catch (retryError) {
+      console.warn('Unable to persist playground state.', retryError, error);
+    }
+  }
+}
+
+function persistableWorkflowTab(tab: WorkflowTab): WorkflowTab {
+  const idleRunState = tab.runState === 'running' ? 'failed' : tab.runState;
+  const idleMessage = tab.runState === 'running' ? 'Run connection was lost during page reload. Start a new run to continue.' : tab.message;
+
+  return {
+    ...tab,
+    runState: idleRunState,
+    message: idleMessage,
+    outputJson: '',
+    eventLog: [],
+    graphState: 'idle',
+    graphMessage: defaultGraphMessage,
+    graphData: null,
+  };
+}
+
+function restoreFromStorage(setTabs: (tabs: WorkflowTab[]) => void, setActiveTabId: (tabId: string) => void, setDarkMode: (darkMode: boolean) => void) {
+  setDarkMode(localStorageValue(themeStorageKey) !== 'light');
+
+  const savedTabs = localStorageValue(tabsStorageKey);
+  const restoredTabs = savedTabs ? parseStoredWorkflowTabs(savedTabs) : [createWorkflowTab('Launch brief')];
   const tabs = restoredTabs.length > 0 ? restoredTabs : [createWorkflowTab('Launch brief')];
-  const savedActiveTabId = localStorage.getItem(activeTabStorageKey);
+  const savedActiveTabId = localStorageValue(activeTabStorageKey);
   const activeTabId = tabs.some((tab) => tab.id === savedActiveTabId) ? savedActiveTabId! : tabs[0]?.id ?? '';
 
   setTabs(tabs);
   setActiveTabId(activeTabId);
+}
+
+function localStorageValue(storageKey: string) {
+  try {
+    return localStorage.getItem(storageKey);
+  } catch (error) {
+    console.warn(`Unable to read ${storageKey} from local storage.`, error);
+
+    return null;
+  }
+}
+
+function parseStoredWorkflowTabs(savedTabs: string) {
+  try {
+    const parsedTabs = JSON.parse(savedTabs) as unknown;
+
+    if (Array.isArray(parsedTabs)) {
+      return parsedTabs.map(recoverWorkflowTabAfterReload);
+    }
+  } catch (error) {
+    console.warn('Unable to restore saved playground tabs.', error);
+  }
+
+  return [createWorkflowTab('Launch brief')];
 }
 
 type UpdateTab = (tabId: string, updater: (tab: WorkflowTab) => WorkflowTab) => void;

@@ -81,9 +81,11 @@ interface EditorJumpTarget {
 class WebSocketLanguageClient {
   private socket: WebSocket | null = null;
   private closed = false;
+  private initialized = false;
   private nextRequestId = 1;
   private pendingRequests = new Map<number, PendingRequest>();
-  private openPromise: Promise<void> | null = null;
+  private connectionPromise: Promise<void> | null = null;
+  private initializationPromise: Promise<void> | null = null;
   private diagnosticListener: ((diagnostics: LspDiagnostic[]) => void) | null = null;
 
   constructor(private readonly endpoint: string) {}
@@ -93,92 +95,58 @@ class WebSocketLanguageClient {
   }
 
   async open() {
-    if (this.socket?.readyState === WebSocket.OPEN) {
+    await this.ensureOpenSocket();
+
+    if (this.initialized) {
       return;
     }
 
-    if (this.openPromise) {
-      return this.openPromise;
+    if (this.initializationPromise) {
+      await this.initializationPromise;
+
+      return;
     }
 
-    this.openPromise = new Promise((resolve, reject) => {
-      const socket = new WebSocket(this.endpoint);
-      this.socket = socket;
-      this.closed = false;
+    this.initializationPromise = this.initialize();
+    await this.initializationPromise;
+  }
 
-      socket.addEventListener('open', () => {
-        if (this.closed) {
-          socket.close();
-        }
-
-        resolve();
-      }, { once: true });
-      socket.addEventListener('error', () => {
-        if (this.closed) {
-          resolve();
-
-          return;
-        }
-
-        reject(new Error('Unable to connect to Superwire LSP websocket.'));
-      }, { once: true });
-      socket.addEventListener('message', (event) => this.acceptMessage(event.data));
-      socket.addEventListener('close', () => this.rejectPendingRequests());
-    });
-
-    await this.openPromise;
-
-    await this.request('initialize', {
-      capabilities: {},
-      rootUri: null,
-    });
-    this.notify('initialized', {});
+  private async initialize() {
+    try {
+      await this.sendRequest('initialize', {
+        capabilities: {},
+        rootUri: null,
+      });
+      this.initialized = true;
+      this.sendNotification('initialized', {});
+    } finally {
+      this.initializationPromise = null;
+    }
   }
 
   close() {
     this.closed = true;
 
-    if (this.socket?.readyState === WebSocket.OPEN) {
+    if (this.socket?.readyState === WebSocket.OPEN || this.socket?.readyState === WebSocket.CONNECTING) {
       this.socket.close();
     }
 
     this.socket = null;
-    this.openPromise = null;
+    this.initialized = false;
+    this.connectionPromise = null;
+    this.initializationPromise = null;
     this.rejectPendingRequests();
   }
 
   async request(method: string, params: unknown): Promise<unknown> {
-    await this.ensureOpenSocket();
+    await this.open();
 
-    const requestId = this.nextRequestId;
-    this.nextRequestId += 1;
-
-    const requestPromise = new Promise<unknown>((resolve, reject) => {
-      this.pendingRequests.set(requestId, { resolve, reject });
-    });
-
-    this.socket?.send(
-      JSON.stringify({
-        jsonrpc: '2.0',
-        id: requestId,
-        method,
-        params,
-      }),
-    );
-
-    return requestPromise;
+    return this.sendRequest(method, params);
   }
 
   async notify(method: string, params: unknown) {
-    await this.ensureOpenSocket();
-
-    this.socket?.send(
-      JSON.stringify({
-        jsonrpc: '2.0',
-        method,
-        params,
-      }),
-    );
+    await this.open();
+    this.sendNotification(method, params);
   }
 
   notifyIfOpen(method: string, params: unknown) {
@@ -186,19 +154,124 @@ class WebSocketLanguageClient {
       return;
     }
 
-    this.socket.send(
-      JSON.stringify({
+    try {
+      this.sendNotification(method, params);
+    } catch {
+      return;
+    }
+  }
+
+  private sendRequest(method: string, params: unknown): Promise<unknown> {
+    const requestId = this.nextRequestId;
+    this.nextRequestId += 1;
+
+    const requestPromise = new Promise<unknown>((resolve, reject) => {
+      this.pendingRequests.set(requestId, { resolve, reject });
+    });
+
+    try {
+      this.sendJson({
         jsonrpc: '2.0',
+        id: requestId,
         method,
         params,
-      }),
-    );
+      });
+    } catch (error) {
+      const pendingRequest = this.pendingRequests.get(requestId);
+      this.pendingRequests.delete(requestId);
+      pendingRequest?.reject(error);
+      throw error;
+    }
+
+    return requestPromise;
+  }
+
+  private sendNotification(method: string, params: unknown) {
+    this.sendJson({
+      jsonrpc: '2.0',
+      method,
+      params,
+    });
   }
 
   private async ensureOpenSocket() {
-    if (this.socket?.readyState !== WebSocket.OPEN) {
-      await this.open();
+    if (this.socket?.readyState === WebSocket.OPEN) {
+      return;
     }
+
+    if (this.socket?.readyState === WebSocket.CONNECTING && this.connectionPromise) {
+      await this.connectionPromise;
+
+      return;
+    }
+
+    this.closed = false;
+    this.initialized = false;
+    this.connectionPromise = new Promise((resolve, reject) => {
+      const socket = new WebSocket(this.endpoint);
+      this.socket = socket;
+
+      socket.addEventListener('open', () => {
+        if (this.socket !== socket) {
+          reject(new Error('Superwire LSP websocket was replaced.'));
+
+          return;
+        }
+
+        if (this.closed) {
+          socket.close();
+          reject(new Error('Superwire LSP websocket closed.'));
+
+          return;
+        }
+
+        resolve();
+      }, { once: true });
+      socket.addEventListener('error', () => {
+        if (this.socket !== socket) {
+          return;
+        }
+
+        reject(new Error('Unable to connect to Superwire LSP websocket.'));
+      }, { once: true });
+      socket.addEventListener('close', () => {
+        if (this.socket !== socket) {
+          return;
+        }
+
+        this.initialized = false;
+        this.connectionPromise = null;
+        this.initializationPromise = null;
+        this.rejectPendingRequests();
+      });
+      socket.addEventListener('message', (event) => {
+        if (this.socket !== socket) {
+          return;
+        }
+
+        this.acceptMessage(event.data);
+      });
+    });
+
+    try {
+      await this.connectionPromise;
+    } catch (error) {
+      this.connectionPromise = null;
+
+      throw error;
+    }
+
+    if (this.socket?.readyState !== WebSocket.OPEN) {
+      throw new Error('Superwire LSP websocket is not open.');
+    }
+  }
+
+  private sendJson(payload: unknown) {
+    if (this.socket?.readyState !== WebSocket.OPEN) {
+      throw new Error('Superwire LSP websocket is not open.');
+    }
+
+    this.socket.send(JSON.stringify(payload));
   }
 
   private acceptMessage(rawMessage: unknown) {
@@ -444,7 +517,7 @@ function notifyRuntimeValues(languageClient: WebSocketLanguageClient, documentUr
     textDocument: { uri: documentUri },
     input,
     secrets,
-  });
+  }).catch(() => undefined);
 }
 
 function parseJsonObjectOrEmpty(jsonText: string) {
