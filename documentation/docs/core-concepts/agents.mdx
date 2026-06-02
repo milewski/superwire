@@ -52,16 +52,15 @@ agent writer {
 
 ## File directive
 
-`file` uploads content before the agent executes and injects the resulting file attachment into the agent's chat history. Use it when the agent needs to process file content as part of its instruction.
+`file` uploads content before the agent executes and injects the resulting file attachment into the agent's chat history. The content expression is positional and required; an optional block sets `name` and `purpose`.
 
 ```wire
 agent reviewer {
     model: model.fast
     instruction: "Review the uploaded file."
 
-    file {
+    file agent.summarizer {
         name: "report.json"
-        content: agent.summarizer
     }
 
     output {
@@ -70,31 +69,58 @@ agent reviewer {
 }
 ```
 
+### File syntax
+
+```wire
+file <content> {
+    name: "filename.ext"
+    purpose: "file-extract"
+}
+```
+
+The block `{ ... }` is optional. When omitted, defaults apply.
+
 ### File properties
 
 | Property | Required | Default | Purpose |
 | --- | --- | --- | --- |
+| `content` (positional) | Yes | — | An expression whose rendered value becomes the file body. |
 | `name` | No | `"file.txt"` | The filename exposed to the model. |
-| `content` | Yes | — | An expression whose rendered value becomes the file body. |
 | `purpose` | No | `"file-extract"` | A label describing the file's role in the workflow. |
 
-The `content` property accepts any expression, including agent output references such as `agent.summarizer.value`. This makes it possible to chain agents where one agent produces content and a subsequent agent receives it as a file attachment.
+The content expression accepts references (`agent.summarizer`, `dynamic.data`), string literals (`"manual content"`), number literals (`132`), and object literals (`{ value: "object content" }`).
 
-Multiple `file` blocks are allowed on a single agent:
+### Content from an agent
+
+```wire
+file agent.summarizer {
+    name: "report.json"
+}
+```
+
+### Inline content
+
+```wire
+file "manual content" {
+    name: "notes.txt"
+}
+```
+
+### Multiple files
+
+Multiple `file` directives are allowed on a single agent:
 
 ```wire
 agent compare {
     model: model.fast
     instruction: "Compare the two files."
 
-    file {
+    file agent.step_one {
         name: "before.json"
-        content: agent.step_one
     }
 
-    file {
+    file agent.step_two {
         name: "after.json"
-        content: agent.step_two
     }
 
     output {

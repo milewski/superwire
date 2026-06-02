@@ -35,9 +35,8 @@ agent review {
     model: model.fast
     instruction: "Review the uploaded report and provide feedback."
 
-    file {
+    file agent.summarize {
         name: "report.json"
-        content: agent.summarize
     }
 
     output {
