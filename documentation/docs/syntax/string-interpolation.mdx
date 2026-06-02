@@ -3,7 +3,7 @@ title: String Interpolation
 description: Insert workflow values into agent instructions.
 ---
 
-Use `{{ ... }}` inside strings to render values.
+Use `{{ ... }}` inside strings to render values. Only double braces trigger interpolation; single braces are treated as literal text.
 
 ```wire
 agent summarize {
@@ -17,6 +17,23 @@ agent summarize {
 ```
 
 References inside interpolation are validated the same way as references elsewhere.
+
+## Single braces are literal
+
+Single `{ ... }` characters are passed through as-is. This makes it easy to embed JSON or other brace-heavy content in strings without escaping:
+
+```wire
+agent format_json {
+    model: model.fast
+    instruction: """Return valid JSON: {"name": "{{ input.name }}", "status": "ok"}"""
+
+    output {
+        result: string
+    }
+}
+```
+
+In the example above, `{` and `}` around the JSON are literal text, while `{{ input.name }}` is interpolated.
 
 ## Multiline strings
 
