@@ -62,9 +62,7 @@ fn reports_agent_file_requires_chat_completion_wire_api() {
 
         agent reviewer {
             model: model.qwen_doc
-            file {
-                content: "content"
-            }
+            file "content"
         }
     };
 

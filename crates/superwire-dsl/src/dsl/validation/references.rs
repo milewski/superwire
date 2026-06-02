@@ -120,9 +120,9 @@ pub(super) fn validate_agent_references(workflow: &Workflow, validation_index: &
                             );
                         }
                         AgentProperty::File(agent_file) => {
-                            for file_field in &agent_file.fields {
+                            for file_expression in agent_file.expressions() {
                                 keyword_reference_validation_state.validate_expression(
-                                    &file_field.value,
+                                    file_expression,
                                     &agent_dynamic_field_types,
                                     agent_context.clone(),
                                     SecretReferencePolicy::Forbid,

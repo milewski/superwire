@@ -476,9 +476,7 @@ fn collect_dependencies_for_agent(
                 agent_context.collect_agent_dependencies(&mut dependencies);
             }
             AgentProperty::File(agent_file) => {
-                for file_field in &agent_file.fields {
-                    file_field.value.collect_agent_dependencies(&mut dependencies);
-                }
+                agent_file.collect_agent_dependencies(&mut dependencies);
             }
             AgentProperty::Model(model_usage) => {
                 for model_property in &model_usage.properties {

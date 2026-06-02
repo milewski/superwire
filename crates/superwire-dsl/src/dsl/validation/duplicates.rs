@@ -328,6 +328,12 @@ impl WorkflowDuplicateValidationExt for Workflow {
                                 }
                             }
                             AgentProperty::File(agent_file) => {
+                                agent_file.content_expression().report_duplicate_object_fields(
+                                    agent_context.clone(),
+                                    Some(agent_file.span),
+                                    validation_report,
+                                );
+
                                 report_duplicate_object_field_names(
                                     agent_file.fields.as_slice(),
                                     agent_context.clone(),

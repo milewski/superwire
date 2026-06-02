@@ -114,10 +114,21 @@ impl AstVisitor {
 
     pub(super) fn visit_agent_file_property(&self, property_pair: Pair<'_, Rule>) -> Result<AgentProperty, DslParseError> {
         let file_span = source_span_from_pair(&property_pair);
-        let block_pair = self.first_inner_pair(property_pair, "agent file property")?;
-        let fields = self.visit_agent_file_block(block_pair)?;
+        let mut inner_pairs = property_pair.into_inner();
+        let content_pair = self.next_pair(&mut inner_pairs, "agent file content", "agent file property")?;
+        let content = self.visit_expression(content_pair)?;
 
-        Ok(AgentProperty::File(AgentFile { fields, span: file_span }))
+        let fields = if let Some(block_pair) = inner_pairs.next() {
+            self.visit_agent_file_block(block_pair)?
+        } else {
+            Vec::new()
+        };
+
+        Ok(AgentProperty::File(AgentFile {
+            content,
+            fields,
+            span: file_span,
+        }))
     }
 
     pub(super) fn visit_agent_file_block(&self, block_pair: Pair<'_, Rule>) -> Result<Vec<ObjectField>, DslParseError> {

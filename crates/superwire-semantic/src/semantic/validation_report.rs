@@ -620,8 +620,8 @@ impl ValidationIssue {
             Self::UnsupportedAgentFileProperty {
                 agent_name: _,
                 property_name: _,
-            } => Some("Use only `name`, `content`, and `purpose` inside a file block.".to_string()),
-            Self::MissingAgentFileContent { agent_name: _ } => Some("Add `content: <expression>` inside the file block.".to_string()),
+            } => Some("Use only `name` and `purpose` inside a file block.".to_string()),
+            Self::MissingAgentFileContent { agent_name: _ } => Some("Add a content expression after `file`.".to_string()),
             Self::InvalidAgentFileWireApi { .. } => Some(self.agent_model_help_message()),
             Self::InvalidProviderName { .. } => Some("Rename the provider using lowercase snake_case, such as `openai_cloud`.".to_string()),
             Self::InvalidModelName { .. } => Some("Rename the model using lowercase snake_case, such as `fast`.".to_string()),

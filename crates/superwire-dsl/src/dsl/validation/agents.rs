@@ -171,15 +171,6 @@ fn validate_agent_file(
         );
     }
 
-    if agent_file.content_expression().is_none() {
-        validation_report.push_issue_with_span(
-            ValidationIssue::MissingAgentFileContent {
-                agent_name: agent_declaration.name.clone(),
-            },
-            Some(agent_file.span),
-        );
-    }
-
     let Some(model_name) = model_usage.and_then(ModelUsage::model_name) else {
         return;
     };

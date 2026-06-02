@@ -1167,11 +1167,8 @@ impl WorkflowExecutor {
             tool_call_execution_context,
             &format!("file name for agent `{}`", planned_agent.name),
         )?;
-        let content_expression = agent_file.content_expression().ok_or_else(|| ExecutorError::Other {
-            message: format!("file directive for agent `{}` must declare `content`", planned_agent.name),
-        })?;
         let content_value = self.evaluate_runtime_expression(
-            content_expression,
+            agent_file.content_expression(),
             tool_call_execution_context,
             &format!("file content for agent `{}`", planned_agent.name),
         )?;

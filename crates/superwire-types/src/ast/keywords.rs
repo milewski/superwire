@@ -233,14 +233,13 @@ impl ModelWireApi {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AgentFilePropertyName {
     Name,
-    Content,
     Purpose,
 }
 
 impl AgentFilePropertyName {
     #[must_use]
-    pub fn all() -> [Self; 3] {
-        [Self::Name, Self::Content, Self::Purpose]
+    pub fn all() -> [Self; 2] {
+        [Self::Name, Self::Purpose]
     }
 
     #[must_use]
@@ -252,7 +251,6 @@ impl AgentFilePropertyName {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Name => "name",
-            Self::Content => "content",
             Self::Purpose => "purpose",
         }
     }

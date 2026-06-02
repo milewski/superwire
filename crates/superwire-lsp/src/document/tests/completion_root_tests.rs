@@ -188,18 +188,13 @@ fn suggests_only_agent_properties_in_agent_block_scope() {
 fn suggests_only_agent_file_properties_in_file_block_scope() {
     let completion_suggestions = inline_completion_suggestions! {
         agent writer {
-            file {
+            file "content" {
                 <cursor>
             }
         }
     };
 
-    assert_completion_contains_labels!(
-        &completion_suggestions,
-        AgentFilePropertyName::Name,
-        AgentFilePropertyName::Content,
-        AgentFilePropertyName::Purpose
-    );
+    assert_completion_contains_labels!(&completion_suggestions, AgentFilePropertyName::Name, AgentFilePropertyName::Purpose);
 
     assert_completion_excludes_labels!(
         &completion_suggestions,

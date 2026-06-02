@@ -652,9 +652,8 @@ mod tests {
     fn parses_agent_file_directive() {
         let workflow = parse_inline_workflow! {
             agent reviewer {
-                file {
+                file agent.summarizer {
                     name: "example.json"
-                    content: agent.summarizer
                     purpose: "file-extract"
                 }
             }
@@ -677,10 +676,38 @@ mod tests {
             })
             .expect("file directive should parse");
 
-        assert_eq!(file_property.fields.len(), 3);
+        assert_eq!(file_property.fields.len(), 2);
         assert!(file_property.name_expression().is_some());
-        assert!(file_property.content_expression().is_some());
+        assert!(matches!(file_property.content_expression(), Expression::Reference(_)));
         assert!(file_property.purpose_expression().is_some());
+    }
+
+    #[test]
+    fn parses_agent_file_directive_content_forms() {
+        let workflow = parse_inline_workflow! {
+            agent reviewer {
+                file dynamic.data
+                file agent.example.some_string
+                file agent.example
+                file "manual content"
+                file 132 { purpose: "file-extract" }
+                file "hello world" { name: "example.txt" }
+                file { value: "object content" } { name: "object.json" }
+            }
+        };
+
+        let reviewer_agent = workflow.find_agent("reviewer").expect("missing agent declaration: reviewer");
+        let file_properties = reviewer_agent.file_properties().collect::<Vec<_>>();
+
+        assert_eq!(file_properties.len(), 7);
+        assert!(matches!(file_properties[0].content_expression(), Expression::Reference(_)));
+        assert!(matches!(file_properties[1].content_expression(), Expression::Reference(_)));
+        assert!(matches!(file_properties[2].content_expression(), Expression::Reference(_)));
+        assert!(matches!(file_properties[3].content_expression(), Expression::StringLiteral(_)));
+        assert!(matches!(file_properties[4].content_expression(), Expression::NumberLiteral(_)));
+        assert!(file_properties[4].purpose_expression().is_some());
+        assert!(file_properties[5].name_expression().is_some());
+        assert!(matches!(file_properties[6].content_expression(), Expression::ObjectLiteral(_)));
     }
 
     #[test]

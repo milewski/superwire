@@ -8,19 +8,20 @@ model qwen_doc from qwen {
     wire_api: "chat/completion"
 }
 
-agent summarizer {
-    model: model.qwen_doc
-    instruction: "Summarize this"
-    output {
-        value: string
-    }
-}
-
 agent reviewer {
     model: model.qwen_doc
-    instruction: "Review the uploaded file."
-    file agent.summarizer {
-        name: "example.json"
+    instruction: "Review the uploaded files."
+    file "manual content" {
+        name: "manual.txt"
+    }
+    file 132 {
+        purpose: "file-extract"
+    }
+    file {
+        title: "object content"
+        count: 2
+    } {
+        name: "object.json"
     }
     output {
         value: string

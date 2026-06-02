@@ -252,6 +252,7 @@ pub struct ModelUsage {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentFile {
+    pub content: Expression,
     pub fields: Vec<ObjectField>,
     pub span: SourceSpan,
 }
@@ -273,8 +274,8 @@ impl AgentFile {
     }
 
     #[must_use]
-    pub fn content_expression(&self) -> Option<&Expression> {
-        self.field(AgentFilePropertyName::Content).map(|field| &field.value)
+    pub fn content_expression(&self) -> &Expression {
+        &self.content
     }
 
     #[must_use]
@@ -286,6 +287,27 @@ impl AgentFile {
         self.fields
             .iter()
             .filter(|field| AgentFilePropertyName::from_identifier(field.name.as_str()).is_none())
+    }
+
+    pub fn expressions(&self) -> impl Iterator<Item = &Expression> {
+        std::iter::once(&self.content).chain(self.fields.iter().map(|field| &field.value))
+    }
+
+    pub fn collect_agent_dependencies<HashBuilder: BuildHasher>(&self, agent_dependencies: &mut HashSet<String, HashBuilder>) {
+        for expression in self.expressions() {
+            expression.collect_agent_dependencies(agent_dependencies);
+        }
+    }
+
+    #[must_use]
+    pub fn references_runtime(&self) -> bool {
+        self.expressions().any(Expression::references_runtime)
+    }
+
+    pub fn collect_dynamic_dependencies(&self, referenced_dynamic_fields: &mut HashSet<String>) {
+        for expression in self.expressions() {
+            expression.collect_dynamic_dependencies(referenced_dynamic_fields);
+        }
     }
 }
 

@@ -393,6 +393,15 @@ impl AgentFileDeclarationsExt for AgentFile {
     fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         formatter.push_indent();
         formatter.output.push_str(structure::Agent::new().file[0].definition().name);
+        formatter.output.push(' ');
+        self.content.push_to_formatter(formatter, ExpressionFormat::Inline);
+
+        if self.fields.is_empty() {
+            formatter.push_newline();
+
+            return;
+        }
+
         formatter.output.push_str(" {");
         formatter.push_newline();
         formatter.indentation_depth += 1;
