@@ -1720,19 +1720,54 @@ mod tests {
     }
 
     #[test]
-    fn rejects_single_brace_interpolation_in_string_literals() {
-        let workflow_source = workflow_source! {
+    fn parses_single_braces_in_string_literals_as_text() {
+        let workflow = parse_inline_workflow! {
             agent interpolation_test {
-                instruction: "A { agent.alpha.summary }"
+                instruction: "A { agent.alpha.summary } and {\"hello\": \"world\"}"
                 output {
                     value: string
                 }
             }
         };
 
-        let parse_result = parse_workflow(workflow_source);
+        let interpolation_agent = workflow
+            .find_agent("interpolation_test")
+            .expect("missing agent declaration: interpolation_test");
+        let instruction = interpolation_agent
+            .expression_property(AgentExpressionPropertyName::Instruction)
+            .expect("instruction should be present");
 
-        assert!(parse_result.is_err());
+        assert!(matches!(
+            instruction,
+            Expression::StringLiteral(instruction_text)
+                if instruction_text == "A { agent.alpha.summary } and {\"hello\": \"world\"}"
+        ));
+    }
+
+    #[test]
+    fn parses_single_braces_in_multiline_string_literals_as_text() {
+        let workflow = parse_inline_workflow! {
+            agent interpolation_test {
+                instruction: """
+                    {"hello": "world"}
+                """
+                output {
+                    value: string
+                }
+            }
+        };
+
+        let interpolation_agent = workflow
+            .find_agent("interpolation_test")
+            .expect("missing agent declaration: interpolation_test");
+        let instruction = interpolation_agent
+            .expression_property(AgentExpressionPropertyName::Instruction)
+            .expect("instruction should be present");
+
+        assert!(matches!(
+            instruction,
+            Expression::StringLiteral(instruction_text) if instruction_text == "{\"hello\": \"world\"}"
+        ));
     }
 
     #[test]

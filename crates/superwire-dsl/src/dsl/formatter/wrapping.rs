@@ -265,16 +265,16 @@ fn is_identifier_name(value: &str) -> bool {
 
 pub(super) fn escape_quoted_string_text(raw_string: &str) -> String {
     let mut escaped_string = String::new();
+    let mut characters = raw_string.chars().peekable();
 
-    for character in raw_string.chars() {
+    while let Some(character) = characters.next() {
         match character {
             '\\' => escaped_string.push_str("\\\\"),
             '"' => escaped_string.push_str("\\\""),
             '\n' => escaped_string.push_str("\\n"),
             '\r' => escaped_string.push_str("\\r"),
             '\t' => escaped_string.push_str("\\t"),
-            '{' => escaped_string.push_str("\\{"),
-            '}' => escaped_string.push_str("\\}"),
+            '{' if characters.peek() == Some(&'{') => escaped_string.push_str("\\{"),
             _ => escaped_string.push(character),
         }
     }
@@ -301,12 +301,12 @@ pub(super) fn escape_plain_string_text(raw_string: &str) -> String {
 
 pub(super) fn escape_multiline_string_text(raw_string: &str) -> String {
     let mut escaped_string = String::new();
+    let mut characters = raw_string.chars().peekable();
 
-    for character in raw_string.chars() {
+    while let Some(character) = characters.next() {
         match character {
             '\\' => escaped_string.push_str("\\\\"),
-            '{' => escaped_string.push_str("\\{"),
-            '}' => escaped_string.push_str("\\}"),
+            '{' if characters.peek() == Some(&'{') => escaped_string.push_str("\\{"),
             _ => escaped_string.push(character),
         }
     }
@@ -316,4 +316,32 @@ pub(super) fn escape_multiline_string_text(raw_string: &str) -> String {
 
 pub(super) fn escape_multiline_plain_string_text(raw_string: &str) -> String {
     raw_string.replace("\"\"\"", "\\\"\\\"\\\"")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{escape_multiline_string_text, escape_quoted_string_text};
+
+    #[test]
+    fn quoted_string_escaping_keeps_single_braces_literal() {
+        assert_eq!(
+            escape_quoted_string_text("{\"hello\": \"world\"}"),
+            "{\\\"hello\\\": \\\"world\\\"}"
+        );
+    }
+
+    #[test]
+    fn quoted_string_escaping_escapes_interpolation_opening() {
+        assert_eq!(escape_quoted_string_text("{{ input.value }}"), "\\{{ input.value }}");
+    }
+
+    #[test]
+    fn multiline_string_escaping_keeps_single_braces_literal() {
+        assert_eq!(escape_multiline_string_text("{hello: world}"), "{hello: world}");
+    }
+
+    #[test]
+    fn multiline_string_escaping_escapes_interpolation_opening() {
+        assert_eq!(escape_multiline_string_text("{{ input.value }}"), "\\{{ input.value }}");
+    }
 }

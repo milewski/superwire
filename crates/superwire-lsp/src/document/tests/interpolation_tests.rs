@@ -217,6 +217,52 @@ fn suppresses_suggestions_inside_plain_single_line_prompt_string_text() {
 }
 
 #[test]
+fn suppresses_suggestions_inside_plain_json_multiline_prompt_string_text() {
+    let completion_suggestions = inline_completion_suggestions! {
+        provider openai from openai {}
+
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
+
+        agent worker {
+            model: model.openai_model
+            instruction: """
+                {"hello": "world"} <cursor>
+            """
+            output {
+                value: string
+            }
+        }
+    };
+
+    assert!(completion_suggestions.is_empty());
+}
+
+#[test]
+fn accepts_plain_json_multiline_prompt_string_text_without_diagnostics() {
+    let diagnostics = inline_diagnostics! {
+        provider openai from openai {}
+
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
+
+        agent worker {
+            model: model.openai_model
+            instruction: """
+                {"hello": "world"}
+            """
+            output {
+                value: string
+            }
+        }
+    };
+
+    assert!(diagnostics.is_empty(), "unexpected diagnostics: {diagnostics:#?}");
+}
+
+#[test]
 fn uses_agent_output_field_description_for_interpolation_completion() {
     let completion_suggestions = inline_completion_suggestions! {
         agent greetings {

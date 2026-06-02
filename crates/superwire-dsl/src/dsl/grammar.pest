@@ -223,11 +223,11 @@ string_expression = { multiline_string_expression | quoted_string_expression }
 
 quoted_string_expression = ${ "\"" ~ quoted_string_part* ~ "\"" }
 quoted_string_part = { interpolation | escaped_character | quoted_string_text }
-quoted_string_text = @{ (!("\"" | "\\" | "{" | "}" | NEWLINE) ~ ANY)+ }
+quoted_string_text = @{ (!("\"" | "\\" | "{{" | NEWLINE) ~ ANY)+ }
 
 multiline_string_expression = ${ "\"\"\"" ~ multiline_string_part* ~ "\"\"\"" }
 multiline_string_part = { interpolation | escaped_character | multiline_string_text }
-multiline_string_text = @{ (!("\"\"\"" | "\\" | "{" | "}") ~ ANY)+ }
+multiline_string_text = @{ (!("\"\"\"" | "\\" | "{{") ~ ANY)+ }
 
 interpolation = !{ "{{" ~ WHITESPACE* ~ expression ~ WHITESPACE* ~ "}}" }
 
