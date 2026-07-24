@@ -64,6 +64,11 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+        with:
+          gradle-version: '8.13'
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
         with:
@@ -75,16 +80,6 @@ jobs:
         with:
           workspaces: '.'
           cache-on-failure: true
-
-      - name: Cache Gradle packages
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
 
       - name: Install mingw-w64 (Linux cross-compile for Windows)
         if: runner.os == 'Linux'
@@ -101,13 +96,13 @@ jobs:
       - name: Build IntelliJ plugin (Unix)
         if: runner.os != 'Windows'
         working-directory: editors/intellij
-        run: ./gradlew test verifyPlugin buildPlugin verifyPackagedLspBinary "-PsuperwireLspBundleTargets=${{ matrix.bundle_targets }}"
+        run: gradle test verifyPlugin buildPlugin verifyPackagedLspBinary "-PsuperwireLspBundleTargets=${{ matrix.bundle_targets }}"
 
       - name: Build IntelliJ plugin (Windows)
         if: runner.os == 'Windows'
         working-directory: editors/intellij
         shell: pwsh
-        run: .\gradlew.bat test verifyPlugin buildPlugin verifyPackagedLspBinary "-PsuperwireLspBundleTargets=${{ matrix.bundle_targets }}"
+        run: gradle test verifyPlugin buildPlugin verifyPackagedLspBinary "-PsuperwireLspBundleTargets=${{ matrix.bundle_targets }}"
 
       - name: Extract plugin distribution
         shell: bash
