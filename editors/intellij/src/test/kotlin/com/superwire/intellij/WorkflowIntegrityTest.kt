@@ -26,7 +26,8 @@ class WorkflowIntegrityTest {
             workflowPaths.map { workflowPath -> workflowPath.name }.toSet(),
         )
 
-        val immutableActionPattern = Regex("""uses: [A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40} # \S+""")
+        val immutableActionPattern =
+            Regex("""uses: [A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+@[0-9a-f]{40} # \S+""")
 
         for (workflowPath in workflowPaths) {
             val workflowText = Files.readString(workflowPath).replace("\r\n", "\n")
@@ -62,24 +63,22 @@ class WorkflowIntegrityTest {
     }
 
     @Test
-    fun `IntelliJ matrix uses platform launchers explicit bundles and package verification`() {
+    fun `IntelliJ matrix uses managed Gradle explicit bundles and package verification`() {
         val workflowText = workflowText("intellij.yml")
         val buildConfigurationText = Files.readString(repositoryRoot.resolve("editors/intellij/build.gradle.kts"))
+        val pluginBuildCommand =
+            "run: gradle test verifyPlugin buildPlugin verifyPackagedLspBinary \"-PsuperwireLspBundleTargets=\${{ matrix.bundle_targets }}\""
 
         assertTrue(workflowText.contains("bundle_targets: linux-x86_64,windows-x86_64"))
         assertTrue(workflowText.contains("bundle_targets: macos-aarch64,macos-x86_64"))
         assertTrue(workflowText.contains("bundle_targets: windows-x86_64"))
         assertTrue(buildConfigurationText.contains("sinceBuild.set(\"243\")"))
         assertTrue(buildConfigurationText.contains("untilBuild.set(\"253.*\")"))
-        assertTrue(
-            workflowText.contains(
-                "run: ./gradlew test verifyPlugin buildPlugin verifyPackagedLspBinary \"-PsuperwireLspBundleTargets=\${{ matrix.bundle_targets }}\"",
-            ),
-        )
-        assertTrue(
-            workflowText.contains(
-                "run: .\\gradlew.bat test verifyPlugin buildPlugin verifyPackagedLspBinary \"-PsuperwireLspBundleTargets=\${{ matrix.bundle_targets }}\"",
-            ),
+        assertTrue(workflowText.contains("uses: gradle/actions/setup-gradle@"))
+        assertTrue(workflowText.contains("gradle-version: '8.13'"))
+        assertEquals(
+            2,
+            workflowText.lineSequence().count { workflowLine -> workflowLine.trim() == pluginBuildCommand },
         )
         assertTrue(workflowText.contains("if: runner.os != 'Windows'"))
         assertTrue(workflowText.contains("if: runner.os == 'Windows'"))
