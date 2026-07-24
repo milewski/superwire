@@ -4,6 +4,7 @@ import java.io.ByteArrayInputStream
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermission
 import java.nio.file.attribute.PosixFilePermissions
 import java.security.MessageDigest
 import java.util.HexFormat
@@ -24,6 +25,9 @@ class SuperwireBundledServerBinaryTest {
     @TempDir
     lateinit var temporaryDirectory: Path
 
+    private val packagedHostRuntimePlatform = SuperwireRuntimePlatform.current()
+    private val hostFilesystem = SuperwireHostFilesystem.current()
+
     @Test
     fun `scopes extracted binaries by plugin version platform and content hash`() {
         val firstBinaryContents = executableContents("first")
@@ -36,22 +40,27 @@ class SuperwireBundledServerBinaryTest {
         assertEquals(expectedFirstPath, firstResolution.binaryPath)
         assertEquals(expectedSecondPath, secondResolution.binaryPath)
         assertNotEquals(firstResolution.binaryPath, secondResolution.binaryPath)
-        assertTrue(Files.isExecutable(firstResolution.binaryPath))
-        assertTrue(Files.isExecutable(secondResolution.binaryPath))
+        assertTrue(hostFilesystem.isExecutableBinary(firstResolution.binaryPath))
+        assertTrue(hostFilesystem.isExecutableBinary(secondResolution.binaryPath))
         assertEquals(firstBinaryContents.toList(), Files.readAllBytes(firstResolution.binaryPath).toList())
         assertEquals(secondBinaryContents.toList(), Files.readAllBytes(secondResolution.binaryPath).toList())
 
-        if (Files.getFileStore(firstResolution.binaryPath).supportsFileAttributeView("posix")) {
+        if (
+            hostFilesystem == SuperwireHostFilesystem.Posix &&
+            Files.getFileStore(firstResolution.binaryPath).supportsFileAttributeView("posix")
+        ) {
             val privateDirectoryPermissions = PosixFilePermissions.fromString("rwx------")
             val cacheDirectory = temporaryDirectory.resolve("cache")
             val versionDirectory = cacheDirectory.resolve("1.2.3")
-            val platformDirectory = versionDirectory.resolve("linux-x86_64")
+            val platformDirectory = versionDirectory.resolve(requireNotNull(packagedHostRuntimePlatform.packagedResourceDirectory))
             val hashDirectory = firstResolution.binaryPath.parent
+            val binaryPermissions = Files.getPosixFilePermissions(firstResolution.binaryPath, LinkOption.NOFOLLOW_LINKS)
 
             assertEquals(privateDirectoryPermissions, Files.getPosixFilePermissions(cacheDirectory, LinkOption.NOFOLLOW_LINKS))
             assertEquals(privateDirectoryPermissions, Files.getPosixFilePermissions(versionDirectory, LinkOption.NOFOLLOW_LINKS))
             assertEquals(privateDirectoryPermissions, Files.getPosixFilePermissions(platformDirectory, LinkOption.NOFOLLOW_LINKS))
             assertEquals(privateDirectoryPermissions, Files.getPosixFilePermissions(hashDirectory, LinkOption.NOFOLLOW_LINKS))
+            assertTrue(binaryPermissions.contains(PosixFilePermission.OWNER_EXECUTE))
         }
     }
 
@@ -63,13 +72,56 @@ class SuperwireBundledServerBinaryTest {
 
         Files.createDirectories(expectedBinaryPath.parent)
         Files.write(expectedBinaryPath, wrongBinaryContents)
-        SuperwireOperatingSystem.Linux.ensureBundledBinaryIsExecutable(expectedBinaryPath)
+        hostFilesystem.ensureBundledBinaryIsExecutable(expectedBinaryPath)
 
         val resolution = createBundledResolver(bundledBinaryContents).resolve()
 
         assertEquals(expectedBinaryPath, resolution.binaryPath)
         assertEquals(bundledBinaryContents.toList(), Files.readAllBytes(resolution.binaryPath).toList())
-        assertTrue(Files.isExecutable(resolution.binaryPath))
+        assertTrue(hostFilesystem.isExecutableBinary(resolution.binaryPath))
+    }
+
+    @Test
+    fun `Windows resource extraction preserves exe naming and rejects a wrong cached hash`() {
+        val bundledBinaryContents = executableContents("windows-trusted")
+        val wrongBinaryContents = executableContents("windows-wrong")
+        val requestedBundledResourcePaths = mutableListOf<String>()
+        val windowsRuntimePlatform = SuperwireRuntimePlatform(
+            SuperwireOperatingSystem.Windows,
+            SuperwireArchitecture.X86_64,
+        )
+        val resolver = createBundledResolver(
+            binaryContents = bundledBinaryContents,
+            cacheDirectoryName = "windows-cache",
+            runtimePlatform = windowsRuntimePlatform,
+            filesystem = SuperwireHostFilesystem.Windows,
+            requestedBundledResourcePaths = requestedBundledResourcePaths,
+        )
+        val expectedBinaryPath = expectedCachePath(
+            binaryContents = bundledBinaryContents,
+            cacheDirectoryName = "windows-cache",
+            runtimePlatform = windowsRuntimePlatform,
+        )
+
+        val firstResolution = resolver.resolve()
+
+        assertEquals(expectedBinaryPath, firstResolution.binaryPath)
+        assertEquals(listOf("lsp/bin/windows-x86_64/superwire-lsp.exe"), requestedBundledResourcePaths)
+        assertTrue(SuperwireHostFilesystem.Windows.isExecutableBinary(firstResolution.binaryPath))
+
+        Files.write(expectedBinaryPath, wrongBinaryContents)
+
+        val secondResolution = resolver.resolve()
+
+        assertEquals(expectedBinaryPath, secondResolution.binaryPath)
+        assertEquals(bundledBinaryContents.toList(), Files.readAllBytes(secondResolution.binaryPath).toList())
+        assertEquals(
+            listOf(
+                "lsp/bin/windows-x86_64/superwire-lsp.exe",
+                "lsp/bin/windows-x86_64/superwire-lsp.exe",
+            ),
+            requestedBundledResourcePaths,
+        )
     }
 
     @Test
@@ -96,7 +148,7 @@ class SuperwireBundledServerBinaryTest {
         val expectedBinaryPath = expectedCachePath(bundledBinaryContents)
 
         Files.write(maliciousTargetPath, maliciousTargetContents)
-        SuperwireOperatingSystem.Linux.ensureBundledBinaryIsExecutable(maliciousTargetPath)
+        hostFilesystem.ensureBundledBinaryIsExecutable(maliciousTargetPath)
         Files.createDirectories(expectedBinaryPath.parent)
         Files.createSymbolicLink(expectedBinaryPath, maliciousTargetPath)
 
@@ -106,7 +158,7 @@ class SuperwireBundledServerBinaryTest {
         assertFalse(Files.isSymbolicLink(resolution.binaryPath))
         assertEquals(bundledBinaryContents.toList(), Files.readAllBytes(resolution.binaryPath).toList())
         assertEquals(maliciousTargetContents.toList(), Files.readAllBytes(maliciousTargetPath).toList())
-        assertTrue(Files.isExecutable(resolution.binaryPath))
+        assertTrue(hostFilesystem.isExecutableBinary(resolution.binaryPath))
     }
 
     @Test
@@ -137,23 +189,31 @@ class SuperwireBundledServerBinaryTest {
 
             assertEquals(expectedCachePath(bundledBinaryContents), resolvedBinaryPath)
             assertEquals(bundledBinaryContents.toList(), Files.readAllBytes(resolvedBinaryPath).toList())
-            assertTrue(Files.isExecutable(resolvedBinaryPath))
+            assertTrue(hostFilesystem.isExecutableBinary(resolvedBinaryPath))
         } finally {
             workerPool.shutdownNow()
         }
     }
 
-    private fun createBundledResolver(binaryContents: ByteArray): SuperwireServerBinaryResolver {
+    private fun createBundledResolver(
+        binaryContents: ByteArray,
+        cacheDirectoryName: String = "cache",
+        runtimePlatform: SuperwireRuntimePlatform = packagedHostRuntimePlatform,
+        filesystem: SuperwireHostFilesystem = hostFilesystem,
+        requestedBundledResourcePaths: MutableList<String>? = null,
+    ): SuperwireServerBinaryResolver {
+        val bundledResourcePath = runtimePlatform.candidateBundledResourcePaths().single()
+
         return SuperwireServerBinaryResolver(
             environment = emptyMap(),
-            pluginCacheDirectory = temporaryDirectory.resolve("cache"),
+            pluginCacheDirectory = temporaryDirectory.resolve(cacheDirectoryName),
             pluginVersion = "1.2.3",
-            runtimePlatform = SuperwireRuntimePlatform(
-                SuperwireOperatingSystem.Linux,
-                SuperwireArchitecture.X86_64,
-            ),
+            runtimePlatform = runtimePlatform,
+            hostFilesystem = filesystem,
             bundledResourceLoader = SuperwireBundledResourceLoader { resourcePath ->
-                if (resourcePath == "lsp/bin/linux-x86_64/superwire-lsp") {
+                requestedBundledResourcePaths?.add(resourcePath)
+
+                if (resourcePath == bundledResourcePath) {
                     ByteArrayInputStream(binaryContents)
                 } else {
                     null
@@ -163,15 +223,21 @@ class SuperwireBundledServerBinaryTest {
         )
     }
 
-    private fun expectedCachePath(binaryContents: ByteArray): Path {
+    private fun expectedCachePath(
+        binaryContents: ByteArray,
+        cacheDirectoryName: String = "cache",
+        runtimePlatform: SuperwireRuntimePlatform = packagedHostRuntimePlatform,
+    ): Path {
         val contentHash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(binaryContents))
+        val packagedResourceDirectory = requireNotNull(runtimePlatform.packagedResourceDirectory)
+        val binaryFileName = runtimePlatform.candidateBinaryFileNames().first()
 
         return temporaryDirectory
-            .resolve("cache")
+            .resolve(cacheDirectoryName)
             .resolve("1.2.3")
-            .resolve("linux-x86_64")
+            .resolve(packagedResourceDirectory)
             .resolve(contentHash)
-            .resolve("superwire-lsp")
+            .resolve(binaryFileName)
     }
 
     private fun executableContents(marker: String): ByteArray {

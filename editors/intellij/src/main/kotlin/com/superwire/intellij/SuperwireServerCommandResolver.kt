@@ -36,12 +36,14 @@ object SuperwireServerCommandResolver {
         val pluginDescriptor = PluginManagerCore.getPlugin(PluginId.getId(SuperwirePluginConstants.PLUGIN_ID))
         val pluginVersion = pluginDescriptor?.version ?: DEVELOPMENT_PLUGIN_VERSION
         val runtimePlatform = SuperwireRuntimePlatform.current()
+        val hostFilesystem = SuperwireHostFilesystem.current()
 
         val resolver = SuperwireServerBinaryResolver(
             environment = System.getenv(),
             pluginCacheDirectory = pluginCacheDirectory,
             pluginVersion = pluginVersion,
             runtimePlatform = runtimePlatform,
+            hostFilesystem = hostFilesystem,
             bundledResourceLoader = SuperwireBundledResourceLoader { resourcePath ->
                 javaClass.classLoader.getResourceAsStream(resourcePath)
             },
@@ -69,6 +71,25 @@ internal enum class SuperwireOperatingSystem(
         }
     }
 
+    companion object {
+        fun fromSystemName(operatingSystemName: String): SuperwireOperatingSystem {
+            val normalizedOperatingSystemName = operatingSystemName.lowercase()
+
+            return when {
+                normalizedOperatingSystemName.contains("mac") || normalizedOperatingSystemName.contains("darwin") -> MacOs
+                normalizedOperatingSystemName.contains("win") -> Windows
+                normalizedOperatingSystemName.contains("linux") -> Linux
+                else -> Unsupported
+            }
+        }
+    }
+}
+
+internal enum class SuperwireHostFilesystem {
+    Windows,
+    Posix,
+    ;
+
     fun isRegularBinaryFile(binaryPath: Path): Boolean {
         val binaryAttributes = try {
             Files.readAttributes(binaryPath, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
@@ -92,10 +113,14 @@ internal enum class SuperwireOperatingSystem(
             if (this == Windows) {
                 Files.createDirectory(cacheDirectoryPath)
             } else {
-                Files.createDirectory(
-                    cacheDirectoryPath,
-                    PosixFilePermissions.asFileAttribute(PRIVATE_CACHE_DIRECTORY_PERMISSIONS),
-                )
+                try {
+                    Files.createDirectory(
+                        cacheDirectoryPath,
+                        PosixFilePermissions.asFileAttribute(PRIVATE_CACHE_DIRECTORY_PERMISSIONS),
+                    )
+                } catch (_: UnsupportedOperationException) {
+                    Files.createDirectory(cacheDirectoryPath)
+                }
             }
         } catch (_: FileAlreadyExistsException) {
             // A concurrent resolver may have created the directory first.
@@ -165,14 +190,14 @@ internal enum class SuperwireOperatingSystem(
 
     companion object {
         private val PRIVATE_CACHE_DIRECTORY_PERMISSIONS = PosixFilePermissions.fromString("rwx------")
-        fun fromSystemName(operatingSystemName: String): SuperwireOperatingSystem {
-            val normalizedOperatingSystemName = operatingSystemName.lowercase()
 
-            return when {
-                normalizedOperatingSystemName.contains("mac") || normalizedOperatingSystemName.contains("darwin") -> MacOs
-                normalizedOperatingSystemName.contains("win") -> Windows
-                normalizedOperatingSystemName.contains("linux") -> Linux
-                else -> Unsupported
+        fun current(): SuperwireHostFilesystem {
+            val operatingSystemName = System.getProperty("os.name").orEmpty()
+
+            return if (SuperwireOperatingSystem.fromSystemName(operatingSystemName) == SuperwireOperatingSystem.Windows) {
+                Windows
+            } else {
+                Posix
             }
         }
     }
@@ -288,10 +313,10 @@ private class IntelliJServerResolutionLogger(private val logger: Logger) : Super
 private class SuperwireBundledBinaryCacheCandidate(
     val binaryPath: Path,
     private val expectedContentHash: String,
-    private val operatingSystem: SuperwireOperatingSystem,
+    private val hostFilesystem: SuperwireHostFilesystem,
 ) {
     fun isTrustedExecutable(): Boolean {
-        if (!operatingSystem.isExecutableBinary(binaryPath)) {
+        if (!hostFilesystem.isExecutableBinary(binaryPath)) {
             return false
         }
 
@@ -299,7 +324,7 @@ private class SuperwireBundledBinaryCacheCandidate(
     }
 
     private fun contentHash(): String? {
-        if (!operatingSystem.isRegularBinaryFile(binaryPath)) {
+        if (!hostFilesystem.isRegularBinaryFile(binaryPath)) {
             return null
         }
 
@@ -331,6 +356,7 @@ internal class SuperwireServerBinaryResolver(
     private val pluginCacheDirectory: Path,
     pluginVersion: String,
     private val runtimePlatform: SuperwireRuntimePlatform,
+    private val hostFilesystem: SuperwireHostFilesystem,
     private val bundledResourceLoader: SuperwireBundledResourceLoader,
     private val logger: SuperwireServerResolutionLogger,
 ) {
@@ -380,7 +406,7 @@ internal class SuperwireServerBinaryResolver(
             return null
         }
 
-        if (!runtimePlatform.operatingSystem.isExecutableBinary(normalizedServerPath)) {
+        if (!hostFilesystem.isExecutableBinary(normalizedServerPath)) {
             logger.warning(
                 "Ignoring $SERVER_PATH_ENVIRONMENT_VARIABLE because '$normalizedServerPath' is not a non-empty executable file",
             )
@@ -419,9 +445,9 @@ internal class SuperwireServerBinaryResolver(
             val versionCacheDirectory = pluginCacheDirectory.resolve(pluginVersionDirectoryName)
             val versionedPlatformDirectory = versionCacheDirectory.resolve(platformDirectoryName)
 
-            runtimePlatform.operatingSystem.ensurePrivateCacheDirectory(pluginCacheDirectory)
-            runtimePlatform.operatingSystem.ensurePrivateCacheDirectory(versionCacheDirectory)
-            runtimePlatform.operatingSystem.ensurePrivateCacheDirectory(versionedPlatformDirectory)
+            hostFilesystem.ensurePrivateCacheDirectory(pluginCacheDirectory)
+            hostFilesystem.ensurePrivateCacheDirectory(versionCacheDirectory)
+            hostFilesystem.ensurePrivateCacheDirectory(versionedPlatformDirectory)
 
             val temporaryBinaryPath = Files.createTempFile(
                 versionedPlatformDirectory,
@@ -436,22 +462,22 @@ internal class SuperwireServerBinaryResolver(
                     Files.copy(digestInputStream, temporaryBinaryPath, StandardCopyOption.REPLACE_EXISTING)
                 }
 
-                if (!runtimePlatform.operatingSystem.isRegularBinaryFile(temporaryBinaryPath)) {
+                if (!hostFilesystem.isRegularBinaryFile(temporaryBinaryPath)) {
                     throw IllegalStateException("Bundled language server resource '$bundledResourcePath' is empty or not regular")
                 }
 
-                runtimePlatform.operatingSystem.ensureBundledBinaryIsExecutable(temporaryBinaryPath)
+                hostFilesystem.ensureBundledBinaryIsExecutable(temporaryBinaryPath)
 
                 val resourceHash = HexFormat.of().formatHex(messageDigest.digest())
                 val hashedCacheDirectory = versionedPlatformDirectory.resolve(resourceHash)
                 val extractedBinaryPath = hashedCacheDirectory.resolve(resourceFileName)
 
-                runtimePlatform.operatingSystem.ensurePrivateCacheDirectory(hashedCacheDirectory)
+                hostFilesystem.ensurePrivateCacheDirectory(hashedCacheDirectory)
 
                 val cacheCandidate = SuperwireBundledBinaryCacheCandidate(
                     binaryPath = extractedBinaryPath,
                     expectedContentHash = resourceHash,
-                    operatingSystem = runtimePlatform.operatingSystem,
+                    hostFilesystem = hostFilesystem,
                 )
 
                 if (cacheCandidate.isTrustedExecutable()) {
@@ -463,7 +489,7 @@ internal class SuperwireServerBinaryResolver(
                 }
 
                 installAtomically(temporaryBinaryPath, extractedBinaryPath)
-                runtimePlatform.operatingSystem.ensureBundledBinaryIsExecutable(extractedBinaryPath)
+                hostFilesystem.ensureBundledBinaryIsExecutable(extractedBinaryPath)
 
                 if (!cacheCandidate.isTrustedExecutable()) {
                     throw IllegalStateException("Extracted language server failed integrity verification at $extractedBinaryPath")
@@ -514,7 +540,7 @@ internal class SuperwireServerBinaryResolver(
             for (binaryFileName in runtimePlatform.candidateBinaryFileNames()) {
                 val candidateBinaryPath = pathDirectory.resolve(binaryFileName).toAbsolutePath().normalize()
 
-                if (runtimePlatform.operatingSystem.isExecutableBinary(candidateBinaryPath)) {
+                if (hostFilesystem.isExecutableBinary(candidateBinaryPath)) {
                     return candidateBinaryPath
                 }
             }

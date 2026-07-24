@@ -14,12 +14,19 @@ class SuperwireServerBinaryResolverTest {
     @TempDir
     lateinit var temporaryDirectory: Path
 
+    private val packagedHostRuntimePlatform = SuperwireRuntimePlatform.current()
+    private val hostFilesystem = SuperwireHostFilesystem.current()
+    private val binaryFileName = packagedHostRuntimePlatform.candidateBinaryFileNames().first()
+    private val bundledResourcePath = packagedHostRuntimePlatform.candidateBundledResourcePaths().single()
+
     @Test
     fun `resolves only approved sources in deterministic precedence order`() {
-        val environmentBinaryPath = createExecutableBinary(temporaryDirectory.resolve("environment/superwire-lsp"))
-        val projectBinaryPath = createExecutableBinary(temporaryDirectory.resolve("project/target/release/superwire-lsp"))
+        val environmentBinaryPath = createExecutableBinary(temporaryDirectory.resolve("environment").resolve(binaryFileName))
+        val projectBinaryPath = createExecutableBinary(
+            temporaryDirectory.resolve("project/target/release").resolve(binaryFileName),
+        )
         val pathDirectory = temporaryDirectory.resolve("path")
-        val pathBinaryPath = createExecutableBinary(pathDirectory.resolve("superwire-lsp"))
+        val pathBinaryPath = createExecutableBinary(pathDirectory.resolve(binaryFileName))
         val bundledBinaryBytes = executableContents("bundled")
 
         val environmentResolution = createResolver(
@@ -50,7 +57,7 @@ class SuperwireServerBinaryResolverTest {
 
         assertEquals(SuperwireServerResolutionSource.PathEnvironment, pathResolution.source)
         assertEquals(pathBinaryPath.toAbsolutePath().normalize(), pathResolution.binaryPath)
-        assertTrue(Files.isExecutable(projectBinaryPath))
+        assertTrue(hostFilesystem.isExecutableBinary(projectBinaryPath))
         assertFalse(pathResolution.binaryPath.startsWith(projectBinaryPath.parent.parent.parent))
     }
 
@@ -81,11 +88,11 @@ class SuperwireServerBinaryResolverTest {
     @Test
     fun `unsupported packaged architecture uses PATH without probing bundled resources`() {
         val pathDirectory = temporaryDirectory.resolve("unsupported-platform-path")
-        val pathBinaryPath = createExecutableBinary(pathDirectory.resolve("superwire-lsp"))
+        val pathBinaryPath = createExecutableBinary(pathDirectory.resolve(binaryFileName))
         val requestedBundledResourcePaths = mutableListOf<String>()
         val unsupportedPackagedPlatform = SuperwireRuntimePlatform(
-            SuperwireOperatingSystem.Linux,
-            SuperwireArchitecture.AArch64,
+            packagedHostRuntimePlatform.operatingSystem,
+            SuperwireArchitecture.Unsupported,
         )
         val resolver = createResolver(
             environment = mapOf("PATH" to pathDirectory.toString()),
@@ -119,8 +126,8 @@ class SuperwireServerBinaryResolverTest {
         val failureMessage = resolutionFailure.message.orEmpty()
 
         assertTrue(failureMessage.contains("set SUPERWIRE_LSP_PATH"))
-        assertTrue(failureMessage.contains("reinstall the plugin artifact containing lsp/bin/linux-x86_64/superwire-lsp"))
-        assertTrue(failureMessage.contains("place superwire-lsp on PATH"))
+        assertTrue(failureMessage.contains("reinstall the plugin artifact containing $bundledResourcePath"))
+        assertTrue(failureMessage.contains("place $binaryFileName on PATH"))
         assertTrue(failureMessage.contains("Project-local target directories are never searched"))
         assertFalse(failureMessage.contains("target/release"))
         assertEquals(resolutionFailure.message, resolutionLogger.warningMessages.last())
@@ -130,7 +137,7 @@ class SuperwireServerBinaryResolverTest {
         environment: Map<String, String>,
         bundledBinaryBytes: ByteArray?,
         cacheDirectoryName: String,
-        runtimePlatform: SuperwireRuntimePlatform = linuxRuntimePlatform(),
+        runtimePlatform: SuperwireRuntimePlatform = packagedHostRuntimePlatform,
         requestedBundledResourcePaths: MutableList<String>? = null,
         resolutionLogger: SuperwireServerResolutionLogger = RecordingServerResolutionLogger(),
     ): SuperwireServerBinaryResolver {
@@ -139,10 +146,11 @@ class SuperwireServerBinaryResolverTest {
             pluginCacheDirectory = temporaryDirectory.resolve(cacheDirectoryName),
             pluginVersion = "test-version",
             runtimePlatform = runtimePlatform,
+            hostFilesystem = hostFilesystem,
             bundledResourceLoader = SuperwireBundledResourceLoader { resourcePath ->
                 requestedBundledResourcePaths?.add(resourcePath)
 
-                if (bundledBinaryBytes != null && resourcePath == "lsp/bin/linux-x86_64/superwire-lsp") {
+                if (bundledBinaryBytes != null && resourcePath in runtimePlatform.candidateBundledResourcePaths()) {
                     ByteArrayInputStream(bundledBinaryBytes)
                 } else {
                     null
@@ -155,17 +163,13 @@ class SuperwireServerBinaryResolverTest {
     private fun createExecutableBinary(binaryPath: Path): Path {
         Files.createDirectories(binaryPath.parent)
         Files.write(binaryPath, executableContents(binaryPath.fileName.toString()))
-        SuperwireOperatingSystem.Linux.ensureBundledBinaryIsExecutable(binaryPath)
+        hostFilesystem.ensureBundledBinaryIsExecutable(binaryPath)
 
         return binaryPath.toAbsolutePath().normalize()
     }
 
     private fun executableContents(marker: String): ByteArray {
         return "#!/bin/sh\n# $marker\nexit 0\n".toByteArray()
-    }
-
-    private fun linuxRuntimePlatform(): SuperwireRuntimePlatform {
-        return SuperwireRuntimePlatform(SuperwireOperatingSystem.Linux, SuperwireArchitecture.X86_64)
     }
 
     private class RecordingServerResolutionLogger : SuperwireServerResolutionLogger {
