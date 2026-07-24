@@ -2,7 +2,6 @@ use lsp_types::{CompletionItemKind, Position};
 use superwire_dsl::{DeclarationKeyword, ImportKeyword, ToolPropertyName};
 use superwire_mcp::McpServerLock;
 
-use super::super::position::{byte_offset_for_position, source_span_contains_position};
 use super::super::semantic_index::SemanticIndex;
 use super::super::text_utils::trailing_identifier;
 use super::super::{CompletionSuggestion, DocumentState, RenderTypeExpression};
@@ -102,12 +101,12 @@ impl DocumentState {
         position: Position,
         semantic_index: &SemanticIndex,
     ) -> Option<McpToolSchemaSource> {
-        if let Some(tool_name) = semantic_index.tool_name_at_position(position) {
+        if let Some(tool_name) = semantic_index.tool_name_at_position(self.position_context(position)?) {
             return Some(McpToolSchemaSource::LocalTool(tool_name.to_string()));
         }
 
         let mcp_tool_batch_schema_source = self.mcp_tool_batch_schema_source_at_position(position);
-        let cursor_offset = byte_offset_for_position(&self.text, position)?;
+        let cursor_offset = self.byte_offset(position)?;
         let source_prefix = &self.text[..cursor_offset];
         let tool_keyword = DeclarationKeyword::Tool.as_str();
         let tool_keyword_index = source_prefix.rfind(tool_keyword)?;
@@ -156,7 +155,7 @@ impl DocumentState {
     }
 
     fn mcp_tool_batch_schema_source_at_position(&self, position: Position) -> Option<McpToolSchemaSource> {
-        let cursor_offset = byte_offset_for_position(&self.text, position)?;
+        let cursor_offset = self.byte_offset(position)?;
         let workflow = self.semantic_snapshot.workflow_document().workflow()?;
 
         workflow.declarations().iter().find_map(|declaration| {
@@ -184,7 +183,7 @@ impl DocumentState {
     }
 
     fn mcp_batch_item_completion_context(&self, position: Position) -> Option<McpBatchItemCompletionContext> {
-        let cursor_offset = byte_offset_for_position(&self.text, position)?;
+        let cursor_offset = self.byte_offset(position)?;
         let source_prefix = &self.text[..cursor_offset];
         let header_start = source_prefix.rfind(ImportKeyword::From.as_str())?;
         let batch_prefix = &source_prefix[header_start..];
@@ -343,7 +342,7 @@ impl DocumentState {
     }
 
     pub(super) fn mcp_batch_import_allowed_keywords_at_position(&self, position: Position) -> Option<Vec<DeclarationKeyword>> {
-        let cursor_offset = byte_offset_for_position(&self.text, position)?;
+        let cursor_offset = self.byte_offset(position)?;
         let source_prefix = &self.text[..cursor_offset];
         let header_start = source_prefix.rfind(ImportKeyword::From.as_str())?;
         let batch_prefix = &source_prefix[header_start..];
@@ -395,7 +394,7 @@ impl DocumentState {
             return None;
         }
 
-        let cursor_offset = byte_offset_for_position(&self.text, position)?;
+        let cursor_offset = self.byte_offset(position)?;
         let source_prefix = &self.text[..cursor_offset];
         let bindings_keyword = ToolPropertyName::Bindings.as_str();
         let bindings_keyword_index = source_prefix.rfind(bindings_keyword)?;
@@ -416,7 +415,10 @@ impl DocumentState {
         let workflow = self.semantic_snapshot.workflow_document().workflow()?;
         let prompt_import_declaration = workflow
             .prompt_imports()
-            .filter(|prompt_import_declaration| source_span_contains_position(prompt_import_declaration.span, position))
+            .filter(|prompt_import_declaration| {
+                self.position_context(position)
+                    .is_some_and(|position_context| position_context.contains(prompt_import_declaration.span))
+            })
             .min_by_key(|prompt_import_declaration| {
                 prompt_import_declaration
                     .span

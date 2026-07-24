@@ -44,7 +44,11 @@ impl AstVisitor {
 
     pub(super) fn parse_string_literal(&self, string_pair: Pair<'_, Rule>) -> Result<String, DslParseError> {
         match string_pair.as_rule() {
-            Rule::plain_quoted_string => Ok(self.unescape_quoted_string(string_pair.as_str())),
+            Rule::plain_quoted_string => {
+                let string_span = source_span_from_pair(&string_pair);
+
+                self.unescape_quoted_string(string_pair.as_str(), string_span)
+            }
             Rule::plain_multiline_string => {
                 let raw_string = string_pair.as_str();
 
@@ -76,50 +80,62 @@ impl AstVisitor {
         }
     }
 
-    pub(super) fn unescape_quoted_string(&self, raw_string: &str) -> String {
+    pub(super) fn unescape_quoted_string(&self, raw_string: &str, source_span: SourceSpan) -> Result<String, DslParseError> {
         if raw_string.len() < 2 {
-            return String::new();
+            return Ok(String::new());
         }
 
         let mut parsed_string = String::new();
         let mut string_characters = raw_string[1..raw_string.len() - 1].chars();
+        let mut current_column = source_span.start.column + 1;
 
         while let Some(character) = string_characters.next() {
             if character != '\\' {
                 parsed_string.push(character);
+                current_column += 1;
+
                 continue;
             }
 
             let Some(escaped_character) = string_characters.next() else {
                 parsed_string.push('\\');
-                continue;
-            };
 
-            let unescaped_character = match escaped_character {
-                'n' => '\n',
-                'r' => '\r',
-                't' => '\t',
-                '\\' => '\\',
-                '"' => '"',
-                _ => escaped_character,
+                break;
+            };
+            let sequence = format!("\\{escaped_character}");
+            let Some(unescaped_character) = self.unescape_character(&sequence) else {
+                return Err(DslParseError::UnsupportedEscapeSequence {
+                    sequence,
+                    span: SourceSpan {
+                        start: SourcePosition {
+                            line: source_span.start.line,
+                            column: current_column,
+                        },
+                        end: SourcePosition {
+                            line: source_span.start.line,
+                            column: current_column + 2,
+                        },
+                    },
+                });
             };
 
             parsed_string.push(unescaped_character);
+            current_column += 2;
         }
 
-        parsed_string
+        Ok(parsed_string)
     }
 
-    pub(super) fn unescape_character(&self, escaped_character: &str) -> String {
+    pub(super) fn unescape_character(&self, escaped_character: &str) -> Option<char> {
         match escaped_character {
-            "\\n" => "\n".to_owned(),
-            "\\r" => "\r".to_owned(),
-            "\\t" => "\t".to_owned(),
-            "\\\\" => "\\".to_owned(),
-            "\\\"" => "\"".to_owned(),
-            "\\{" => "{".to_owned(),
-            "\\}" => "}".to_owned(),
-            _ => escaped_character.to_owned(),
+            "\\n" => Some('\n'),
+            "\\r" => Some('\r'),
+            "\\t" => Some('\t'),
+            "\\\\" => Some('\\'),
+            "\\\"" => Some('"'),
+            "\\{" => Some('{'),
+            "\\}" => Some('}'),
+            _ => None,
         }
     }
 

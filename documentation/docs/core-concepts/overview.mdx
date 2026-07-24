@@ -1,68 +1,44 @@
 ---
-title: Core Concepts
-description: The main building blocks of a Superwire workflow.
+title: Core concepts
+description: Map runtime values, provider/model profiles, agents, dependencies, capabilities, and output.
 ---
 
-A Superwire workflow is a dependency graph built from declarations.
+import HelloWorkflow from "/examples/wire/hello.mdx";
 
-```wire
-input {
-    message: string
-}
+<HelloWorkflow />
 
-secrets {
-    api_key: string
-}
+## Declaration map
 
-provider llm from openai {
-    endpoint: "https://api.openai.com/v1"
-    api_key: secrets.api_key
-}
-
-model fast from llm {
-    id: "gpt-4.1-mini"
-}
-
-agent reply {
-    model: model.fast
-    instruction: "Reply to {{ input.message }}"
-    output {
-        message: string
-    }
-}
-
-output {
-    result: agent.reply
-}
-```
-
-## Main declarations
-
-| Declaration | Purpose |
+| Declaration | Contract |
 | --- | --- |
-| `input` | Public values supplied by the executor request. |
-| `secrets` | Sensitive values supplied by the executor request. |
-| `provider` | Configures access to an OpenAI-compatible backend through `openai`. |
-| `model` | Defines a reusable model profile from a provider instance. |
-| `schema` | Defines reusable structured types. |
-| `mcp` | Defines an MCP server endpoint. |
-| `tool`, `prompt`, `resource` | Import external MCP capabilities. |
-| `dynamic` | Builds runtime values from expressions. |
-| `agent` | Runs one model step. |
-| `output` | Defines the final JSON response. |
+| `input` | Public runtime values supplied by the caller. |
+| `secrets` | Sensitive runtime values supplied by the caller. |
+| `provider` | Named connection using one of the supported provider drivers. |
+| `model` | Reusable provider-specific model identity, API mode, assets, and inference defaults. |
+| `schema` | Reusable object or variant type. |
+| `mcp` | MCP server endpoint and headers. |
+| `tool`, `prompt`, `resource` | Imported, scoped MCP capabilities. |
+| `dynamic` | Global or agent-local computed values. |
+| `agent` | One model step with explicit model, instruction, capability/context scope, and object output. |
+| `output` | Final application-shaped value. |
 
-## Runtime topology
+## Type boundary
+
+The runtime validates:
+
+1. source syntax and declarations;
+2. references, schemas, capabilities, and dependency cycles;
+3. runtime input/secrets and provider/MCP configuration;
+4. tool and model output against declared shapes.
+
+Model content remains variable. Downstream code can rely on the declared JSON shape, not exact wording.
+
+## Dependency graph
+
+References create execution edges. An agent using `agent.research.facts` waits for `research`; independent agents may run concurrently. Tool calls and dynamic values can also create upstream dependencies.
 
 ```text
-provider instance -> model profile -> agent
+input/secrets -> dynamic/tool work -> agent(s) -> output
 ```
 
-A provider declaration does not select a model by itself. A model profile selects the provider-specific model ID. Agents reference named model profiles.
-
-## Design goals
-
-- Keep secrets outside `.wire` files.
-- Keep provider access separate from model selection.
-- Make dependencies explicit through references.
-- Require structured outputs so downstream steps can rely on stable shapes.
-- Let the executor schedule independent work concurrently.
+Continue with [Workflows](/core-concepts/workflows), [Agents](/core-concepts/agents), and [Dependencies](/core-concepts/dependencies).

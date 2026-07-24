@@ -1,41 +1,129 @@
 ---
 title: Diagnostics
-description: Parse, validation, and runtime diagnostics exposed by Superwire.
+description: Parse stable typed diagnostics across CLI, LSP, HTTP, SSE, and Laravel.
 ---
 
-Diagnostics are grouped by phase.
+## Failure phases
 
-## Parse diagnostics
+| Phase | Examples | Surface |
+| --- | --- | --- |
+| Parse | malformed declaration/string | CLI, LSP, or HTTP 400 before execution |
+| Semantic/build | invalid reference, type, dependency, tool scope | CLI, LSP, or HTTP 400 before execution |
+| Runtime | provider, tool, MCP, cache, output, cancellation, panic | HTTP failure or event diagnostic |
 
-Parse diagnostics mean the `.wire` source could not be parsed.
+## Strict DSL diagnostics
 
-Examples:
+New strict-syntax failures keep the existing `parse_error` diagnostic code, with targeted spans/help:
 
-- unclosed block
-- invalid declaration syntax
-- malformed string literal
+- duplicate match case: duplicate branch is primary; the first branch is a related span;
+- multiple `_` fallbacks: later fallback is primary; the first is related;
+- non-final fallback: points at `_` and says to move it after named cases;
+- empty enum/variant: says which required case/body to add;
+- reserved loop/destructuring/dynamic binding: explains the built-in namespace collision;
+- unsupported escape: points at the sequence and lists `\\`, `\"`, `\n`, `\r`, `\t`, `\{`, and `\}`.
 
-## Validation diagnostics
+Semantic expression diagnostics retain expected/found type help. Tool input failures identify the tool, field group/name, expected type, and found type; loop iterable/destructuring failures keep the iterable span/shape; unknown match cases list valid cases and invalid paths show the expected case object.
 
-Validation diagnostics mean the source is syntactically valid but semantically invalid.
+## ExecutorDiagnostic
 
-Examples:
+HTTP failures and failed/warning events use one recursive shape:
 
-- unknown `agent.*` reference
-- unknown `schema.*` reference
-- invalid nested field path
-- dependency cycle
-- tool used by an agent but not listed in `uses:`
+| Field | Contract |
+| --- | --- |
+| `code` | Required closed snake-case diagnostic code. |
+| `stage` | Required closed execution stage. |
+| `severity` | `warning` or `error`. |
+| `retryability` | `never`, `unknown`, `safe`, or `after_delay`. |
+| `message` | Required developer-readable message. |
+| `subject` | Required tagged object identifying the affected workflow component. |
+| `retry_after_ms` | Optional non-negative delay. |
+| `cause` | Optional nested `ExecutorDiagnostic` preserving the source chain. |
 
-## Runtime diagnostics
+Codes:
 
-Runtime diagnostics happen after validation.
+```text
+invalid_workflow       invalid_input          invalid_secrets
+invalid_output         invalid_configuration  model_provider_failed
+model_rejected         provider_rate_limited  provider_retries_exhausted
+tool_failed            mcp_failed             cache_unavailable
+stream_gap             stream_expired         stream_capacity_exceeded
+unknown_run            cancellation_conflict  event_too_large
+cancelled              internal_panic         internal_error
+```
 
-Examples:
+Stages:
 
-- provider returned an error
-- MCP server failed
-- tool result did not match its declared output schema
-- model output did not match the agent output schema
+```text
+planning  input  secrets  agent  model  tool  mcp
+cache  output  stream  cancellation  internal
+```
 
-Executor errors are described in [Executor API](/api-reference/executor-api).
+Subject `type` values and their identifying fields:
+
+| Type | Fields beyond `type` |
+| --- | --- |
+| `workflow` | none |
+| `agent` | required `agent_name`; optional `iteration_index` |
+| `provider` | required `agent_name`; optional `provider_name`, `model_name`, `attempt`, `http_status` |
+| `tool` | required `tool_name`; optional `agent_name` |
+| `mcp` | optional `agent_name`, `server_name`, `target_name` |
+| `cache` | required `operation`: `connect`, `read`, `write`, or `purge` |
+| `stream` | optional `requested_after`, `oldest_available`; run capabilities are never embedded in diagnostics |
+| `event` | required `actual_bytes`, `maximum_bytes`; the rejected payload is never included |
+
+An MCP endpoint rejected by the selected network policy uses `code: "invalid_configuration"`, `stage: "mcp"`, and an MCP subject. This is a deployment/trust-policy failure, not `mcp_failed`; changing an HTTP request body cannot enable networking. The public message identifies the selected policy and rejection reason, but clients should branch on the typed fields.
+
+Treat these enums as closed for the current protocol version and reject unknown categorical values. Never log unknown payload fields or derive retry policy from message text.
+
+## HTTP
+
+Unsuccessful JSON routes wrap the diagnostic:
+
+```json
+{
+  "error": {
+    "code": "invalid_input",
+    "stage": "input",
+    "severity": "error",
+    "retryability": "never",
+    "message": "invalid JSON request body",
+    "subject": {
+      "type": "workflow"
+    }
+  }
+}
+```
+
+Use the status and code mapping in [Executor API](/api-reference/executor-api#typed-errors).
+
+## SSE events
+
+The event envelope optionally carries `diagnostic`. Failure, cancellation, provider-attempt failure, cache-degradation, and replay-gap events provide it; their top-level `message` equals `diagnostic.message`. A `cache_degraded` diagnostic has warning severity. See [Streaming and events](/api-reference/streaming-events).
+
+`event_too_large` is a terminal workflow failure at stage `output`; its `event` subject reports the complete projected SSE frame size and the 245,760-byte maximum. `stream_capacity_exceeded` is a stream-stage failure used either as HTTP 503 before a stream starts or as the reserved terminal event when live retained payloads consume normal capacity.
+
+Treat streamed diagnostics and event metadata as the operational record. Nested events expose identifiers, argument/binding names, durations, and result-shape summaries where applicable—not raw inputs, outputs, prompts, contexts, schemas, upstream bodies or headers, secrets, or run capabilities. Do not attempt payload recovery from retained or replayed events; only `workflow_completed` carries final output. Route retries and operator displays from typed diagnostic fields rather than unavailable payloads or parsed message text.
+
+## CLI
+
+Human-readable stderr remains the default and includes source spans/remediation where available:
+
+```bash
+superwire-cli workflow check workflow.wire
+```
+
+For automation:
+
+```bash
+SUPERWIRE_ERROR_FORMAT=json superwire-cli workflow check workflow.wire
+```
+
+The CLI envelope contains `code`, `message`, and `details`. `details` is an `ExecutorDiagnostic` or `null`; parse/build/runtime failures all pass through the same typed mapping before rendering.
+
+## LSP
+
+The language server publishes versioned diagnostics with negotiated position-encoding ranges, stable diagnostic codes, severity, and related ranges from the core model. It can also supply quick-fix code actions for supported issues. Clients should discard stale document versions and display the provided range/message rather than parsing CLI text.
+
+## Laravel
+
+`WorkflowExecutionException` exposes diagnostic/status/run/event context; malformed SSE protocol data uses `ExecutorProtocolException`. See [Laravel integration](/integrations/laravel#error-handling).

@@ -1,14 +1,16 @@
 use super::fixtures;
 use super::support;
-use crate::service::ExecutorService;
-use crate::tests::support::{request_with_input, ConcurrentTrackingModelProvider, TestModelProvider, TrackingModelProvider};
+use crate::tests::support::{
+    request_with_input, ConcurrentTrackingModelProvider, PanickingModelProvider, TestModelProvider, TrackingModelProvider,
+};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
 use std::time::Duration;
 use superwire_macros::workflow_source;
-use superwire_protocol::event::ExecutorEventKind;
+use superwire_protocol::api::CancellationTransition;
+use superwire_protocol::event::{ExecutorDiagnosticCode, ExecutorEventKind};
 
 #[tokio::test]
 async fn lifecycle_events_are_emitted_in_order() {
@@ -54,7 +56,8 @@ async fn context_compaction_events_are_emitted() {
     assert_eq!(compaction_events[0].data.as_ref().unwrap()["source_agent_name"], json!("research"));
     assert_eq!(compaction_events[1].kind, ExecutorEventKind::ContextCompactionCompleted);
     assert_eq!(compaction_events[1].agent_name.as_deref(), Some("summarize"));
-    assert_eq!(compaction_events[1].data.as_ref().unwrap()["output"], json!("compact summary"));
+    assert_eq!(compaction_events[1].data.as_ref().unwrap()["result_kind"], json!("string"));
+    assert!(compaction_events[1].data.as_ref().unwrap().get("output").is_none());
 }
 
 #[tokio::test]
@@ -122,9 +125,94 @@ async fn failure_emits_workflow_failed_event() {
 }
 
 #[tokio::test]
+async fn provider_panic_emits_paired_agent_failure_and_one_workflow_terminal_event() {
+    let service = support::service_with_trusted_mcp(PanickingModelProvider);
+    let request = support::request(fixtures::MINIMUM);
+    let mut receiver = service.execute_stream(request);
+    let mut events = Vec::new();
+
+    while let Some(event) = receiver.recv().await {
+        events.push(event);
+    }
+
+    let agent_started_index = events
+        .iter()
+        .position(|event| event.kind == ExecutorEventKind::AgentStarted)
+        .expect("agent start event should be present");
+    let agent_failed_index = events
+        .iter()
+        .position(|event| event.kind == ExecutorEventKind::AgentFailed)
+        .expect("agent failure event should be present");
+    let terminal_events = events.iter().filter(|event| event.kind.is_terminal()).collect::<Vec<_>>();
+
+    assert!(agent_started_index < agent_failed_index);
+    assert_eq!(terminal_events.len(), 1);
+    assert_eq!(terminal_events[0].kind, ExecutorEventKind::WorkflowFailed);
+    assert_eq!(
+        terminal_events[0]
+            .diagnostic
+            .as_ref()
+            .expect("workflow failure should include a diagnostic")
+            .code,
+        ExecutorDiagnosticCode::InternalPanic
+    );
+}
+
+#[tokio::test]
+async fn provider_panic_pairs_for_loop_and_iteration_lifecycles() {
+    let workflow_source = workflow_source! {
+        provider openai from openai {
+            endpoint: "http://localhost:1234/v1"
+            api_key: "test-api-key"
+        }
+
+        model openai_model from openai {
+            id: "model-a"
+        }
+
+        agent note for number in [1] {
+            model: model.openai_model
+            instruction: "Write note for {{ number }}"
+            output {
+                note: string
+            }
+        }
+
+        output {
+            notes: agent.note
+        }
+    };
+    let service = support::service_with_trusted_mcp(PanickingModelProvider);
+    let request = request_with_input(workflow_source, Value::Null);
+    let mut receiver = service.execute_stream(request);
+    let mut event_kinds = Vec::new();
+
+    while let Some(event) = receiver.recv().await {
+        event_kinds.push(event.kind);
+    }
+
+    let loop_started_index = event_kinds
+        .iter()
+        .position(|event_kind| *event_kind == ExecutorEventKind::AgentLoopStarted)
+        .expect("loop start event should be present");
+    let agent_failed_index = event_kinds
+        .iter()
+        .position(|event_kind| *event_kind == ExecutorEventKind::AgentFailed)
+        .expect("iteration failure event should be present");
+    let loop_failed_index = event_kinds
+        .iter()
+        .position(|event_kind| *event_kind == ExecutorEventKind::AgentLoopFailed)
+        .expect("loop failure event should be present");
+
+    assert!(loop_started_index < agent_failed_index);
+    assert!(agent_failed_index < loop_failed_index);
+    assert_eq!(event_kinds.last(), Some(&ExecutorEventKind::WorkflowFailed));
+}
+
+#[tokio::test]
 async fn dropping_stream_receiver_does_not_cancel_running_workflow() {
     let model_provider = ConcurrentTrackingModelProvider::new(Duration::from_millis(300));
-    let service = ExecutorService::new(model_provider.clone());
+    let service = support::service_with_trusted_mcp(model_provider.clone());
     let request = support::request(fixtures::MINIMUM);
     let mut receiver = service.execute_stream(request);
 
@@ -164,7 +252,7 @@ async fn dropping_stream_receiver_does_not_cancel_running_workflow() {
 #[tokio::test]
 async fn dropping_stream_receiver_before_first_event_still_runs_workflow() {
     let model_provider = TrackingModelProvider::new(vec![json!({ "value": "done" })]);
-    let service = ExecutorService::new(model_provider.clone());
+    let service = support::service_with_trusted_mcp(model_provider.clone());
     let request = support::request(fixtures::MINIMUM);
     let receiver = service.execute_stream(request);
 
@@ -182,8 +270,10 @@ async fn dropping_stream_receiver_before_first_event_still_runs_workflow() {
 #[tokio::test]
 async fn reconnecting_stream_replays_missed_events() {
     let model_provider = ConcurrentTrackingModelProvider::new(Duration::from_millis(50));
-    let service = ExecutorService::new(model_provider);
-    let mut stream_subscription = service.start_streamed_execution(support::request(fixtures::MINIMUM));
+    let service = support::service_with_trusted_mcp(model_provider);
+    let mut stream_subscription = service
+        .start_streamed_execution(support::request(fixtures::MINIMUM))
+        .expect("stream should reserve retention capacity");
     let first_event = stream_subscription.receiver.recv().await.expect("first event should be emitted");
     let run_identifier = stream_subscription.run_identifier.clone();
 
@@ -206,21 +296,23 @@ async fn reconnecting_stream_replays_missed_events() {
 #[tokio::test]
 async fn cancelling_streamed_execution_aborts_backend_work() {
     let model_provider = ConcurrentTrackingModelProvider::new(Duration::from_secs(30));
-    let service = ExecutorService::new(model_provider.clone());
-    let mut stream_subscription = service.start_streamed_execution(support::request(fixtures::MINIMUM));
+    let service = support::service_with_trusted_mcp(model_provider.clone());
+    let mut stream_subscription = service
+        .start_streamed_execution(support::request(fixtures::MINIMUM))
+        .expect("stream should reserve retention capacity");
     let run_identifier = stream_subscription.run_identifier.clone();
     let mut event_kinds = Vec::new();
 
     while let Some(sequenced_event) = stream_subscription.receiver.recv().await {
         let event_kind = sequenced_event.event.kind;
-        event_kinds.push(event_kind.clone());
+        event_kinds.push(event_kind);
 
         if event_kind == ExecutorEventKind::AgentStarted {
             break;
         }
     }
 
-    assert!(service.cancel_streamed_execution(&run_identifier));
+    assert_eq!(service.cancel_streamed_execution(&run_identifier), CancellationTransition::Accepted);
 
     while let Ok(Some(sequenced_event)) = tokio::time::timeout(Duration::from_secs(1), stream_subscription.receiver.recv()).await {
         event_kinds.push(sequenced_event.event.kind);
@@ -234,7 +326,9 @@ async fn cancelling_streamed_execution_aborts_backend_work() {
     .await
     .expect("cancelled workflow should abort active model work");
 
-    assert!(event_kinds.contains(&ExecutorEventKind::WorkflowFailed));
+    assert!(event_kinds.contains(&ExecutorEventKind::AgentCancelled));
+    assert_eq!(event_kinds.last(), Some(&ExecutorEventKind::WorkflowCancelled));
+    assert_eq!(event_kinds.iter().filter(|event_kind| event_kind.is_terminal()).count(), 1);
 }
 
 #[tokio::test]
@@ -289,10 +383,9 @@ async fn deterministic_tool_call_emits_started_and_completed_events() {
     .replace("__ENDPOINT__", &server.endpoint());
 
     let model_provider = TestModelProvider::new(vec![json!({ "summary": "done" })]);
-    let service = ExecutorService::new(model_provider);
+    let service = support::service_with_trusted_mcp(model_provider);
 
-    let mut request = request_with_input(&workflow_source, json!({ "project_id": 42, "task_id": 7 }));
-    request.options.include_events = true;
+    let request = request_with_input(&workflow_source, json!({ "project_id": 42, "task_id": 7 }));
 
     let mut receiver = service.execute_stream(request);
     let mut mcp_call_events = Vec::new();
@@ -326,12 +419,12 @@ async fn deterministic_tool_call_emits_started_and_completed_events() {
         .find(|event| event.kind == ExecutorEventKind::McpCallCompleted)
         .unwrap();
 
-    assert_eq!(completed.data.as_ref().unwrap()["target_name"], "fetch_task_data");
+    let completed_data = completed.data.as_ref().unwrap();
 
-    assert_eq!(
-        completed.data.as_ref().unwrap()["result"],
-        json!({ "task_title": "Survey", "participants": 10 })
-    );
+    assert_eq!(completed_data["target_name"], "fetch_task_data");
+    assert_eq!(completed_data["result_kind"], "object");
+    assert_eq!(completed_data["item_count"], 2);
+    assert!(completed_data.get("result").is_none());
 }
 
 #[tokio::test]
@@ -355,7 +448,7 @@ async fn output_tool_call_emits_mcp_call_events() {
     }
     .replace("__ENDPOINT__", &server.endpoint());
     let model_provider = TestModelProvider::new(Vec::new());
-    let service = ExecutorService::new(model_provider);
+    let service = support::service_with_trusted_mcp(model_provider);
     let mut receiver = service.execute_stream(support::request(&workflow_source));
     let mut events = Vec::new();
 
@@ -400,15 +493,17 @@ async fn output_tool_call_emits_mcp_call_events() {
     assert_eq!(call_started.data.as_ref().unwrap()["target_name"], "fetch_task_data");
     assert_eq!(call_started.data.as_ref().unwrap()["server_name"], "local");
     assert_eq!(call_started.data.as_ref().unwrap()["item_name"], "fetch_task_data");
-    assert_eq!(call_started.data.as_ref().unwrap()["params"]["project_id"], 42);
-    assert_eq!(call_started.data.as_ref().unwrap()["input_schema"]["type"], "object");
+    assert_eq!(
+        call_started.data.as_ref().unwrap()["argument_names"],
+        json!(["project_id", "task_id"])
+    );
+    assert!(call_started.data.as_ref().unwrap().get("input_schema").is_none());
 
     let call_completed = &events[call_completed_index];
-    assert_eq!(call_completed.data.as_ref().unwrap()["result"]["task_title"], "Survey");
-    assert_eq!(
-        call_completed.data.as_ref().unwrap()["raw_result"]["structuredContent"]["participants"],
-        10
-    );
+    assert_eq!(call_completed.data.as_ref().unwrap()["result_kind"], "object");
+    assert_eq!(call_completed.data.as_ref().unwrap()["item_count"], 2);
+    assert!(call_completed.data.as_ref().unwrap().get("result").is_none());
+    assert!(call_completed.data.as_ref().unwrap().get("raw_result").is_none());
 }
 
 #[tokio::test]
@@ -459,7 +554,7 @@ async fn mcp_tool_schema_fetch_and_validation_events_are_emitted() {
     }
     .replace("__ENDPOINT__", &server.endpoint());
     let model_provider = TestModelProvider::new(vec![json!({ "summary": "done" })]);
-    let service = ExecutorService::new(model_provider);
+    let service = support::service_with_trusted_mcp(model_provider);
     let mut receiver = service.execute_stream(request_with_input(&workflow_source, json!({ "project_id": 42, "task_id": 7 })));
     let mut events = Vec::new();
 
@@ -487,9 +582,12 @@ async fn mcp_tool_schema_fetch_and_validation_events_are_emitted() {
         .expect("MCP validation start event should exist");
     assert_eq!(validation_started.agent_name.as_deref(), Some(""));
     assert_eq!(validation_started.data.as_ref().unwrap()["tool_name"], "fetch_task_data");
-    assert_eq!(validation_started.data.as_ref().unwrap()["arguments"]["project_id"], 42);
-    assert_eq!(validation_started.data.as_ref().unwrap()["params"]["project_id"], 42);
-    assert_eq!(validation_started.data.as_ref().unwrap()["input_schema"]["type"], "object");
+    assert_eq!(
+        validation_started.data.as_ref().unwrap()["argument_names"],
+        json!(["project_id", "task_id"])
+    );
+    assert!(validation_started.data.as_ref().unwrap().get("arguments").is_none());
+    assert!(validation_started.data.as_ref().unwrap().get("input_schema").is_none());
 
     let validation_completed = events
         .iter()
@@ -525,18 +623,20 @@ async fn mcp_tool_schema_fetch_and_validation_events_are_emitted() {
     assert_eq!(mcp_call_started.data.as_ref().unwrap()["target_name"], "fetch_task_data");
     assert_eq!(mcp_call_started.data.as_ref().unwrap()["server_name"], "local");
     assert_eq!(mcp_call_started.data.as_ref().unwrap()["item_name"], "fetch_task_data");
-    assert_eq!(mcp_call_started.data.as_ref().unwrap()["params"]["project_id"], 42);
-    assert_eq!(mcp_call_started.data.as_ref().unwrap()["input_schema"]["type"], "object");
+    assert_eq!(
+        mcp_call_started.data.as_ref().unwrap()["argument_names"],
+        json!(["project_id", "task_id"])
+    );
+    assert!(mcp_call_started.data.as_ref().unwrap().get("input_schema").is_none());
 
     let mcp_call_completed = events
         .iter()
         .find(|event| event.kind == ExecutorEventKind::McpCallCompleted && event.data.as_ref().unwrap()["operation"] == "call")
         .expect("MCP tool call completion event should exist");
-    assert_eq!(mcp_call_completed.data.as_ref().unwrap()["result"]["task_title"], "Survey");
-    assert_eq!(
-        mcp_call_completed.data.as_ref().unwrap()["raw_result"]["structuredContent"]["participants"],
-        10
-    );
+    assert_eq!(mcp_call_completed.data.as_ref().unwrap()["result_kind"], "object");
+    assert_eq!(mcp_call_completed.data.as_ref().unwrap()["item_count"], 2);
+    assert!(mcp_call_completed.data.as_ref().unwrap().get("result").is_none());
+    assert!(mcp_call_completed.data.as_ref().unwrap().get("raw_result").is_none());
 }
 
 #[tokio::test]
@@ -579,7 +679,7 @@ async fn explicit_mcp_calls_emit_started_and_completed_events() {
     }
     .replace("__ENDPOINT__", &server.endpoint());
     let model_provider = TestModelProvider::new(Vec::new());
-    let service = ExecutorService::new(model_provider);
+    let service = support::service_with_trusted_mcp(model_provider);
     let mut receiver = service.execute_stream(request_with_input(&workflow_source, json!({ "workspace_id": "workspace-1" })));
     let mut mcp_call_events = Vec::new();
 
@@ -610,9 +710,11 @@ async fn explicit_mcp_calls_emit_started_and_completed_events() {
     assert_eq!(resource_started.data.as_ref().unwrap()["operation"], "read");
     assert_eq!(resource_started.data.as_ref().unwrap()["server_name"], "local");
     assert_eq!(resource_started.data.as_ref().unwrap()["item_name"], "project_readme");
-    assert_eq!(resource_started.data.as_ref().unwrap()["arguments"]["workspace_id"], "workspace-1");
-    assert_eq!(resource_started.data.as_ref().unwrap()["arguments"]["section"], "setup");
-    assert_eq!(resource_started.data.as_ref().unwrap()["params"]["section"], "setup");
+    assert_eq!(
+        resource_started.data.as_ref().unwrap()["argument_names"],
+        json!(["section", "workspace_id"])
+    );
+    assert!(resource_started.data.as_ref().unwrap().get("arguments").is_none());
 
     let prompt_completed = mcp_call_events
         .iter()
@@ -621,14 +723,9 @@ async fn explicit_mcp_calls_emit_started_and_completed_events() {
     assert_eq!(prompt_completed.data.as_ref().unwrap()["operation"], "render");
     assert_eq!(prompt_completed.data.as_ref().unwrap()["server_name"], "local");
     assert_eq!(prompt_completed.data.as_ref().unwrap()["item_name"], "system_prompt");
-    assert!(prompt_completed.data.as_ref().unwrap()["result"]
-        .as_str()
-        .is_some_and(|result| result.contains("Follow project conventions.")));
-    assert!(
-        prompt_completed.data.as_ref().unwrap()["raw_result"]["messages"][0]["content"]["text"]
-            .as_str()
-            .is_some_and(|result| result.contains("Follow project conventions."))
-    );
+    assert_eq!(prompt_completed.data.as_ref().unwrap()["result_kind"], "string");
+    assert!(prompt_completed.data.as_ref().unwrap().get("result").is_none());
+    assert!(prompt_completed.data.as_ref().unwrap().get("raw_result").is_none());
 }
 
 struct TestMcpHttpServer {
@@ -681,12 +778,12 @@ fn handle_mcp_request(mut stream: TcpStream) {
         let response_body = response_body.to_string();
 
         format!(
-            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nconnection: close\r\ncontent-length: {}\r\n\r\n{}",
             response_body.len(),
             response_body
         )
     } else {
-        "HTTP/1.1 202 Accepted\r\ncontent-length: 0\r\n\r\n".to_string()
+        "HTTP/1.1 202 Accepted\r\nconnection: close\r\ncontent-length: 0\r\n\r\n".to_string()
     };
 
     stream.write_all(response.as_bytes()).expect("response should write");
@@ -742,6 +839,21 @@ fn response_for_method(method: Option<&str>) -> Option<Value> {
                         "description": "The project readme file",
                         "mimeType": "text/markdown",
                         "uri": "file://resources/project_readme"
+                    }
+                ]
+            }
+        })),
+        Some("resources/templates/list") => Some(json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "resourceTemplates": [
+                    {
+                        "name": "project_readme",
+                        "title": "Project README",
+                        "description": "A project readme selected by workspace and optional section",
+                        "mimeType": "text/markdown",
+                        "uriTemplate": "file://resources/{workspace_id}/project_readme{?section}"
                     }
                 ]
             }

@@ -1,53 +1,16 @@
 ---
-title: File Directive
-description: Upload content to an agent as a file attachment.
+title: File directive
+description: Upload rendered agent content as a temporary model file attachment.
 ---
 
-```wire
-input {
-    topic: string
-}
+import FileReviewWorkflow from "/examples/wire/file-review.mdx";
 
-secrets {
-    api_key: string
-}
+<FileReviewWorkflow />
 
-provider llm from openai {
-    endpoint: "https://api.openai.com/v1"
-    api_key: secrets.api_key
-}
+<Warning>
+  Agent files require the selected model to declare `wire_api: "chat/completion"`. The default `"responses"` mode fails validation for `file` directives.
+</Warning>
 
-model fast from llm {
-    id: "gpt-4.1-mini"
-    wire_api: "chat/completion"
-}
+The draft agent returns an object. The review agent renders that object as `report.json`, uploads it before the model call, and removes the provider file during cleanup.
 
-agent summarize {
-    model: model.fast
-    instruction: "Summarize {{ input.topic }} into a JSON report."
-
-    output {
-        report: string
-    }
-}
-
-agent review {
-    model: model.fast
-    instruction: "Review the uploaded report and provide feedback."
-
-    file agent.summarize {
-        name: "report.json"
-    }
-
-    output {
-        feedback: string
-        approved: boolean
-    }
-}
-
-output {
-    report: agent.summarize.report
-    feedback: agent.review.feedback
-    approved: agent.review.approved
-}
-```
+Streaming clients can observe `agent_file_created` and `agent_file_deleted`. Provider failures can still occur if the backend does not implement compatible file upload and deletion endpoints.

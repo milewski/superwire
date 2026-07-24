@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, HashMap};
 
-use lsp_types::Position;
 use superwire_dsl::{Reference, ReferenceAccess, ReferenceKeyword, ReferenceRoot, SourceSpan, TypeExpression, TypeExpressionFieldCache};
 use superwire_semantic::{ReferenceResolutionScope, SemanticDeclarationKey, SemanticFieldRoot};
 
+use super::super::position::DocumentPosition;
 use super::super::reference::ReferenceCompletionPath;
 use super::types::SemanticIndex;
 
@@ -12,7 +12,7 @@ impl SemanticIndex {
         &self,
         symbol_token: &str,
         cursor_character_offset: usize,
-        position: Position,
+        position: DocumentPosition<'_>,
     ) -> Option<SourceSpan> {
         if let Some(provider_span) = self.core_declaration_span(SemanticDeclarationKey::provider(symbol_token)) {
             return Some(provider_span);
@@ -57,7 +57,7 @@ impl SemanticIndex {
 
     fn for_loop_binding_reference_definition_span(
         &self,
-        position: Position,
+        position: DocumentPosition<'_>,
         reference_completion_path: &ReferenceCompletionPath,
         selected_segment_index: usize,
     ) -> Option<SourceSpan> {
@@ -75,7 +75,7 @@ impl SemanticIndex {
 
     fn keyword_reference_definition_span(
         &self,
-        position: Position,
+        position: DocumentPosition<'_>,
         reference_root_keyword: ReferenceKeyword,
         reference_completion_path: &ReferenceCompletionPath,
         selected_segment_index: usize,
@@ -112,7 +112,7 @@ impl SemanticIndex {
 
     fn dynamic_reference_definition_span(
         &self,
-        position: Position,
+        position: DocumentPosition<'_>,
         reference_completion_path: &ReferenceCompletionPath,
         selected_segment_index: usize,
     ) -> Option<SourceSpan> {

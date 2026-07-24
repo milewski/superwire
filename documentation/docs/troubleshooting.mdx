@@ -1,0 +1,165 @@
+---
+title: Troubleshooting
+description: Diagnose executor, provider, runtime data, MCP, streaming, editor, and Laravel failures.
+---
+
+## Executor is unreachable
+
+1. Confirm Docker is running and port `13703` is free.
+2. Open `http://localhost:13703/playground`.
+3. Confirm the container was not started with a different `--address`.
+4. Do not probe an undocumented health route; none exists today.
+
+## A host service is unreachable from Docker
+
+Container `localhost` refers to the container. Use `host.docker.internal`; on Linux Engine add:
+
+```bash
+--add-host=host.docker.internal:host-gateway
+```
+
+Apply the same container-host rule to Ollama, Redis, and MCP endpoints. An MCP endpoint at `host.docker.internal`, `localhost`, or another local/private address also requires executor policy `trusted`; `public-only` rejects it. The CLI already uses `trusted` but resolves connectivity from the CLI process, not the executor container.
+
+## Source request is rejected
+
+`/execute`, `/validate`, `/graph`, and `/format` accept exactly one of:
+
+- `workflow_source`: non-empty UTF-8 source;
+- `workflow_source_base64`: standard base64 that decodes to non-empty UTF-8.
+
+Sending both or neither returns HTTP 400. If base64 behaves differently across operating systems, use the platform commands in [Quickstart](/quickstart) or send raw `workflow_source` from a JSON-capable client.
+
+## Input or secret types do not match
+
+The top-level `input` and `secrets` payloads must be JSON objects matching the declarations.
+
+- CLI `--set` always creates strings.
+- Use `--input-json` or `--input-file` for numbers, booleans, arrays, and objects.
+- Use `--secrets-file` with restrictive permissions to avoid a key in shell history.
+- A missing runtime value can fail validation before any provider call.
+
+## Provider credentials fail
+
+Check the [Provider matrix](/integrations/providers):
+
+- driver name is supported;
+- endpoint is reachable from the executor;
+- a required `api_key` or supported environment variable is present;
+- model ID exists at that provider;
+- selected `wire_api` is implemented by the backend.
+
+`file` directives require `wire_api: "chat/completion"`. Most other models default to `"responses"`.
+
+For transient failures, inspect provider-attempt events and the terminal diagnostic. Default retry behavior is documented in [Provider matrix](/integrations/providers#provider-retries); `provider_retries_exhausted.cause` preserves the final provider failure.
+
+## Read a typed HTTP failure
+
+The executor returns:
+
+```json
+{
+  "error": {
+    "code": "invalid_input",
+    "stage": "input",
+    "severity": "error",
+    "retryability": "never",
+    "message": "invalid JSON request body",
+    "subject": {
+      "type": "workflow"
+    }
+  }
+}
+```
+
+Branch on HTTP status and `error.code`. Use `retryability`, optional `retry_after_ms`, and recursive `cause` for retry/debug policy; do not parse `message`. See [Diagnostics](/api-reference/diagnostics).
+
+## MCP import or call fails
+
+Execution validates object-shaped input/secrets, then resolves each MCP endpoint, applies the executor policy, and resolves that declaration's headers. It completes every permitted server configuration before the first MCP client or schema-fetch event. If the failure has no schema-fetch-started event, inspect the typed diagnostic for a preflight value/type/policy/configuration error; one invalid later server prevents earlier servers from being contacted.
+
+Only remote HTTP JSON-RPC MCP is implemented. `stdio` and other local-process transports are unsupported under every policy.
+
+Executor policy failures use diagnostic code `invalid_configuration`, stage `mcp`, and a message identifying the MCP server, active policy, and reason. Diagnose by policy:
+
+- `disabled`: all outbound MCP is blocked. The server-config default is `disabled`; an HTTP request cannot override it. An operator must restart/configure the server with `--mcp-network-policy public-only` for public endpoints or `--mcp-network-policy trusted` for reviewed local/private endpoints.
+- `public-only`: use an absolute public `http`/`https` URL without user information. Correct the endpoint or DNS if any literal address or DNS answer is local, private, link-local, multicast, reserved, documentation, or cloud metadata IPv4/IPv6 space; one non-public result rejects the endpoint. The custom resolver pins the approved normalized address set/port so that client does not perform a second DNS lookup or rebind the request.
+- `trusted`: local/private HTTP endpoints are permitted, but the URL still must be absolute `http`/`https` with no user information. `stdio` and other local-process MCP transports are not implemented.
+- HTTP client hardening: both enabled policies ignore environment proxies, disable automatic redirects, and reject redirect responses. Configure the final reviewed URL directly.
+
+Provider failures have a separate operator boundary:
+
+- The executor defaults to `--provider-network-policy built-in-only`; request bodies cannot opt into custom endpoints. Restart with `public-only` for custom public HTTPS endpoints or `trusted` for reviewed local/private HTTP(S) endpoints.
+- Custom provider URLs reject user information, queries, and fragments. They are resolved and pinned before credentials are selected; `public-only` rejects any non-public address.
+- Provider clients ignore environment proxies and redirects. Configure the final endpoint directly. Oversized bodies/SSE frames/streams/tool arguments, timeouts, and streams that close without a completion event fail deterministically.
+- `superwire-cli workflow run` deliberately uses provider `trusted` mode. Restrict CLI process egress for untrusted workflows.
+
+Keep component boundaries distinct:
+
+- Executor `/execute`, `/validate`, and `/graph` share the operator-selected server policy.
+- `superwire-cli` deliberately uses `trusted`; for CLI failures, inspect endpoint/header resolution and reachability from the CLI process, not the executor container.
+- `superwire-lsp` remains no-network unless the client explicitly initializes `workspaceTrust.networkMcpDiscovery` as `trusted`. This gate is independent of executor policy; otherwise use reviewed lock metadata.
+- `superwire.lock` records imported metadata and does not grant egress to any component.
+
+After policy and transport checks:
+
+- Confirm the MCP endpoint and headers are valid.
+- Confirm networking from the component that makes the request.
+- Keep deterministic runtime values in tool `bindings`.
+- Keep model-visible inputs in tool `input` and expose the tool through `uses`.
+- Run `superwire-cli workflow vars` before lock resolution when runtime values are required.
+- Refresh `superwire.lock` after imports or remote schemas change.
+- Bound model-owned calls with `max_calls`.
+
+See [MCP lockfiles](/mcp/lockfiles).
+
+## Streaming stopped or lost history
+
+A network disconnect does not intentionally cancel backend work. Read `x-superwire-run-id`, remember the last successfully processed non-gap SSE `id`, and reconnect to `GET /execute/{run_identifier}/events` with `?after=` or `Last-Event-ID`; the query value wins.
+
+- `404 unknown_run`: the identifier is unknown.
+- `410 stream_expired`: the completed run exceeded retention.
+- `409 stream_gap`: requested events were pruned. Ask the application/user before accepting loss and resuming from `oldest_available - 1`.
+- `stream_gap` event: reconnect from `diagnostic.subject.requested_after`, not the synthetic frame ID.
+- `503 stream_capacity_exceeded` before SSE begins: active runs and live subscriber/replay payloads exhausted the process-global retained-byte budget; retry after consumers release capacity.
+- terminal `workflow_failed` with `event_too_large`: the projected SSE frame exceeded 245,760 bytes. Read `diagnostic.subject.actual_bytes` and `maximum_bytes`; the oversized output is deliberately absent and cannot be recovered by reconnecting.
+
+To stop backend work, call `POST /execute/{run_identifier}/cancel`. An `accepted` transition only requests cancellation; continue until a terminal workflow event. See [Streaming and events](/api-reference/streaming-events).
+
+## Cache appears stale
+
+Cache reuse needs all three:
+
+- executor caching enabled;
+- `options.use_cache` not `false`;
+- a non-empty `options.cache_key`.
+
+Rotate the key to start a new scope, or call `/cache/invalidate` to remove the old key's entries. A Playground “purge” rotates its current tab key; it does not call cache invalidation. Key rotation does not delete the old scope.
+
+If execution emits `cache_degraded`, a cache read/write failed but the executor continued with a miss or fresh result. Inspect `diagnostic.subject.operation`. Cache invalidation fails closed instead: a purge-driver failure returns HTTP 503 `cache_unavailable` with cache subject operation `purge`, no `purged_entries` success body, and retryability `safe`. Do not assume entries were removed until the route succeeds; a successful zero count only means no matching entries were found.
+
+## Playground secrets disappear after reload
+
+This is intentional. Browser local storage retains workflow source, Input JSON, tab/active-tab state, cache settings, and theme, but replaces Secrets JSON with `{}` and clears output, graph data, and event history. Secrets remain in page memory only until reload; **Copy with secrets** explicitly writes them to the system clipboard.
+
+## Editor has highlighting but no diagnostics
+
+The TextMate package supplies highlighting only. Use the IntelliJ plugin, Playground, or configure a generic LSP client to launch `superwire-lsp` over stdio. See [Editor setup](/editor-setup).
+
+## Laravel cannot connect
+
+The default Docker executor listens on `13703`. Set:
+
+```dotenv
+SUPERWIRE_EXECUTOR_URL=http://localhost:13703
+```
+
+The package now defaults to `http://localhost:13703`; keep the environment value explicit in deployed applications. Also confirm PHP 8.4 and Laravel 12 or 13.
+
+Laravel's default SSE line/frame/data limits are above the executor's 245,760-byte complete-frame maximum. `ExecutorRuntimeLimits::SERVER_MAXIMUM_SERIALIZED_PUBLIC_EVENT_BYTES` exposes that server contract. If custom Laravel limits are lower, valid server events can fail locally; fragmented lines and frames are still accumulated only within the configured byte bounds.
+
+## Get a minimal reproduction
+
+1. Run `superwire-cli workflow check workflow.wire`.
+2. Run `superwire-cli fmt workflow.wire`.
+3. Replace provider/model IDs only, keeping the checked [basic workflow](/examples/basic-agent).
+4. Add input, schemas, agents, and MCP capabilities back one at a time.

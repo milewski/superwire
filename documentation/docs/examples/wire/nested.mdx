@@ -1,0 +1,36 @@
+```wire nested.wire
+input {
+    project_id: number
+    topic: string
+}
+
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+agent plan {
+    model: model.fast
+    instruction: "Create a plan for {{ input.topic }}."
+
+    output {
+        summary: string
+        tasks: [{ title: string, priority: enum { low, medium, high } }]
+    }
+}
+
+output {
+    project: {
+        id: input.project_id
+        topic: input.topic
+        plan: agent.plan
+    }
+}
+```

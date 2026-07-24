@@ -1,4 +1,4 @@
-use super::{DeclarationKeyword, ReferenceKeyword, SourceSpan, TypeExpression};
+use super::{DeclarationKeyword, ReferenceKeyword, ScalarTypeKeyword, SourceSpan, TypeExpression};
 use std::collections::HashSet;
 use std::hash::BuildHasher;
 
@@ -15,15 +15,15 @@ impl Reference {
         if self.accesses.is_empty() {
             let identifier = self.root.as_identifier()?;
 
-            return match identifier {
-                "string" => Some(TypeExpression::String),
-                "number" => Some(TypeExpression::Number),
-                "float" => Some(TypeExpression::Float),
-                "boolean" => Some(TypeExpression::Boolean),
-                "object" => Some(TypeExpression::AnyObject),
-                "null" => Some(TypeExpression::Null),
-                _ => Some(TypeExpression::StringEnumReference(self.clone())),
-            };
+            return Some(match ScalarTypeKeyword::from_identifier(identifier) {
+                Some(ScalarTypeKeyword::String) => TypeExpression::String,
+                Some(ScalarTypeKeyword::Number) => TypeExpression::Number,
+                Some(ScalarTypeKeyword::Float) => TypeExpression::Float,
+                Some(ScalarTypeKeyword::Boolean) => TypeExpression::Boolean,
+                Some(ScalarTypeKeyword::Object) => TypeExpression::AnyObject,
+                Some(ScalarTypeKeyword::Null) => TypeExpression::Null,
+                None => TypeExpression::StringEnumReference(self.clone()),
+            });
         }
 
         if let Some((schema_name, field_path)) = self.schema_name_and_field_path() {

@@ -1,0 +1,85 @@
+---
+title: Editor setup
+description: Configure the IntelliJ plugin, TextMate highlighting, or the stdio language server.
+---
+
+## Support matrix
+
+| Editor path | Current support | Language server |
+| --- | --- | --- |
+| IntelliJ-family plugin | Syntax highlighting plus bundled LSP | Included in the plugin artifact. |
+| Playground | CodeMirror plus WebSocket LSP client | Served by executor route `/lsp`. |
+| VS Code TextMate package | Syntax highlighting only | No VS Code LSP client ships in this repository. |
+| Generic LSP-capable editor | Depends on editor client configuration | Run `superwire-lsp` over stdio. |
+
+Do not treat the TextMate package as an LSP extension. It contributes `.wire` language identification and grammar scopes only.
+
+## LSP capabilities
+
+The current server advertises:
+
+- full-document synchronization and versioned diagnostics;
+- context-aware completion triggered by `.`, `:`, `"`, `{`, `(`, `,`, and `?`;
+- semantic hover and go-to-definition;
+- hierarchical document symbols when supported, plus workspace symbols;
+- full-document semantic tokens;
+- folding ranges;
+- document formatting and quick-fix code actions;
+- code lenses and the `superwire.generated.output` command;
+- negotiated UTF-8, UTF-16, or UTF-32 positions, defaulting to UTF-16.
+
+## Build the language server
+
+```bash
+cargo build --release -p superwire-lsp
+install -m 0755 target/release/superwire-lsp "$HOME/.local/bin/superwire-lsp"
+```
+
+The server uses standard input/output. Configure a generic client with:
+
+```text
+command: superwire-lsp
+transport: stdio
+file extension: .wire
+```
+
+Editor-specific recipes should only be added after they are exercised against that editor. No generic TCP mode is implemented.
+
+Network MCP discovery is disabled by default. A generic client may set `initializationOptions.workspaceTrust.networkMcpDiscovery` to `trusted` only after an explicit workspace-trust decision; otherwise the LSP uses reviewed lockfile metadata without making discovery requests. This editor trust gate is independent of the executor process policy and does not offer a `public-only` mode. See [Language server security](/api-reference/lsp#mcp-discovery-and-workspace-trust).
+
+## IntelliJ-family plugin
+
+Requirements for a local build:
+
+- Java 21;
+- Rust 1.94 and the target toolchains selected by the Gradle build;
+- IntelliJ platform build `243` through `253.*`; the generated plugin descriptor rejects earlier and later builds;
+- TextMate, Markdown, and LSP4IJ plugin dependencies.
+
+Build:
+
+```bash
+cd editors/intellij
+./gradlew buildPlugin
+```
+
+The local build creates an installable `superwire-intellij-*.zip` in `editors/intellij/build/distributions`. Install that ZIP with **Settings → Plugins → Install Plugin from Disk**.
+
+CI creates runner-specific distributions: the Ubuntu build packages Linux x86-64 and Windows x86-64, the Windows build packages Windows x86-64, and the macOS build packages macOS x86-64 and arm64. Each plugin JAR contains `lsp/bundle-manifest.txt`, and the Gradle package verifier rejects any missing, duplicate, or unadvertised LSP entry. Linux arm64 and Windows arm64 are not bundled. The workflow extracts each Gradle distribution before uploading `superwire-intellij-<runner OS>` build artifacts; those artifact contents are unpacked verification outputs, not the local install ZIP. The workflow does not publish JetBrains Marketplace releases; use a local `build/distributions` ZIP or a separately published distribution ZIP for installation.
+
+At runtime, the plugin uses the first valid source in this order: an explicit `SUPERWIRE_LSP_PATH`, the bundled binary for the current packaged platform, then `superwire-lsp` from `PATH`. An unsupported packaged platform can therefore use an explicitly installed binary through the override or `PATH`. The plugin never discovers or executes binaries under a project's `target` directory.
+
+## VS Code syntax highlighting
+
+Copy or package `editors/textmate` as a VS Code extension, then restart VS Code. This provides highlighting and language configuration only.
+
+```text
+Linux/macOS: ~/.vscode/extensions/superwire
+Windows:     %USERPROFILE%\.vscode\extensions\superwire
+```
+
+For diagnostics, completion, hover, definition, and formatting, a VS Code language-client extension still needs to launch `superwire-lsp`; none is included today.
+
+## Playground editor
+
+The bundled Playground connects to `ws://<executor>/lsp` or `wss://<executor>/lsp` automatically. See [Playground](/playground).

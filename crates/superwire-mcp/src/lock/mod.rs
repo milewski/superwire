@@ -1,5 +1,5 @@
 use crate::schema::to_json_value;
-use crate::{HttpMcpClientFactory, McpClientFactory, McpError, McpServerConfig};
+use crate::{HttpMcpClientFactory, McpClientFactory, McpClientRequestScope, McpError, McpServerConfig};
 use rust_mcp_schema::{ToolInputSchema, ToolOutputSchema};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -86,7 +86,7 @@ impl McpToolLock {
         output_schema: Option<Value>,
     ) -> Option<Self> {
         let input_schema = serde_json::from_value(input_schema).ok()?;
-        let output_schema = output_schema.and_then(|output_schema| serde_json::from_value(output_schema).ok());
+        let output_schema = output_schema.map(serde_json::from_value).transpose().ok()?;
 
         Some(Self {
             name,
@@ -95,14 +95,25 @@ impl McpToolLock {
             output_schema,
         })
     }
+
+    fn serialized_schema_matches<SchemaValue: Serialize>(left: &SchemaValue, right: &SchemaValue) -> bool {
+        match (to_json_value(left), to_json_value(right)) {
+            (Ok(left_value), Ok(right_value)) => left_value == right_value,
+            (Ok(_) | Err(_), Err(_)) | (Err(_), Ok(_)) => false,
+        }
+    }
 }
 
 impl PartialEq for McpToolLock {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
             && self.description == other.description
-            && to_json_value(&self.input_schema) == to_json_value(&other.input_schema)
-            && self.output_schema.as_ref().map(to_json_value) == other.output_schema.as_ref().map(to_json_value)
+            && Self::serialized_schema_matches(&self.input_schema, &other.input_schema)
+            && match (&self.output_schema, &other.output_schema) {
+                (Some(left_schema), Some(right_schema)) => Self::serialized_schema_matches(left_schema, right_schema),
+                (None, None) => true,
+                (Some(_), None) | (None, Some(_)) => false,
+            }
     }
 }
 
@@ -164,14 +175,19 @@ impl McpLock {
         let mut lock = Self::empty();
         let mut evaluation_context = evaluation_context.clone();
         evaluation_context.evaluate_available_workflow_dynamic_bindings(workflow);
+        let request_scope = McpClientRequestScope::from_workflow(client_factory, workflow, &evaluation_context)?;
 
         for declaration in workflow.declarations() {
             let Declaration::McpServer(mcp_server_declaration) = declaration else {
                 continue;
             };
-            let server_config = McpServerConfig::resolve_from_declaration(mcp_server_declaration, &evaluation_context)?;
+            let server_config = McpServerConfig::resolve_from_declaration_with_endpoint_validator(
+                mcp_server_declaration,
+                &evaluation_context,
+                |server_name, endpoint| request_scope.validate_endpoint(server_name, endpoint),
+            )?;
             log::debug!("discovering MCP tools from runtime server config: {}", server_config.name);
-            let server_lock = client_factory.client_for_config(server_config.clone())?.list_tools()?;
+            let server_lock = request_scope.client_for_config(server_config.clone())?.list_tools()?;
 
             lock.servers.insert(server_config.name, server_lock);
         }
@@ -423,6 +439,33 @@ mod tests {
     }
 
     #[test]
+    fn retains_discovered_schema_for_fixed_binding_validation() {
+        let mut tool_declaration = tool_import_declaration("fetch_task_data", "fetch_task_data");
+        tool_declaration.fixed_binding_fields.push(ObjectField {
+            name: "task_id".to_string(),
+            value: Expression::NumberLiteral("42".to_string()),
+            span: SourceSpan::generated(),
+        });
+        let mut workflow = workflow_with_declarations(vec![Declaration::Tool(tool_declaration)]);
+        let mcp_lock = import_resolution_lock();
+
+        mcp_lock.apply_to_workflow(&mut workflow);
+
+        let Declaration::Tool(tool_declaration) = &workflow.declarations()[0] else {
+            panic!("declaration should be a tool import");
+        };
+        let mcp_schema = tool_declaration
+            .mcp_schema
+            .as_ref()
+            .expect("discovered MCP schema should be retained");
+
+        assert!(tool_declaration.input_fields.is_empty());
+        assert_eq!(mcp_schema.input.pointer("/properties/task_id/type"), Some(&json!("number")));
+        assert!(mcp_schema.uses_discovered_input);
+        assert!(mcp_schema.uses_discovered_output);
+    }
+
+    #[test]
     fn ignores_prompt_binding_validation_for_missing_server_lock() {
         let workflow = workflow_with_declarations(vec![Declaration::McpPrompt(prompt_import_declaration(
             "summarize_task_prompt",
@@ -478,6 +521,8 @@ mod tests {
             binding_fields: Vec::new(),
             fixed_binding_fields: Vec::new(),
             output_fields: Vec::new(),
+            mcp_schema: None,
+            schema_issues: Vec::new(),
             span: SourceSpan::generated(),
         }
     }

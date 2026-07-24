@@ -1,0 +1,47 @@
+```wire file-review.wire
+input {
+    topic: string
+}
+
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    api_key: secrets.api_key
+}
+
+model files from llm {
+    id: "gpt-4.1-mini"
+    wire_api: "chat/completion"
+}
+
+agent draft {
+    model: model.files
+    instruction: "Draft a short report about {{ input.topic }}."
+
+    output {
+        report: string
+    }
+}
+
+agent review {
+    model: model.files
+    instruction: "Review the uploaded report."
+
+    file agent.draft {
+        name: "report.json"
+    }
+
+    output {
+        feedback: string
+        approved: boolean
+    }
+}
+
+output {
+    report: agent.draft.report
+    feedback: agent.review.feedback
+    approved: agent.review.approved
+}
+```

@@ -1,38 +1,24 @@
 ---
-title: Structured Output
-description: Return typed fields from an agent.
+title: Structured output
+description: Reuse a schema inside an object-shaped agent output.
 ---
 
-```wire
-input {
-    message: string
-}
+import ClassifyWorkflow from "/examples/wire/classify.mdx";
 
-secrets {
-    api_key: string
-}
+<ClassifyWorkflow />
 
-provider llm from openai {
-    endpoint: "https://api.openai.com/v1"
-    api_key: secrets.api_key
-}
+The agent output remains object-shaped: it has a `result` field whose type is `schema.classification`. Later expressions read `agent.classify.result`.
 
-model fast from llm {
-    id: "gpt-4.1-mini"
-}
+Example final object:
 
-agent classify {
-    model: model.fast
-    instruction: "Classify {{ input.message }}."
-
-    output {
-        category: enum { bug, feature, question }
-        confidence: number
-        reason: string
-    }
-}
-
-output {
-    result: agent.classify
+```json
+{
+  "result": {
+    "category": "feature",
+    "confidence": 0.91,
+    "reason": "The request asks for new behavior."
+  }
 }
 ```
+
+Enums constrain category names; `number` constrains confidence to a numeric JSON value. Output validation happens after the model response and before downstream references consume it.

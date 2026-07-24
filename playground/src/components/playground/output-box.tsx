@@ -8,8 +8,16 @@ type OutputBoxProps = {
 
 export default function OutputBox({ runState, outputJson }: OutputBoxProps) {
   if (!outputJson) {
-    return <div className="empty-state compact">{runState === 'running' ? 'Waiting for workflow output...' : 'Run a workflow to see output.'}</div>;
+    const emptyMessage = runState === 'running'
+      ? 'Waiting for workflow output...'
+      : runState === 'failed'
+        ? 'The workflow failed before producing final output.'
+        : runState === 'cancelled'
+          ? 'The workflow was cancelled before producing final output.'
+          : 'Run a workflow to see output.';
+
+    return <div className="empty-state compact" role="status">{emptyMessage}</div>;
   }
 
-  return <JsonCodeEditor value={outputJson} readOnly fullEditor uncappedHeight className="workflow-output__json" />;
+  return <JsonCodeEditor value={outputJson} readOnly fullEditor uncappedHeight ariaLabel="Final workflow output" className="workflow-output__json" />;
 }

@@ -256,7 +256,7 @@ fn suggests_mcp_output_fields_inside_imported_tool_output_block() {
 
     let completion_suggestion = completion_suggestion_by_label(&completion_suggestions, "participants");
 
-    assert_eq!(completion_suggestion.insert_text, "participants: [{}]");
+    assert_eq!(completion_suggestion.insert_text, "participants: [object]");
 }
 
 #[test]
@@ -367,7 +367,7 @@ fn inserts_mcp_output_schema_when_completing_output_property() {
 
     assert_eq!(
         completion_suggestion.insert_text,
-        "output {\n    participants: [{}]\n    shared: string\n}"
+        "output {\n    participants: [object]\n    shared: string\n}"
     );
 }
 
@@ -385,7 +385,7 @@ fn inserts_expanded_mcp_output_schema_with_contextual_indentation() {
 
     assert_eq!(
         completion_suggestion.insert_text,
-        "output {\n    task_group_id: number\n    task_group_title: string\n    tasks: [\n        {\n            description: string,\n            duration: number,\n            id: number,\n            mandatory: boolean,\n            options: string,\n            title: string,\n            type: string,\n        }\n    ]\n}"
+        "output {\n    task_group_id: float\n    task_group_title: string\n    tasks: [\n        {\n            description: string,\n            duration: float,\n            id: float,\n            mandatory: boolean,\n            options: string,\n            title: string,\n            type: string,\n        }\n    ]\n}"
     );
 }
 
@@ -415,9 +415,9 @@ fn accepts_structurally_matching_mcp_output_schema_from_lock_file() {
         from mcp.local {
             tool get_task_group_tasks {
                 output {
-                    task_group_id: number
+                    task_group_id: float
                     task_group_title: string
-                    tasks: [{ description: string, duration: number, id: number, mandatory: boolean, options: string, title: string, type: string }]
+                    tasks: [{ description: string, duration: float, id: float, mandatory: boolean, options: string, title: string, type: string }]
                 }
             }
         }
@@ -449,7 +449,7 @@ fn offers_code_action_to_fill_mcp_output_schema_block() {
 
     assert_eq!(code_actions.len(), 1);
     assert_eq!(code_actions[0].title, "Fill output schema from MCP lock");
-    assert!(code_actions[0].edit.new_text.contains("participants: [{}]"));
+    assert!(code_actions[0].edit.new_text.contains("participants: [object]"));
 }
 
 #[test]

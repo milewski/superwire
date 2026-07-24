@@ -152,3 +152,86 @@ async fn service_reuses_cached_output_context_compaction_for_same_session() {
     );
     assert_eq!(recorded_agent_names, vec!["analyzer", "analyzer__context_compaction"]);
 }
+
+#[derive(Debug)]
+struct UnavailableCacheStore;
+
+impl crate::runtime::cache::AgentCacheStore for UnavailableCacheStore {
+    fn get(
+        &self,
+        _key: &crate::runtime::cache::AgentCacheKey,
+    ) -> Result<Option<crate::runtime::cache::CachedAgentExecution>, crate::runtime::ExecutorError> {
+        Err(crate::runtime::ExecutorError::cache(
+            superwire_protocol::event::CacheOperation::Read,
+            "cache is unavailable",
+        ))
+    }
+
+    fn put(
+        &self,
+        _key: crate::runtime::cache::AgentCacheKey,
+        _execution: crate::runtime::cache::CachedAgentExecution,
+        _time_to_live: std::time::Duration,
+    ) -> Result<(), crate::runtime::ExecutorError> {
+        Err(crate::runtime::ExecutorError::cache(
+            superwire_protocol::event::CacheOperation::Write,
+            "cache is unavailable",
+        ))
+    }
+
+    fn purge_session(&self, _session: &AgentCacheSession) -> Result<usize, crate::runtime::ExecutorError> {
+        Err(crate::runtime::ExecutorError::cache(
+            superwire_protocol::event::CacheOperation::Purge,
+            "cache is unavailable",
+        ))
+    }
+}
+
+#[tokio::test]
+async fn optional_cache_outage_degrades_without_failing_execution() {
+    let model_provider = TrackingModelProvider::new(vec![json!({ "value": "fresh" })]);
+    let execution_request = request(fixtures::MINIMUM);
+    let executor = crate::runtime::WorkflowExecutor::from_source_with_runtime_values(
+        execution_request
+            .workflow_source
+            .as_deref()
+            .expect("workflow source should be present"),
+        &execution_request.input,
+        &execution_request.secrets,
+    )
+    .expect("workflow should build");
+    let (event_sender, mut event_receiver) = tokio::sync::mpsc::channel(16);
+    let cache_options = crate::runtime::AgentCacheOptions::enabled(
+        AgentCacheSession::new("unavailable-cache"),
+        std::sync::Arc::new(UnavailableCacheStore),
+        std::time::Duration::from_secs(60),
+    );
+
+    let output = executor
+        .execute_with_cache(
+            execution_request.input,
+            execution_request.secrets,
+            &model_provider,
+            Some(event_sender),
+            1,
+            cache_options,
+        )
+        .await
+        .expect("cache outage should not fail the workflow");
+    let mut cache_degraded_events = Vec::new();
+
+    while let Ok(event) = event_receiver.try_recv() {
+        if event.kind == superwire_protocol::event::ExecutorEventKind::CacheDegraded {
+            cache_degraded_events.push(event);
+        }
+    }
+
+    assert_eq!(output, json!({ "greeting": "fresh" }));
+    assert_eq!(cache_degraded_events.len(), 2);
+    assert!(cache_degraded_events.iter().all(|event| {
+        event
+            .diagnostic
+            .as_ref()
+            .is_some_and(|diagnostic| diagnostic.code == superwire_protocol::event::ExecutorDiagnosticCode::CacheUnavailable)
+    }));
+}

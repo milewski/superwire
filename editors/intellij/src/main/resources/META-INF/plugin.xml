@@ -1,5 +1,5 @@
 <idea-plugin>
-    <id>com.superwire.intellij</id>
+    <id>com.superwire</id>
     <name>Superwire</name>
     <vendor email="support@superwire.dev" url="https://github.com/milewski/superwire">Superwire</vendor>
 
@@ -70,6 +70,5 @@
 
     <extensions defaultExtensionNs="org.intellij.markdown">
         <fenceLanguageProvider implementation="com.superwire.intellij.SuperwireCodeFenceLanguageProvider"/>
-        <additionalFenceLanguageSuggester implementation="com.superwire.intellij.SuperwireAdditionalFenceLanguageSuggester"/>
     </extensions>
 </idea-plugin>

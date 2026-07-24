@@ -1,7 +1,7 @@
-use super::ast::{SourcePosition, SourceSpan, Workflow};
+use super::ast::{MatchBranchStructureError, SourcePosition, SourceSpan, Workflow};
 use super::visitor::AstVisitor;
 use crate::diagnostic::should_render_rich_diagnostics;
-use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
+use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticLabel, DiagnosticSeverity};
 use pest::error::{ErrorVariant, LineColLocation};
 use pest_derive::Parser;
 use thiserror::Error;
@@ -9,6 +9,24 @@ use thiserror::Error;
 #[derive(Parser)]
 #[grammar = "dsl/grammar.pest"]
 pub struct Parser;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReservedBindingContext {
+    ForLoop,
+    ForLoopDestructuring,
+    Dynamic,
+}
+
+impl ReservedBindingContext {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ForLoop => "for-loop binding",
+            Self::ForLoopDestructuring => "for-loop destructuring binding",
+            Self::Dynamic => "dynamic local binding",
+        }
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum DslParseError {
@@ -39,6 +57,62 @@ pub enum DslParseError {
         context: &'static str,
         span: Option<SourceSpan>,
     },
+
+    #[error("duplicate match case `{case_name}` at {duplicate_span:?}")]
+    DuplicateMatchCase {
+        case_name: String,
+        first_span: SourceSpan,
+        duplicate_span: SourceSpan,
+    },
+
+    #[error("match expression has more than one fallback branch at {duplicate_span:?}")]
+    MultipleMatchFallback {
+        first_span: SourceSpan,
+        duplicate_span: SourceSpan,
+    },
+
+    #[error("match fallback branch must be last at {span:?}")]
+    NonFinalMatchFallback { span: SourceSpan },
+
+    #[error("enum type requires at least one case at {span:?}")]
+    EmptyEnumType { span: SourceSpan },
+
+    #[error("variant type requires at least one case at {span:?}")]
+    EmptyVariantType { span: SourceSpan },
+
+    #[error("reserved reference keyword `{binding_name}` cannot be used as a {context:?} at {span:?}")]
+    ReservedBindingName {
+        binding_name: String,
+        context: ReservedBindingContext,
+        span: SourceSpan,
+    },
+
+    #[error("unsupported escape sequence `{sequence}` at {span:?}")]
+    UnsupportedEscapeSequence { sequence: String, span: SourceSpan },
+}
+
+impl From<MatchBranchStructureError> for DslParseError {
+    fn from(structure_error: MatchBranchStructureError) -> Self {
+        match structure_error {
+            MatchBranchStructureError::DuplicateVariant {
+                case_name,
+                first_span,
+                duplicate_span,
+            } => Self::DuplicateMatchCase {
+                case_name,
+                first_span,
+                duplicate_span,
+            },
+            MatchBranchStructureError::MultipleFallback {
+                first_span,
+                duplicate_span,
+            } => Self::MultipleMatchFallback {
+                first_span,
+                duplicate_span,
+            },
+            MatchBranchStructureError::NonFinalFallback { span } => Self::NonFinalMatchFallback { span },
+        }
+    }
 }
 
 impl DslParseError {
@@ -132,10 +206,15 @@ impl DslParseError {
     #[must_use]
     pub fn span(&self) -> Option<SourceSpan> {
         match self {
-            Self::Pest { span, .. } => Some(*span),
-            Self::MissingNode { span, .. } => *span,
-            Self::UnexpectedRule { span, .. } => *span,
-            Self::InvalidIntegerLiteral { span, .. } => *span,
+            Self::Pest { span, .. }
+            | Self::DuplicateMatchCase { duplicate_span: span, .. }
+            | Self::MultipleMatchFallback { duplicate_span: span, .. }
+            | Self::NonFinalMatchFallback { span }
+            | Self::EmptyEnumType { span }
+            | Self::EmptyVariantType { span }
+            | Self::ReservedBindingName { span, .. }
+            | Self::UnsupportedEscapeSequence { span, .. } => Some(*span),
+            Self::MissingNode { span, .. } | Self::UnexpectedRule { span, .. } | Self::InvalidIntegerLiteral { span, .. } => *span,
         }
     }
 
@@ -157,13 +236,11 @@ impl DslParseError {
 
                 diagnostic
             }
-            Self::MissingNode {
-                expected,
-                context,
-                span: _,
-            } => Diagnostic::new(DiagnosticCode::from(self), DiagnosticSeverity::Error, self.to_string(), self.span()).with_help(format!(
-                "Add `{expected}` while parsing {context}; this node is required by the DSL grammar."
-            )),
+            Self::MissingNode { expected, context, .. } => {
+                Diagnostic::new(DiagnosticCode::from(self), DiagnosticSeverity::Error, self.to_string(), self.span()).with_help(format!(
+                    "Add `{expected}` while parsing {context}; this node is required by the DSL grammar."
+                ))
+            }
             Self::UnexpectedRule { rule, context, span: _ } => {
                 Diagnostic::new(DiagnosticCode::from(self), DiagnosticSeverity::Error, self.to_string(), self.span()).with_help(format!(
                     "Remove or reposition `{}` while parsing {context}.",
@@ -177,6 +254,73 @@ impl DslParseError {
             } => Diagnostic::new(DiagnosticCode::from(self), DiagnosticSeverity::Error, self.to_string(), self.span()).with_help(format!(
                 "Use a non-negative integer that fits within `u64`; `{literal}` is out of range or invalid."
             )),
+            Self::DuplicateMatchCase {
+                case_name,
+                first_span,
+                duplicate_span,
+            } => Diagnostic::new(
+                DiagnosticCode::from(self),
+                DiagnosticSeverity::Error,
+                format!("duplicate match case `{case_name}`"),
+                Some(*duplicate_span),
+            )
+            .with_secondary_label(DiagnosticLabel::new(*first_span).with_message("first case is here"))
+            .with_help("Remove the duplicate case so each variant case appears at most once."),
+            Self::MultipleMatchFallback {
+                first_span,
+                duplicate_span,
+            } => Diagnostic::new(
+                DiagnosticCode::from(self),
+                DiagnosticSeverity::Error,
+                "match expression has more than one fallback branch",
+                Some(*duplicate_span),
+            )
+            .with_secondary_label(DiagnosticLabel::new(*first_span).with_message("first fallback is here"))
+            .with_help("Keep exactly one `_` fallback branch and place it last."),
+            Self::NonFinalMatchFallback { span } => Diagnostic::new(
+                DiagnosticCode::from(self),
+                DiagnosticSeverity::Error,
+                "match fallback branch must be last",
+                Some(*span),
+            )
+            .with_help("Move the `_` fallback branch after every named match case."),
+            Self::EmptyEnumType { span } => Diagnostic::new(
+                DiagnosticCode::from(self),
+                DiagnosticSeverity::Error,
+                "enum type requires at least one case",
+                Some(*span),
+            )
+            .with_help("Add at least one identifier inside the enum braces."),
+            Self::EmptyVariantType { span } => Diagnostic::new(
+                DiagnosticCode::from(self),
+                DiagnosticSeverity::Error,
+                "variant type requires at least one case",
+                Some(*span),
+            )
+            .with_help("Add at least one named case and object body inside the variant braces."),
+            Self::ReservedBindingName {
+                binding_name,
+                context,
+                span,
+            } => Diagnostic::new(
+                DiagnosticCode::from(self),
+                DiagnosticSeverity::Error,
+                format!(
+                    "reserved reference keyword `{binding_name}` cannot be used as a {}",
+                    context.as_str()
+                ),
+                Some(*span),
+            )
+            .with_help(format!(
+                "Rename `{binding_name}`; this name resolves to the built-in `{binding_name}` namespace instead of the local value."
+            )),
+            Self::UnsupportedEscapeSequence { sequence, span } => Diagnostic::new(
+                DiagnosticCode::from(self),
+                DiagnosticSeverity::Error,
+                format!("unsupported escape sequence `{sequence}`"),
+                Some(*span),
+            )
+            .with_help("Use one of `\\\\`, `\\\"`, `\\n`, `\\r`, `\\t`, `\\{`, or `\\}`."),
         }
     }
 
@@ -261,6 +405,13 @@ impl From<&DslParseError> for DiagnosticCode {
                 context: _,
                 span: _,
             } => Self::InvalidIntegerLiteral,
+            DslParseError::DuplicateMatchCase { .. }
+            | DslParseError::MultipleMatchFallback { .. }
+            | DslParseError::NonFinalMatchFallback { .. }
+            | DslParseError::EmptyEnumType { .. }
+            | DslParseError::EmptyVariantType { .. }
+            | DslParseError::ReservedBindingName { .. }
+            | DslParseError::UnsupportedEscapeSequence { .. } => Self::ParseError,
         }
     }
 }
@@ -279,11 +430,12 @@ pub fn parse_workflow(source: &str) -> Result<Workflow, DslParseError> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_workflow;
+    use super::{parse_workflow, ReservedBindingContext};
+    use crate::diagnostic::DiagnosticCode;
     use crate::dsl::{
-        AgentExpressionPropertyName, AgentForLoopPattern, AgentProperty, AssetPropertyName, Declaration, DslParseError, Expression,
-        McpCallOperation, McpImportKind, McpServerPropertyName, ReferenceAccess, ReferenceAccessKind, ReferenceKeyword, ReferenceRoot,
-        StringTemplatePart, ToolSource, TypeExpression,
+        format_workflow_source, AgentExpressionPropertyName, AgentForLoopPattern, AgentProperty, AssetPropertyName, Declaration,
+        DslParseError, Expression, McpCallOperation, McpImportKind, McpServerPropertyName, ReferenceAccess, ReferenceAccessKind,
+        ReferenceKeyword, ReferenceRoot, StringTemplatePart, ToolSource, TypeExpression,
     };
     use crate::{parse_inline_workflow, workflow_source};
     use std::fs;
@@ -1825,6 +1977,270 @@ mod tests {
         };
 
         assert!(parse_workflow(workflow_source).is_err());
+    }
+
+    #[test]
+    fn rejects_duplicate_match_cases_with_exact_related_spans_and_help() {
+        let workflow_source = workflow_source! {
+            output {
+                value: match input.event {
+                    created.id
+                    created.name
+                }
+            }
+        };
+        let parse_error = parse_workflow(workflow_source).expect_err("duplicate match cases should be rejected");
+        let DslParseError::DuplicateMatchCase {
+            case_name,
+            first_span,
+            duplicate_span,
+        } = &parse_error
+        else {
+            panic!("expected duplicate match case error, found {parse_error}");
+        };
+
+        assert_eq!(case_name, "created");
+
+        let first_case_offset = workflow_source.find("created.id").expect("first case should be present");
+        let duplicate_case_offset = workflow_source.find("created.name").expect("duplicate case should be present");
+        let source_position_at = |byte_offset: usize| {
+            let prefix = &workflow_source[..byte_offset];
+            let line = prefix.bytes().filter(|character| *character == b'\n').count() + 1;
+            let column = prefix.rsplit('\n').next().map_or(1, |line_prefix| line_prefix.chars().count() + 1);
+
+            superwire_types::ast::SourcePosition { line, column }
+        };
+
+        assert_eq!(first_span.start, source_position_at(first_case_offset));
+        assert_eq!(first_span.end, source_position_at(first_case_offset + "created.id".len()));
+        assert_eq!(duplicate_span.start, source_position_at(duplicate_case_offset));
+        assert_eq!(duplicate_span.end, source_position_at(duplicate_case_offset + "created.name".len()));
+
+        let diagnostic = parse_error.diagnostic();
+
+        assert_eq!(diagnostic.code, DiagnosticCode::ParseError);
+        assert_eq!(diagnostic.primary_span, Some(*duplicate_span));
+        assert_eq!(diagnostic.secondary_labels.len(), 1);
+        assert_eq!(diagnostic.secondary_labels[0].span, *first_span);
+        assert_eq!(
+            diagnostic.help.as_deref(),
+            Some("Remove the duplicate case so each variant case appears at most once.")
+        );
+    }
+
+    #[test]
+    fn rejects_multiple_and_non_final_match_fallbacks() {
+        let multiple_fallback_source = workflow_source! {
+            output {
+                value: match input.event {
+                    _ "first"
+                    _ "second"
+                }
+            }
+        };
+        let multiple_fallback_error = parse_workflow(multiple_fallback_source).expect_err("multiple match fallbacks should be rejected");
+
+        assert!(matches!(multiple_fallback_error, DslParseError::MultipleMatchFallback { .. }));
+        assert_eq!(
+            multiple_fallback_error.diagnostic().help.as_deref(),
+            Some("Keep exactly one `_` fallback branch and place it last.")
+        );
+
+        let non_final_fallback_source = workflow_source! {
+            output {
+                value: match input.event {
+                    _ "fallback"
+                    created.id
+                }
+            }
+        };
+        let non_final_fallback_error = parse_workflow(non_final_fallback_source).expect_err("non-final match fallback should be rejected");
+
+        assert!(matches!(non_final_fallback_error, DslParseError::NonFinalMatchFallback { .. }));
+        assert_eq!(
+            non_final_fallback_error.diagnostic().help.as_deref(),
+            Some("Move the `_` fallback branch after every named match case.")
+        );
+    }
+
+    #[test]
+    fn rejects_empty_enum_and_variant_types_with_actionable_diagnostics() {
+        let empty_enum_source = workflow_source! {
+            input {
+                state: enum {}
+            }
+        };
+        let empty_enum_error = parse_workflow(empty_enum_source).expect_err("empty enum should be rejected");
+
+        assert!(matches!(empty_enum_error, DslParseError::EmptyEnumType { .. }));
+        assert_eq!(
+            empty_enum_error.diagnostic().help.as_deref(),
+            Some("Add at least one identifier inside the enum braces.")
+        );
+
+        let empty_variant_source = workflow_source! {
+            schema event {
+                payload: variant kind {}
+            }
+        };
+        let empty_variant_error = parse_workflow(empty_variant_source).expect_err("empty variant should be rejected");
+
+        assert!(matches!(empty_variant_error, DslParseError::EmptyVariantType { .. }));
+        assert_eq!(
+            empty_variant_error.diagnostic().help.as_deref(),
+            Some("Add at least one named case and object body inside the variant braces.")
+        );
+    }
+
+    #[test]
+    fn rejects_every_reserved_reference_keyword_as_local_binding() {
+        macro_rules! assert_reserved_binding_is_rejected {
+            ($binding_name:ident) => {{
+                let direct_binding_source = workflow_source! {
+                    agent worker for $binding_name in [] {
+                        instruction: "work"
+                        output {
+                            value: string
+                        }
+                    }
+                };
+                let direct_binding_error = parse_workflow(direct_binding_source).expect_err("reserved direct binding should be rejected");
+
+                assert!(matches!(
+                    direct_binding_error,
+                    DslParseError::ReservedBindingName {
+                        context: ReservedBindingContext::ForLoop,
+                        ..
+                    }
+                ));
+
+                let destructuring_binding_source = workflow_source! {
+                    agent worker for { $binding_name } in [] {
+                        instruction: "work"
+                        output {
+                            value: string
+                        }
+                    }
+                };
+                let destructuring_binding_error =
+                    parse_workflow(destructuring_binding_source).expect_err("reserved destructuring binding should be rejected");
+
+                assert!(matches!(
+                    destructuring_binding_error,
+                    DslParseError::ReservedBindingName {
+                        context: ReservedBindingContext::ForLoopDestructuring,
+                        ..
+                    }
+                ));
+
+                let dynamic_binding_source = workflow_source! {
+                    dynamic {
+                        $binding_name: "value"
+                    }
+                };
+                let dynamic_binding_error =
+                    parse_workflow(dynamic_binding_source).expect_err("reserved dynamic binding should be rejected");
+
+                assert!(matches!(
+                    dynamic_binding_error,
+                    DslParseError::ReservedBindingName {
+                        context: ReservedBindingContext::Dynamic,
+                        ..
+                    }
+                ));
+            }};
+        }
+
+        assert_reserved_binding_is_rejected!(agent);
+        assert_reserved_binding_is_rejected!(dynamic);
+        assert_reserved_binding_is_rejected!(input);
+        assert_reserved_binding_is_rejected!(model);
+        assert_reserved_binding_is_rejected!(secrets);
+        assert_reserved_binding_is_rejected!(tool);
+        assert_reserved_binding_is_rejected!(resource);
+        assert_reserved_binding_is_rejected!(prompt);
+    }
+
+    #[test]
+    fn diagnoses_unknown_escapes_and_round_trips_supported_expression_escapes() {
+        let escaped_valid_source = workflow_source! {
+            output {
+                value: "line\nreturn\rtab\tquote\"slash\\open\\{close\\}"
+            }
+        };
+        let valid_escape_source = escaped_valid_source.replace("\\\\{", "\\{").replace("\\\\}", "\\}");
+        let formatted_source = format_workflow_source(&valid_escape_source).expect("supported escapes should format");
+        let reparsed_workflow = parse_workflow(&formatted_source).expect("formatted supported escapes should parse");
+        let output_declaration = reparsed_workflow.find_output().expect("output should exist");
+
+        assert!(matches!(
+            &output_declaration.fields[0].value,
+            Expression::StringLiteral(value)
+                if value == "line\nreturn\rtab\tquote\"slash\\open{close}"
+        ));
+
+        let escaped_multiline_source = workflow_source! {
+            output {
+                value: """unknown\\q"""
+            }
+        };
+        let unknown_multiline_source = escaped_multiline_source.replacen("\\\\q", "\\q", 1);
+        let multiline_escape_error = parse_workflow(&unknown_multiline_source).expect_err("unknown multiline escape should be rejected");
+
+        assert!(matches!(multiline_escape_error, DslParseError::UnsupportedEscapeSequence { .. }));
+
+        let escaped_variant_label_source = workflow_source! {
+            input {
+                event: variant kind {
+                    "unknown\\q" {
+                        value: string
+                    }
+                }
+            }
+        };
+        let unknown_variant_label_source = escaped_variant_label_source.replacen("\\\\q", "\\q", 1);
+        let variant_label_escape_error =
+            parse_workflow(&unknown_variant_label_source).expect_err("unknown plain quoted escape should be rejected");
+
+        assert!(matches!(
+            variant_label_escape_error,
+            DslParseError::UnsupportedEscapeSequence { .. }
+        ));
+        let escaped_unknown_source = workflow_source! {
+            output {
+                value: "unknown\\q"
+            }
+        };
+        let unknown_escape_source = escaped_unknown_source.replacen("\\\\q", "\\q", 1);
+        let unknown_escape_error = parse_workflow(&unknown_escape_source).expect_err("unknown escape should be rejected");
+        let unsupported_escape_span = match &unknown_escape_error {
+            DslParseError::UnsupportedEscapeSequence { span, .. } => *span,
+            other_error => panic!("expected unsupported escape error, found {other_error}"),
+        };
+        let escape_offset = unknown_escape_source.find("\\q").expect("unknown escape should be present");
+        let source_position_at = |byte_offset: usize| {
+            let prefix = &unknown_escape_source[..byte_offset];
+            let line = prefix.bytes().filter(|character| *character == b'\n').count() + 1;
+            let column = prefix.rsplit('\n').next().map_or(1, |line_prefix| line_prefix.chars().count() + 1);
+
+            superwire_types::ast::SourcePosition { line, column }
+        };
+        let expected_escape_span = superwire_types::ast::SourceSpan {
+            start: source_position_at(escape_offset),
+            end: source_position_at(escape_offset + "\\q".len()),
+        };
+
+        assert_eq!(unsupported_escape_span, expected_escape_span);
+
+        assert!(matches!(
+            &unknown_escape_error,
+            DslParseError::UnsupportedEscapeSequence { sequence, .. } if sequence == "\\q"
+        ));
+        assert_eq!(unknown_escape_error.diagnostic().primary_span, Some(expected_escape_span));
+        assert_eq!(
+            unknown_escape_error.diagnostic().help.as_deref(),
+            Some("Use one of `\\\\`, `\\\"`, `\\n`, `\\r`, `\\t`, `\\{`, or `\\}`.")
+        );
     }
 
     fn discover_workflow_examples() -> Vec<(String, String)> {

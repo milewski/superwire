@@ -1,10 +1,10 @@
 use crate::semantic::support::functions::FunctionCallSemanticExt;
-use crate::semantic::support::types::{ensure_type_matches, workflow_type_from_dsl, WorkflowType};
+use crate::semantic::support::types::{ensure_type_matches, parse_number_literal, workflow_type_from_dsl, WorkflowType};
 use crate::semantic::WorkflowSemanticError;
 use std::collections::{BTreeSet, HashMap};
 use superwire_types::ast::{
     Asset, Expression, MatchBranch, MatchExpression, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart, ToolCall,
-    TypeExpression,
+    TypeExpression, VariantProjectionExpression,
 };
 
 #[derive(Debug, Clone)]
@@ -33,7 +33,7 @@ pub(crate) trait ExpressionTypeInferenceExt {
 
 impl ExpressionTypeInferenceExt for Expression {
     fn infer_type(&self, type_inference_context: &TypeInferenceContext, context: &str) -> Result<WorkflowType, WorkflowSemanticError> {
-        match self {
+        let infer_result = (|| match self {
             Self::StringLiteral(_) => Ok(WorkflowType::String),
             Self::StringTemplate(string_template) => {
                 for template_part in &string_template.parts {
@@ -45,13 +45,13 @@ impl ExpressionTypeInferenceExt for Expression {
                 Ok(WorkflowType::String)
             }
             Self::NumberLiteral(number_literal) => {
-                let normalized_number_literal = number_literal.replace('_', "");
+                let parsed_number = parse_number_literal(number_literal)?;
 
-                if normalized_number_literal.contains('.') {
-                    return Ok(WorkflowType::Float);
+                if parsed_number.is_f64() {
+                    Ok(WorkflowType::Float)
+                } else {
+                    Ok(WorkflowType::Integer)
                 }
-
-                Ok(WorkflowType::Integer)
             }
             Self::BooleanLiteral(_) => Ok(WorkflowType::Boolean),
             Self::NullLiteral => Ok(WorkflowType::Null),
@@ -95,26 +95,13 @@ impl ExpressionTypeInferenceExt for Expression {
                 if !ensure_type_matches(&inner_type, &fallback_type) {
                     return Err(WorkflowSemanticError::ExpressionEvaluation {
                         context: context.to_string(),
-                        message: format!("fallback expects {inner_type}, found {fallback_type}"),
+                        message: format!("fallback type mismatch: expected `{inner_type}`, found `{fallback_type}`"),
                     });
                 }
 
                 Ok(inner_type)
             }
-            Self::VariantProjection(variant_projection) => {
-                let value_type = infer_reference_type(&variant_projection.value, type_inference_context, context)?;
-                let inner_type = value_type.without_null();
-                let Some(projected_type) =
-                    inner_type.variant_case_field_type(&variant_projection.case_name, &variant_projection.field_path)
-                else {
-                    return Err(WorkflowSemanticError::ExpressionEvaluation {
-                        context: context.to_string(),
-                        message: format!("invalid variant projection case `{}`", variant_projection.case_name),
-                    });
-                };
-
-                Ok(WorkflowType::nullable(projected_type))
-            }
+            Self::VariantProjection(variant_projection) => variant_projection.infer_type(type_inference_context, context),
             Self::Match(match_expression) => match_expression.infer_type(type_inference_context, context),
             Self::ArrayLiteral(array_items) => {
                 if array_items.is_empty() {
@@ -147,6 +134,11 @@ impl ExpressionTypeInferenceExt for Expression {
 
                 Ok(WorkflowType::Object(field_types))
             }
+        })();
+
+        match (infer_result, self.source_span()) {
+            (Err(error), Some(source_span)) => Err(error.with_span(source_span)),
+            (infer_result, _) => infer_result,
         }
     }
 
@@ -154,8 +146,6 @@ impl ExpressionTypeInferenceExt for Expression {
         match (self, expected_type) {
             (Self::StringLiteral(string_literal), WorkflowType::StringEnum(enum_values)) => enum_values.contains(string_literal),
             (Self::StringLiteral(_), WorkflowType::String) => true,
-            (Self::NumberLiteral(number_literal), WorkflowType::Float) => number_literal.replace('_', "").contains('.'),
-            (Self::NumberLiteral(number_literal), WorkflowType::Integer) => !number_literal.replace('_', "").contains('.'),
             (Self::BooleanLiteral(_), WorkflowType::Boolean) | (Self::NullLiteral, WorkflowType::Null) => true,
             (Self::ArrayLiteral(array_items), WorkflowType::Array { item_type, fixed_length }) => {
                 fixed_length.is_none_or(|expected_length| {
@@ -169,6 +159,44 @@ impl ExpressionTypeInferenceExt for Expression {
                 .any(|union_member| expression.is_literal_compatible_with_workflow_type(union_member)),
             _ => false,
         }
+    }
+}
+trait VariantProjectionTypeInferenceExt {
+    fn infer_type(&self, type_inference_context: &TypeInferenceContext, context: &str) -> Result<WorkflowType, WorkflowSemanticError>;
+}
+
+impl VariantProjectionTypeInferenceExt for VariantProjectionExpression {
+    fn infer_type(&self, type_inference_context: &TypeInferenceContext, context: &str) -> Result<WorkflowType, WorkflowSemanticError> {
+        let value_type = infer_reference_type(&self.value, type_inference_context, context)?;
+        let inner_type = value_type.without_null();
+        let Some(discriminator) = inner_type.variant_discriminator() else {
+            let message = if inner_type.contains_variant_type() {
+                "variant projection requires union members with one compatible discriminator".to_string()
+            } else {
+                format!("variant projection requires a variant value, found {inner_type}")
+            };
+
+            return Err(WorkflowSemanticError::ExpressionEvaluation {
+                context: context.to_string(),
+                message,
+            });
+        };
+
+        if !self.resolve_discriminator(&discriminator) {
+            return Err(WorkflowSemanticError::ExpressionEvaluation {
+                context: context.to_string(),
+                message: "variant projection resolved to conflicting discriminators".to_string(),
+            });
+        }
+
+        let Some(projected_type) = inner_type.variant_case_field_type(&self.case_name, &self.field_path) else {
+            return Err(WorkflowSemanticError::ExpressionEvaluation {
+                context: context.to_string(),
+                message: format!("invalid variant projection case `{}`", self.case_name),
+            });
+        };
+
+        Ok(WorkflowType::nullable(projected_type))
     }
 }
 
@@ -320,12 +348,43 @@ trait MatchExpressionTypeInferenceExt {
 
 impl MatchExpressionTypeInferenceExt for MatchExpression {
     fn infer_type(&self, type_inference_context: &TypeInferenceContext, context: &str) -> Result<WorkflowType, WorkflowSemanticError> {
+        if let Err(structure_error) = self.validate_branch_structure() {
+            return Err(WorkflowSemanticError::ExpressionEvaluation {
+                context: context.to_string(),
+                message: structure_error.message(),
+            });
+        }
+
         let matched_type = self.value.infer_type(type_inference_context, context)?;
         let matched_inner_type = matched_type.without_null();
         let mut branch_types = Vec::new();
         let has_fallback_branch = self.branches.iter().any(MatchBranch::is_fallback);
+        let has_variant_branch = self.branches.iter().any(|branch| branch.case_name().is_some());
 
         self.validate_nullable_coverage(&matched_type, has_fallback_branch, context)?;
+
+        if has_variant_branch {
+            let Some(discriminator) = matched_inner_type.variant_discriminator() else {
+                let message = if matched_inner_type.contains_variant_type() {
+                    "match requires union members with one compatible variant discriminator".to_string()
+                } else {
+                    format!("match variant branches require a variant value, found {matched_inner_type}")
+                };
+
+                return Err(WorkflowSemanticError::ExpressionEvaluation {
+                    context: context.to_string(),
+                    message,
+                });
+            };
+
+            if !self.resolve_discriminator(&discriminator) {
+                return Err(WorkflowSemanticError::ExpressionEvaluation {
+                    context: context.to_string(),
+                    message: "match expression resolved to conflicting discriminators".to_string(),
+                });
+            }
+        }
+
         self.validate_variant_coverage(&matched_inner_type, has_fallback_branch, context)?;
 
         for branch in &self.branches {
@@ -339,20 +398,7 @@ impl MatchExpressionTypeInferenceExt for MatchExpression {
             });
         }
 
-        let first_branch_type = branch_types[0].clone();
-
-        for branch_type in branch_types.iter().skip(1) {
-            if ensure_type_matches(&first_branch_type, branch_type) {
-                continue;
-            }
-
-            return Err(WorkflowSemanticError::ExpressionEvaluation {
-                context: context.to_string(),
-                message: format!("match branches return incompatible types: {first_branch_type} and {branch_type}"),
-            });
-        }
-
-        Ok(first_branch_type)
+        Ok(merge_types(branch_types))
     }
 
     fn validate_nullable_coverage(
@@ -382,6 +428,13 @@ impl MatchExpressionTypeInferenceExt for MatchExpression {
         }
 
         let Some(case_names) = matched_type.variant_case_names() else {
+            if matched_type.contains_variant_type() {
+                return Err(WorkflowSemanticError::ExpressionEvaluation {
+                    context: context.to_string(),
+                    message: "match requires union members with one compatible variant discriminator".to_string(),
+                });
+            }
+
             return Ok(());
         };
 
@@ -404,8 +457,6 @@ impl MatchExpressionTypeInferenceExt for MatchExpression {
 }
 
 trait MatchBranchTypeInferenceExt {
-    fn is_fallback(&self) -> bool;
-    fn case_name(&self) -> Option<&str>;
     fn infer_type(
         &self,
         matched_type: &WorkflowType,
@@ -415,21 +466,6 @@ trait MatchBranchTypeInferenceExt {
 }
 
 impl MatchBranchTypeInferenceExt for MatchBranch {
-    fn is_fallback(&self) -> bool {
-        matches!(self, Self::Fallback { value: _, span: _ })
-    }
-
-    fn case_name(&self) -> Option<&str> {
-        match self {
-            Self::Variant {
-                case_name,
-                field_path: _,
-                span: _,
-            } => Some(case_name),
-            Self::Fallback { value: _, span: _ } => None,
-        }
-    }
-
     fn infer_type(
         &self,
         matched_type: &WorkflowType,
@@ -441,12 +477,39 @@ impl MatchBranchTypeInferenceExt for MatchBranch {
                 case_name,
                 field_path,
                 span: _,
-            } => matched_type
-                .variant_case_field_type(case_name, field_path)
-                .ok_or_else(|| WorkflowSemanticError::ExpressionEvaluation {
+            } => {
+                if let Some(projected_type) = matched_type.variant_case_field_type(case_name, field_path) {
+                    return Ok(projected_type);
+                }
+
+                let expected_case_names = matched_type.variant_case_names().unwrap_or_default();
+
+                if expected_case_names.iter().any(|expected_case_name| expected_case_name == case_name) {
+                    let rendered_field_path = field_path.join(".");
+                    let case_type = matched_type
+                        .variant_case_field_type(case_name, &[])
+                        .map_or_else(|| "object".to_string(), |workflow_type| workflow_type.to_string());
+
+                    return Err(WorkflowSemanticError::ExpressionEvaluation {
+                        context: context.to_string(),
+                        message: format!(
+                            "match case `{case_name}` has invalid field path `{rendered_field_path}`; expected a field path within `{case_type}`"
+                        ),
+                    });
+                }
+
+                Err(WorkflowSemanticError::ExpressionEvaluation {
                     context: context.to_string(),
-                    message: format!("invalid match case `{case_name}`"),
-                }),
+                    message: format!(
+                        "unknown match case `{case_name}`; expected one of {}",
+                        expected_case_names
+                            .iter()
+                            .map(|expected_case_name| format!("`{expected_case_name}`"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                })
+            }
             Self::Fallback { value, span: _ } => value.infer_type(type_inference_context, context),
         }
     }
@@ -565,8 +628,8 @@ impl ToolCallTypeInferenceExt for ToolCall {
             return Err(WorkflowSemanticError::ExpressionEvaluation {
                 context: context.to_string(),
                 message: format!(
-                    "tool `tool.{tool_name}` `{field_group_name}` field `{}` expects {}, found {}",
-                    field.name, expected_field_type, found_field_type
+                    "tool `tool.{tool_name}` `{field_group_name}` field `{}` type mismatch: expected `{expected_field_type}`, found `{found_field_type}`",
+                    field.name
                 ),
             });
         }
@@ -698,21 +761,27 @@ impl ReferenceTypeInferenceExt for Reference {
                 });
             }
 
+            let mut has_valid_access = false;
+            let mut all_accesses_valid = true;
+
             for candidate_type in &candidate_types {
                 if let Some(field_type) = candidate_type.without_null().field_type_for_reference_access(reference_access) {
                     next_candidate_types.push(field_type);
+                    has_valid_access = true;
+                } else {
+                    all_accesses_valid = false;
                 }
             }
 
-            if reference_access.is_optional() {
-                next_candidate_types.push(WorkflowType::Null);
-            }
-
-            if next_candidate_types.is_empty() {
+            if !has_valid_access || (!reference_access.is_optional() && !all_accesses_valid) {
                 return Err(WorkflowSemanticError::ExpressionEvaluation {
                     context: context.to_string(),
                     message: format!("invalid reference field access `{}`", reference_access.field),
                 });
+            }
+
+            if reference_access.is_optional() {
+                next_candidate_types.push(WorkflowType::Null);
             }
 
             candidate_types = next_candidate_types;
@@ -766,15 +835,15 @@ mod tests {
     }
 
     fn match_expression(branches: Vec<MatchBranch>) -> MatchExpression {
-        MatchExpression {
-            value: Box::new(Expression::Reference(Reference {
+        MatchExpression::new(
+            Expression::Reference(Reference {
                 root: ReferenceRoot::Identifier("event".to_string()),
                 accesses: Vec::new(),
                 span: source_span(),
-            })),
+            }),
             branches,
-            span: source_span(),
-        }
+            source_span(),
+        )
     }
 
     fn variant_branch(case_name: &str) -> MatchBranch {

@@ -1,5 +1,8 @@
 use super::{McpLock, McpToolLock};
-use superwire_types::ast::{Declaration, McpPromptImportDeclaration, McpResourceImportDeclaration, ToolDeclaration, ToolSource, Workflow};
+use superwire_types::ast::{
+    Declaration, McpPromptImportDeclaration, McpResourceImportDeclaration, McpToolSchema, ToolDeclaration, ToolSchemaIssue, ToolSource,
+    Workflow,
+};
 
 impl McpLock {
     pub fn apply_to_workflow(&self, workflow: &mut Workflow) {
@@ -125,18 +128,59 @@ impl ToolDeclarationApplyExt for ToolDeclaration {
             self.description.clone_from(&mcp_tool.description);
         }
 
-        if self.input_fields.is_empty() {
-            let fixed_binding_names = self
-                .fixed_binding_fields
-                .iter()
-                .map(|fixed_binding_field| fixed_binding_field.name.as_str())
-                .collect::<Vec<_>>();
+        let uses_discovered_input = self.input_fields.is_empty();
+        let uses_discovered_output = self.output_fields.is_empty();
+        let fixed_binding_names = self
+            .fixed_binding_fields
+            .iter()
+            .map(|fixed_binding_field| fixed_binding_field.name.as_str())
+            .collect::<Vec<_>>();
+        let input_schema = match mcp_tool.input_schema_value() {
+            Ok(input_schema) => Some(input_schema),
+            Err(error) => {
+                self.schema_issues.push(ToolSchemaIssue::Input {
+                    message: error.to_string(),
+                });
 
-            self.input_fields = mcp_tool.input_fields_except(&fixed_binding_names);
+                None
+            }
+        };
+        let output_schema = match mcp_tool.output_schema_value() {
+            Ok(output_schema) => output_schema,
+            Err(error) => {
+                self.schema_issues.push(ToolSchemaIssue::Output {
+                    message: error.to_string(),
+                });
+
+                None
+            }
+        };
+
+        if uses_discovered_input {
+            match mcp_tool.input_fields_except(&fixed_binding_names) {
+                Ok(input_fields) => self.input_fields = input_fields,
+                Err(error) => self.schema_issues.push(ToolSchemaIssue::Input {
+                    message: error.to_string(),
+                }),
+            }
         }
 
-        if self.output_fields.is_empty() {
-            self.output_fields = mcp_tool.output_fields();
+        if uses_discovered_output {
+            match mcp_tool.output_fields() {
+                Ok(output_fields) => self.output_fields = output_fields,
+                Err(error) => self.schema_issues.push(ToolSchemaIssue::Output {
+                    message: error.to_string(),
+                }),
+            }
+        }
+
+        if let Some(input) = input_schema {
+            self.mcp_schema = Some(McpToolSchema {
+                input,
+                output: output_schema,
+                uses_discovered_input,
+                uses_discovered_output,
+            });
         }
     }
 }

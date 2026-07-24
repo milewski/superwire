@@ -45,4 +45,8 @@ schema medication_instruction {
 
 Without these descriptions, the model might confuse `dose_mg` with pill count or interpret `interval_hours` as daily frequency.
 
+## Comments and escapes
+
+Comment text is not a quoted string: backslash sequences inside `//` and `///` comments are preserved as comment text rather than decoded. The closed escape set applies only inside quoted DSL syntax; see [Quoted-string escapes](/syntax/expressions#quoted-string-escapes).
+
 Block comments are not supported.

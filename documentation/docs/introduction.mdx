@@ -1,81 +1,46 @@
 ---
 title: Introduction
-description: Learn what Superwire is and run a tiny workflow through the Docker executor.
+description: Understand the Superwire workflow contract and choose an execution surface.
 ---
 
-Superwire is a declarative DSL for controlled server-side AI workflows. A `.wire` file describes the inputs a workflow accepts, the secrets it needs, the providers and model profiles it may use, the MCP capabilities it can access, the agents that should run, the dependencies between those agents, and the final structured output.
+Superwire is a declarative DSL for controlled server-side AI workflows. A `.wire` file defines:
 
-Most applications do not embed the runtime directly. They send a `.wire` workflow to the Superwire executor server and receive either one JSON response or a stream of Server-Sent Events.
+- public `input` and sensitive `secrets` supplied at runtime;
+- provider connections and reusable model profiles;
+- typed schemas and object-shaped agent outputs;
+- explicit dependencies between dynamic values and agents;
+- MCP tools, prompts, and resources available to each step;
+- one final structured `output` consumed by the application.
 
-Superwire is most useful when an AI feature needs to behave like product infrastructure: scoped tools, explicit data flow, structured outputs, validation, streaming, and testable execution. For the product-level rationale, start with the separate [Why Superwire](/why-superwire/overview) section before the syntax reference.
+The surrounding application still owns authorization, transactions, rate limits, audit logs, and human approval. Superwire owns the AI workflow contract inside those boundaries.
 
-```text
-.wire source + input + secrets -> Superwire executor -> structured output
-```
-
-## Run the executor
-
-The executor is published as a Docker image:
-
-```bash
-docker run --rm -p 13703:13703 rmilewski/superwire
-```
-
-To try Superwire immediately with a visual interface, open the Playground after startup:
+## The smallest useful mental model
 
 ```text
-http://localhost:13703/playground
+runtime values -> provider/model -> typed agent -> final output
 ```
 
-## A minimal workflow
+Use the [checked hello workflow](/examples/basic-agent) to see all four pieces together.
 
-Create `hello.wire`:
+## Choose an execution surface
 
-```wire
-input {
-    message: string
-}
+| Surface | Best for | Result shape |
+| --- | --- | --- |
+| [Playground](/playground) | visual evaluation and workflow authoring | displays the final workflow object |
+| [CLI](/cli) | local development and automation | prints the final workflow object directly |
+| [HTTP JSON](/quickstart) | backend integration | wraps the final value as `{ "output": ... }` |
+| [HTTP SSE](/api-reference/streaming-events) | progress, reconnect, and cancellation | final value at `event.data.output` |
+| [Laravel](/integrations/laravel) | PHP/Laravel applications | final value at `$result->output` |
 
-secrets {
-    api_key: string
-}
+## What type safety means
 
-provider llm from openai {
-    endpoint: "https://api.openai.com/v1"
-    api_key: secrets.api_key
-}
+Superwire parses and semantically validates source before execution. It verifies declarations, references, schema paths, dependencies, tool scopes, and runtime input/secret shapes. Agent output is validated at runtime against its declared object shape.
 
-model fast from llm {
-    id: "gpt-4.1-mini"
-}
-
-agent reply {
-    model: model.fast
-    instruction: "Reply to this message: {{ input.message }}"
-
-    output {
-        message: string
-    }
-}
-
-output {
-    result: agent.reply
-}
-```
-
-Note: the `openai` provider endpoint can point to any OpenAI-compatible backend, as long as it supports the `/responses` API.
-
-This workflow has one public input, one secret, one provider instance, one model profile, one agent, and one final output.
-
-## Run it quickly
-
-The fastest path is the Playground at `http://localhost:13703/playground`.
-
-If you prefer CLI/API execution, use the full step-by-step flow in [Quickstart](/quickstart).
+This is preflight and runtime validation, not Rust-style compilation of a workflow into a binary. Provider behavior and model content remain nondeterministic.
 
 ## What to read next
 
-- [Why Superwire](/why-superwire/overview) is a separate conceptual section for understanding the product-backend problem, use cases, and decision criteria.
-- [Quickstart](/quickstart) walks through the same flow step by step.
-- [Core Concepts](/core-concepts/overview) explains workflows, providers, models, agents, schemas, and dependencies.
-- [Executor API](/api-reference/executor-api) documents the HTTP request and response contract.
+- [Installation](/installation) lists Docker, native, client, and editor prerequisites.
+- [Quickstart](/quickstart) runs one checked workflow end to end.
+- [Core concepts](/core-concepts/overview) explains typed data flow.
+- [Why Superwire](/why-superwire/overview) covers product-level tradeoffs and adoption criteria.

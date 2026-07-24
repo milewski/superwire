@@ -8,10 +8,10 @@ use superwire_semantic::build_dynamic_typed_workflow_ir;
 
 use crate::diagnostic_code::DiagnosticCode;
 
-use super::position::{source_span_to_range, zero_range};
+use super::position::LineIndex;
 use super::semantic_index::SemanticIndex;
 use super::workflow_document::WorkflowDocument;
-use super::DocumentDiagnostic;
+use super::{DocumentDiagnostic, DocumentDiagnosticRelated};
 
 #[derive(Debug)]
 pub struct SemanticSnapshot {
@@ -66,31 +66,45 @@ impl SemanticSnapshot {
         &self.workflow_document
     }
 
-    pub fn diagnostics(&self, source_text: &str) -> Vec<DocumentDiagnostic> {
+    pub fn diagnostics(&self, source_text: &str, line_index: &LineIndex) -> Vec<DocumentDiagnostic> {
         self.diagnostics
             .iter()
-            .map(|core_diagnostic| document_diagnostic_from_core(core_diagnostic, source_text))
+            .map(|core_diagnostic| document_diagnostic_from_core(core_diagnostic, source_text, line_index))
             .collect()
     }
 }
 
-fn document_diagnostic_from_core(core_diagnostic: &CoreDiagnostic, source_text: &str) -> DocumentDiagnostic {
-    let range = core_diagnostic
-        .primary_span
-        .map_or_else(zero_range, |source_span| source_span_to_range(source_text, source_span));
+fn document_diagnostic_from_core(core_diagnostic: &CoreDiagnostic, source_text: &str, line_index: &LineIndex) -> DocumentDiagnostic {
+    let range = core_diagnostic.primary_span.map_or_else(
+        || line_index.zero_range(),
+        |source_span| line_index.source_span_range(source_text, source_span),
+    );
+    let related = core_diagnostic
+        .secondary_labels
+        .iter()
+        .map(|secondary_label| DocumentDiagnosticRelated {
+            range: line_index.source_span_range(source_text, secondary_label.span),
+            message: secondary_label.message.clone().unwrap_or_else(|| core_diagnostic.message.clone()),
+        })
+        .collect();
 
     DocumentDiagnostic {
         range,
         severity: diagnostic_severity_from_core(core_diagnostic.severity),
         code: DiagnosticCode::from(core_diagnostic.code),
         message: core_diagnostic.message.clone(),
+        related,
+        notes: core_diagnostic.notes.clone(),
+        help: core_diagnostic.help.clone(),
     }
 }
 
 fn diagnostic_severity_from_core(core_severity: CoreDiagnosticSeverity) -> DiagnosticSeverity {
     match core_severity {
         CoreDiagnosticSeverity::Error => DiagnosticSeverity::ERROR,
-        CoreDiagnosticSeverity::Warning | CoreDiagnosticSeverity::Information | CoreDiagnosticSeverity::Hint => DiagnosticSeverity::WARNING,
+        CoreDiagnosticSeverity::Warning => DiagnosticSeverity::WARNING,
+        CoreDiagnosticSeverity::Information => DiagnosticSeverity::INFORMATION,
+        CoreDiagnosticSeverity::Hint => DiagnosticSeverity::HINT,
     }
 }
 
@@ -147,6 +161,7 @@ impl From<CoreDiagnosticCode> for DiagnosticCode {
             CoreDiagnosticCode::UnknownToolReference => Self::UnknownToolReference,
             CoreDiagnosticCode::UnknownResourceReference => Self::UnknownResourceReference,
             CoreDiagnosticCode::UnknownPromptReference => Self::UnknownPromptReference,
+            CoreDiagnosticCode::InvalidMcpToolSchema => Self::InvalidMcpToolSchema,
             CoreDiagnosticCode::InvalidToolBinding => Self::InvalidToolBinding,
             CoreDiagnosticCode::InvalidTypeExpressionReference => Self::InvalidTypeExpressionReference,
             CoreDiagnosticCode::AgentDependencyCycle => Self::AgentDependencyCycle,

@@ -4,8 +4,8 @@ use crate::semantic::WorkflowSemanticError;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use superwire_types::ast::{
-    AgentContext, Asset, AssetPropertyName, Expression, MatchBranch, ModelAssetKind, Reference, ReferenceAccess, ReferenceKeyword,
-    ReferenceRoot, StringTemplatePart, Workflow,
+    AgentContext, Asset, AssetPropertyName, Expression, MatchBranch, MatchExpression, ModelAssetKind, Reference, ReferenceAccess,
+    ReferenceKeyword, ReferenceRoot, StringTemplatePart, VariantProjectionOutcome, Workflow,
 };
 use superwire_types::PromptValueFormat;
 
@@ -118,30 +118,23 @@ impl ExpressionEvaluationExt for Expression {
             }
             Self::VariantProjection(variant_projection) => {
                 let value = variant_projection.value.evaluate(evaluation_context, context)?;
-                evaluate_variant_projection(value, &variant_projection.case_name, &variant_projection.field_path)
-            }
-            Self::Match(match_expression) => {
-                let value = match_expression.value.evaluate(evaluation_context, context)?;
+                let projection_outcome =
+                    variant_projection
+                        .project_value(value)
+                        .ok_or_else(|| WorkflowSemanticError::ExpressionEvaluation {
+                            context: context.to_string(),
+                            message: format!(
+                                "variant projection case `{}` was not resolved during semantic analysis",
+                                variant_projection.case_name
+                            ),
+                        })?;
 
-                for branch in &match_expression.branches {
-                    match branch {
-                        MatchBranch::Variant {
-                            case_name,
-                            field_path,
-                            span: _,
-                        } => {
-                            let projected_value = evaluate_variant_projection(value.clone(), case_name, field_path)?;
-
-                            if !projected_value.is_null() {
-                                return Ok(projected_value);
-                            }
-                        }
-                        MatchBranch::Fallback { value, span: _ } => return value.evaluate(evaluation_context, context),
-                    }
+                match projection_outcome {
+                    VariantProjectionOutcome::NoMatch => Ok(Value::Null),
+                    VariantProjectionOutcome::Matched(projected_value) => Ok(projected_value),
                 }
-
-                Ok(Value::Null)
             }
+            Self::Match(match_expression) => match_expression.evaluate(evaluation_context, context),
             Self::ArrayLiteral(array_items) => {
                 let mut evaluated_items = Vec::with_capacity(array_items.len());
 
@@ -162,6 +155,53 @@ impl ExpressionEvaluationExt for Expression {
                 Ok(Value::Object(evaluated_fields))
             }
         }
+    }
+}
+
+trait MatchExpressionEvaluationExt {
+    fn evaluate(&self, evaluation_context: &EvaluationContext, context: &str) -> Result<Value, WorkflowSemanticError>;
+}
+
+impl MatchExpressionEvaluationExt for MatchExpression {
+    fn evaluate(&self, evaluation_context: &EvaluationContext, context: &str) -> Result<Value, WorkflowSemanticError> {
+        if let Err(structure_error) = self.validate_branch_structure() {
+            return Err(WorkflowSemanticError::ExpressionEvaluation {
+                context: context.to_string(),
+                message: structure_error.message(),
+            });
+        }
+
+        let value = self.value.evaluate(evaluation_context, context)?;
+
+        for branch in &self.branches {
+            let MatchBranch::Variant {
+                case_name,
+                field_path,
+                span: _,
+            } = branch
+            else {
+                continue;
+            };
+            let projection_outcome = self.project_variant_branch(value.clone(), case_name, field_path).ok_or_else(|| {
+                WorkflowSemanticError::ExpressionEvaluation {
+                    context: context.to_string(),
+                    message: "match expression discriminator was not resolved during semantic analysis".to_string(),
+                }
+            })?;
+
+            if let VariantProjectionOutcome::Matched(projected_value) = projection_outcome {
+                return Ok(projected_value);
+            }
+        }
+
+        if let Some(fallback_value) = self.branches.iter().find_map(MatchBranch::fallback_value) {
+            return fallback_value.evaluate(evaluation_context, context);
+        }
+
+        Err(WorkflowSemanticError::ExpressionEvaluation {
+            context: context.to_string(),
+            message: "match expression did not match a variant branch".to_string(),
+        })
     }
 }
 
@@ -446,39 +486,6 @@ impl AssetEvaluationExt for Asset {
 
         Some((media_type, data))
     }
-}
-
-fn evaluate_variant_projection(value: Value, case_name: &str, field_path: &[String]) -> Result<Value, WorkflowSemanticError> {
-    let Some(object_fields) = value.as_object() else {
-        return Ok(Value::Null);
-    };
-    let has_matching_discriminator = object_fields
-        .values()
-        .any(|field_value| matches!(field_value, Value::String(discriminator_value) if discriminator_value == case_name));
-
-    if !has_matching_discriminator {
-        return Ok(Value::Null);
-    }
-
-    let Some((first_field_name, remaining_field_path)) = field_path.split_first() else {
-        return Ok(value);
-    };
-    let Some(mut current_value) = object_fields.get(first_field_name) else {
-        return Ok(Value::Null);
-    };
-
-    for field_name in remaining_field_path {
-        let Some(current_object_fields) = current_value.as_object() else {
-            return Ok(Value::Null);
-        };
-        let Some(next_value) = current_object_fields.get(field_name) else {
-            return Ok(Value::Null);
-        };
-
-        current_value = next_value;
-    }
-
-    Ok(current_value.clone())
 }
 
 trait ReferenceEvaluationExt {

@@ -1,156 +1,159 @@
 ---
 title: Quickstart
-description: Create a small workflow and execute it through the Docker executor.
+description: Run one checked typed workflow through Playground, CLI, or HTTP.
 ---
 
-This guide creates one `.wire` file, sends it to the executor, and reads the JSON result.
+import HelloWorkflow from "/examples/wire/hello.mdx";
 
-<Steps>
-  <Step title="Start local executor">
-    Run Docker and keep the process alive.
-  </Step>
-  <Step title="Write a minimal workflow">
-    Define one input, one model-backed agent, and one structured output.
-  </Step>
-  <Step title="Execute from Playground or API">
-    Use the Playground for speed, then use `curl` for integration testing.
-  </Step>
-</Steps>
+This guide uses one source of truth for every execution surface.
 
 ## 1. Start the executor
 
 ```bash
-docker run --rm -p 13703:13703 rmilewski/superwire
+docker run --rm -p 13703:13703 rmilewski/superwire:latest
 ```
 
-## 2. Create `hello.wire`
+Open `http://localhost:13703/playground` to confirm the process is reachable. There is currently no dedicated health route.
 
-```wire
-input {
-    name: string
-}
+## 2. Save `hello.wire`
 
-secrets {
-    api_key: string
-}
+<HelloWorkflow />
 
-provider llm from openai {
-    endpoint: "https://api.openai.com/v1"
-    api_key: secrets.api_key
-}
+The workflow accepts `input.name` and `secrets.api_key`. The final workflow object has the type `{ message: string }`.
 
-model fast from llm {
-    id: "gpt-4.1-mini"
-}
+Export a development key without placing it in the workflow:
 
-agent greeting {
-    model: model.fast
-    instruction: "Greet {{ input.name }} in one friendly sentence."
-
-    output {
-        message: string
-    }
-}
-
-output {
-    message: agent.greeting.message
-}
+```bash
+export OPENAI_API_KEY="replace-at-runtime"
 ```
 
-Note: `endpoint` can be any OpenAI-compatible backend URL, as long as that backend supports `/responses`.
+Do not commit the value or paste a production key into an untrusted browser.
 
-## 3. Use the Playground (fastest way to test)
-
-You can test `.wire` files directly in the Playground with a visual interface, without manually base64-encoding workflow source.
-
-Open:
-
-```text
-http://localhost:13703/playground
-```
-
-In the Playground, you can:
-
-- Paste or edit your `.wire` source.
-- Fill `input` and `secrets` as JSON.
-- Run the workflow and inspect output and events.
-
-For quick iteration, this is the simplest way to validate and execute workflows.
-
-## 4. Encode the workflow (CLI/API path)
+## 3. Choose a run path
 
 <Tabs>
-  <Tab title="Linux">
-```bash
-WORKFLOW_SOURCE_BASE64=$(base64 -w0 hello.wire)
-```
+  <Tab title="Playground">
+    1. Open `http://localhost:13703/playground`.
+    2. Replace the editor content with `hello.wire`.
+    3. Set Input JSON to `{ "name": "Ada" }`.
+    4. Set Secrets JSON to `{ "api_key": "replace-at-runtime" }`.
+    5. Select **Validate**, then **Run**.
 
+    <Warning>
+      The Playground persists workflow source, Input JSON, tab/active-tab state, cache settings, and theme in browser local storage. It does not persist Secrets JSON, output, graph data, or event history; secrets remain in page memory until reload. **Copy with secrets** writes the current input and secrets into a portable bundle on the system clipboard, so use only development credentials on a trusted browser.
+    </Warning>
   </Tab>
-  <Tab title="macOS">
-```bash
-WORKFLOW_SOURCE_BASE64=$(base64 < hello.wire | tr -d '\n')
-```
+  <Tab title="CLI">
+    Build the native CLI or use the binary included in the image. Store the secret in a mode-restricted temporary file so it is not copied into shell history:
 
+    ```bash
+    umask 077
+    printf '{"api_key":"%s"}\n' "$OPENAI_API_KEY" > hello.secrets.json
+
+    superwire-cli workflow check hello.wire
+    superwire-cli workflow run hello.wire \
+      --input-json '{"name":"Ada"}' \
+      --secrets-file hello.secrets.json \
+      --pretty
+
+    rm hello.secrets.json
+    ```
+
+    The CLI prints the final workflow object directly:
+
+    ```json
+    {
+      "message": "Hello Ada — welcome to Superwire."
+    }
+    ```
+  </Tab>
+  <Tab title="HTTP Linux">
+    GNU `base64` uses `-w 0`:
+
+    ```bash
+    WORKFLOW_SOURCE_BASE64="$(base64 -w 0 hello.wire)"
+
+    curl --fail-with-body --silent http://localhost:13703/execute \
+      -H 'Content-Type: application/json' \
+      -d @- <<JSON
+    {
+      "workflow_source_base64": "$WORKFLOW_SOURCE_BASE64",
+      "input": {"name": "Ada"},
+      "secrets": {"api_key": "$OPENAI_API_KEY"}
+    }
+    JSON
+    ```
+  </Tab>
+  <Tab title="HTTP macOS">
+    macOS `base64` wraps differently:
+
+    ```bash
+    WORKFLOW_SOURCE_BASE64="$(base64 < hello.wire | tr -d '\n')"
+
+    curl --fail-with-body --silent http://localhost:13703/execute \
+      -H 'Content-Type: application/json' \
+      -d @- <<JSON
+    {
+      "workflow_source_base64": "$WORKFLOW_SOURCE_BASE64",
+      "input": {"name": "Ada"},
+      "secrets": {"api_key": "$OPENAI_API_KEY"}
+    }
+    JSON
+    ```
+  </Tab>
+  <Tab title="HTTP PowerShell">
+    ```powershell
+    $workflowSourceBase64 = [Convert]::ToBase64String(
+        [IO.File]::ReadAllBytes((Resolve-Path .\hello.wire))
+    )
+
+    $requestBody = @{
+        workflow_source_base64 = $workflowSourceBase64
+        input = @{ name = "Ada" }
+        secrets = @{ api_key = $env:OPENAI_API_KEY }
+    } | ConvertTo-Json -Depth 5
+
+    Invoke-RestMethod `
+        -Method Post `
+        -Uri http://localhost:13703/execute `
+        -ContentType application/json `
+        -Body $requestBody
+    ```
   </Tab>
 </Tabs>
 
-## 5. Execute it
-
-```bash
-curl -s http://localhost:13703/execute \
-  -H 'Content-Type: application/json' \
-  -d @- <<JSON
-{
-  "input": {
-    "name": "Rafael"
-  },
-  "secrets": {
-    "api_key": "sk-..."
-  },
-  "workflow_source_base64": "$WORKFLOW_SOURCE_BASE64"
-}
-JSON
-```
-
-Expected response shape:
+HTTP JSON wraps the final object:
 
 ```json
 {
-  "message": "Hello Rafael — welcome to Superwire."
+  "output": {
+    "message": "Hello Ada — welcome to Superwire."
+  }
 }
 ```
 
-## 6. Use streaming when needed
+The model chooses the wording; only the output shape is stable.
 
-`/execute` returns Server-Sent Events when you request `text/event-stream`:
+## 4. Validate and format
+
+The CLI checks source without making a model request:
 
 ```bash
-curl -N http://localhost:13703/execute \
-  -H 'Accept: text/event-stream' \
-  -H 'Content-Type: application/json' \
-  -d @- <<JSON
-{
-  "input": {
-    "name": "Rafael"
-  },
-  "secrets": {
-    "api_key": "sk-..."
-  },
-  "workflow_source_base64": "$WORKFLOW_SOURCE_BASE64"
-}
-JSON
+superwire-cli workflow check hello.wire
+superwire-cli fmt hello.wire
 ```
 
-<AccordionGroup>
-  <Accordion title="Common setup issues" icon="triangle-alert">
-    - Ensure Docker is running and port `13703` is not already in use.
-    - If your response is empty, verify `workflow_source_base64` is populated.
-    - If provider calls fail, confirm `secrets.api_key` contains a valid key.
-  </Accordion>
+The executor also exposes `POST /validate` and `POST /format`. See [Executor API](/api-reference/executor-api).
 
-  <Accordion title="What to do next" icon="arrow-right">
-    - Read [Core Concepts](/core-concepts/overview) to understand workflow structure.
-    - Use [Executor API](/api-reference/executor-api) for request and event details.
-    - Explore [Examples](/examples/basic-agent) for more complex patterns.
-  </Accordion>
-</AccordionGroup>
+## 5. Stream progress
+
+Set `Accept: text/event-stream` to receive lifecycle events. The terminal success event is `workflow_completed`, and its final value is nested at `data.output` inside the serialized event envelope.
+
+See [Streaming and events](/api-reference/streaming-events) for reconnect and cancellation.
+
+## Continue the journey
+
+- [Typed data flow](/core-concepts/overview)
+- [Dependencies and concurrency](/advanced/parallel-execution)
+- [MCP tools](/mcp/overview)
+- [Troubleshooting](/troubleshooting)

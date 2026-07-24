@@ -1,6 +1,7 @@
 package com.superwire.intellij
 
 object SuperwirePluginConstants {
+    const val PLUGIN_ID = "com.superwire"
     const val LANGUAGE_ID = "superwire"
     const val LANGUAGE_NAME = "Superwire"
     const val FILE_EXTENSION = "wire"

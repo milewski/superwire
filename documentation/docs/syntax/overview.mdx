@@ -1,85 +1,92 @@
 ---
-title: Syntax Overview
-description: A practical map of Superwire blocks and what each one is for.
+title: Syntax overview
+description: Navigate every current declaration, type, reference root, expression, and special form.
 ---
 
-Superwire workflows are built from declaration blocks and references between those blocks.
+## Declarations
+
+| Declaration | Purpose |
+| --- | --- |
+| `input` | Typed public runtime values. |
+| `secrets` | Typed sensitive runtime values. |
+| `provider name from driver` | Provider driver, endpoint, and API key. |
+| `model name from provider` | Model ID, API mode, assets, inference defaults. |
+| `schema name` | Reusable object or tagged-variant type. |
+| `mcp name` | MCP endpoint and headers. |
+| `tool`, `resource`, `prompt` | MCP capability imports. |
+| `from mcp...` | Batch capability import. |
+| `dynamic` | Runtime-computed object fields. |
+| `agent` | Model step, optionally looped. |
+| `output` | Final application-shaped value. |
+
+## Reference roots
+
+Runtime/value roots:
 
 ```wire
-input {
-    topic: string
-}
-
-secrets {
-    api_key: string
-}
-
-provider llm from openai {
-    endpoint: "https://api.openai.com/v1"
-    api_key: secrets.api_key
-}
-
-model fast from llm {
-    id: "gpt-4.1-mini"
-}
-
-agent summarize {
-    model: model.fast
-    instruction: "Summarize {{ input.topic }}."
-
-    output {
-        summary: string
-    }
-}
-```
-
-## Declaration blocks
-
-Use these blocks to define what a workflow needs, how it runs, and what it returns.
-
-| Block | What it defines | Why it exists |
-| --- | --- | --- |
-| `input { ... }` | Public request data for the workflow. | Makes runtime inputs explicit and typed. |
-| `secrets { ... }` | Sensitive request data such as API keys. | Keeps credentials separate from normal input. |
-| `schema name { ... }` | Reusable structured types. | Avoids repeating the same object shapes across blocks. |
-| `provider name from openai { ... }` | A configured backend endpoint and auth settings. | Centralizes provider connection details for models. |
-| `model name from provider { ... }` | A named model profile (`id`, inference defaults). | Lets multiple agents share model settings. |
-| `mcp name { ... }` | An MCP server connection. | Declares external capability endpoints once. |
-| `tool local_name from mcp.server.tool.remote_name` | A tool imported from an MCP server. | Exposes deterministic actions to agents. |
-| `resource local_name from mcp.server.resource.remote_name` | A resource imported from an MCP server. | Exposes read-only external content. |
-| `prompt local_name from mcp.server.prompt.remote_name` | A prompt template imported from MCP. | Reuses centrally managed prompt assets. |
-| `dynamic { ... }` | Computed values derived from references and expressions. | Prepares runtime values before agent execution. |
-| `agent name { ... }` | One model-backed execution step. | Encapsulates instruction, file attachments, tools, context, and typed output. |
-| `output { ... }` | Final response payload of the workflow. | Defines exactly what `/execute` returns. |
-
-## Typical flow
-
-Most workflows follow this shape:
-
-```text
-input + secrets -> provider -> model -> agent(s) -> output
-```
-
-When MCP is used, tools/resources/prompts become additional inputs available to agents.
-
-## Common expressions
-
-```wire
-"text"
-123
-true
-input.topic
+input.project_id
 secrets.api_key
-agent.summarize.summary
-schema.shared.status
-call tool.fetch_context { bindings { task_id: input.task_id } }
-read resource.project_readme
-render prompt.instructions
-context: agent.investigate_task
+agent.research.findings
+dynamic.task
+tool.fetch_task
+resource.project_readme
+prompt.writer_rules
 ```
 
-References are how data moves through the workflow. For example, `agent.summarize.summary` uses a previous agent result, while `secrets.api_key` injects a credential into provider config.
+`model.fast` appears in model usage. `schema.task` appears in type positions.
 
-## Naming
+## Type forms
 
-Prefer lowercase `snake_case` for schemas, agents, tools, resources, prompts, providers, models, and fields.
+```wire
+string
+number
+float
+boolean
+null
+object
+maybe string
+string | number
+[string]
+[string; 3]
+(string, number)
+{ title: string, score: number }
+enum { draft, ready }
+schema.task
+variant kind {
+    ready { value: string }
+    failed { reason: string }
+}
+```
+
+See [Data types](/syntax/data-types).
+
+## Expression forms
+
+```wire
+input.label ?? "unlabeled"
+input.items.**.id
+agent.route.value#escalation.reason
+match agent.route.value {
+    answer.text
+    escalation.reason
+}
+template("prompt.md", { topic: input.topic })
+asset input.image_url
+call tool.fetch_task
+read resource.project_readme
+render prompt.writer_rules
+context agent.research
+compact agent.research
+```
+
+See [Expressions](/syntax/expressions), [Operators](/syntax/operators), and [Control flow](/syntax/control-flow).
+
+## Naming and formatting
+
+Use descriptive lowercase snake_case names. Format with:
+
+```bash
+superwire-cli fmt workflow.wire
+```
+
+Complete examples are imported from checked snippets in [Examples](/examples/basic-agent); reference blocks on this page are syntax fragments.

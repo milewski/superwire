@@ -57,7 +57,7 @@ async fn fails_when_mcp_tool_output_does_not_match_schema() {
 
     let error_message = execution_error.to_string();
 
-    assert!(error_message.contains("$.data.participants"), "{error_message}");
+    assert!(error_message.contains("$.participants"), "{error_message}");
     assert!(error_message.contains("value is not of type"), "{error_message}");
     assert!(!error_message.contains("too-long-to-repeat"), "{error_message}");
 }

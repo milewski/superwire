@@ -61,6 +61,7 @@ impl AgentToolBindingValidator<'_> {
         self.validate_fixed_binding_overrides(tool_name, binding_fields);
         self.validate_self_references(tool_name, binding_fields);
         self.validate_required_bindings(tool_name, binding_fields, expected_binding_fields);
+        self.validate_fixed_binding_types(tool_name);
         self.validate_binding_field_types(tool_name, binding_fields, expected_binding_fields);
     }
 
@@ -156,6 +157,69 @@ impl AgentToolBindingValidator<'_> {
         }
     }
 
+    fn validate_fixed_binding_types(&mut self, tool_name: &str) {
+        let Some(tool_schema) = self.validation_index.tool_schema(tool_name) else {
+            return;
+        };
+        let Some(expected_input_type) = tool_schema.full_input_type.as_ref() else {
+            return;
+        };
+        let Some(fixed_binding_fields) = self.validation_index.tool_fixed_binding_fields(tool_name) else {
+            return;
+        };
+        let mut type_inference_context = self.base_type_inference_context.clone();
+        type_inference_context.local_binding_types.clone_from(self.local_binding_types);
+
+        for fixed_binding_field in fixed_binding_fields {
+            let Some(expected_binding_type) = expected_input_type
+                .field_type(&fixed_binding_field.name)
+                .or_else(|| tool_schema.full_input_additional_property_type.clone())
+            else {
+                self.push_invalid_tool_binding(
+                    tool_name,
+                    format!("unknown fixed argument `{}`", fixed_binding_field.name),
+                    Some(fixed_binding_field.span),
+                );
+
+                continue;
+            };
+
+            if fixed_binding_field.value.is_literal_compatible_with_type(&expected_binding_type) {
+                continue;
+            }
+
+            let actual_binding_type = match infer_expression_type(
+                &fixed_binding_field.value,
+                &type_inference_context,
+                &format!("tool `tool.{tool_name}` fixed argument `{}`", fixed_binding_field.name),
+            ) {
+                Ok(actual_binding_type) => actual_binding_type,
+                Err(error) => {
+                    self.push_invalid_tool_binding(
+                        tool_name,
+                        format!("fixed argument `{}` cannot be typed: {error}", fixed_binding_field.name),
+                        Some(fixed_binding_field.span),
+                    );
+
+                    continue;
+                }
+            };
+
+            if ensure_type_matches(&expected_binding_type, &actual_binding_type) {
+                continue;
+            }
+
+            self.push_invalid_tool_binding(
+                tool_name,
+                format!(
+                    "fixed argument `{}` expects {}, found {}",
+                    fixed_binding_field.name, expected_binding_type, actual_binding_type
+                ),
+                Some(fixed_binding_field.span),
+            );
+        }
+    }
+
     fn validate_self_references(&mut self, tool_name: &str, binding_fields: &[ObjectField]) {
         for binding_field in binding_fields {
             self.validate_expression_self_reference(
@@ -229,8 +293,6 @@ impl ExpressionToolsExt for Expression {
         match (self, expected_type) {
             (Self::StringLiteral(string_literal), WorkflowType::StringEnum(enum_values)) => enum_values.contains(string_literal),
             (Self::StringLiteral(_), WorkflowType::String) => true,
-            (Self::NumberLiteral(number_literal), WorkflowType::Float) => number_literal.replace('_', "").contains('.'),
-            (Self::NumberLiteral(number_literal), WorkflowType::Integer) => !number_literal.replace('_', "").contains('.'),
             (Self::BooleanLiteral(_), WorkflowType::Boolean) | (Self::NullLiteral, WorkflowType::Null) => true,
             (Self::ArrayLiteral(array_items), WorkflowType::Array { item_type, fixed_length }) => {
                 fixed_length.is_none_or(|expected_length| {

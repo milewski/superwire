@@ -1,0 +1,110 @@
+name: Documentation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'README.md'
+      - 'documentation/docs/**'
+      - 'crates/superwire-cli/**'
+      - 'crates/superwire-dsl/**'
+      - 'crates/superwire-executor/**'
+      - 'crates/superwire-executor-server/**'
+      - 'crates/superwire-lsp/**'
+      - 'crates/superwire-mcp/**'
+      - 'crates/superwire-model/**'
+      - 'crates/superwire-protocol/**'
+      - 'crates/superwire-provider-cersei/**'
+      - 'crates/superwire-semantic/**'
+      - 'crates/superwire-types/**'
+      - 'integration/superwire-laravel/**'
+      - 'playground/src/**'
+      - 'playground/vite.config.ts'
+      - 'editors/intellij/**'
+      - 'editors/textmate/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'Dockerfile'
+      - 'justfile'
+      - '.github/workflows/documentation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'README.md'
+      - 'documentation/docs/**'
+      - 'crates/superwire-cli/**'
+      - 'crates/superwire-dsl/**'
+      - 'crates/superwire-executor/**'
+      - 'crates/superwire-executor-server/**'
+      - 'crates/superwire-lsp/**'
+      - 'crates/superwire-mcp/**'
+      - 'crates/superwire-model/**'
+      - 'crates/superwire-protocol/**'
+      - 'crates/superwire-provider-cersei/**'
+      - 'crates/superwire-semantic/**'
+      - 'crates/superwire-types/**'
+      - 'integration/superwire-laravel/**'
+      - 'playground/src/**'
+      - 'playground/vite.config.ts'
+      - 'editors/intellij/**'
+      - 'editors/textmate/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'Dockerfile'
+      - 'justfile'
+      - '.github/workflows/documentation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: documentation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Rust 1.94
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: '1.94'
+
+      - name: Build fixture validator
+        run: cargo build --locked -p superwire-cli
+
+      - name: Install Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: documentation/docs/package-lock.json
+
+      - name: Install documentation dependencies
+        working-directory: documentation/docs
+        run: npm ci
+
+      - name: Validate checked workflow fixtures
+        working-directory: documentation/docs
+        env:
+          SUPERWIRE_CLI: ${{ github.workspace }}/target/debug/superwire-cli
+        run: npm run check:wire
+
+      - name: Validate Mint build
+        working-directory: documentation/docs
+        run: npm run validate
+
+      - name: Check internal links and snippets
+        working-directory: documentation/docs
+        run: npm run links
+
+      - name: Check accessibility
+        working-directory: documentation/docs
+        run: npm run a11y

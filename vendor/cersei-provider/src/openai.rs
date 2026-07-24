@@ -3,7 +3,113 @@
 use crate::*;
 use cersei_types::*;
 use futures::StreamExt;
+use std::future::Future;
 use tokio::sync::mpsc;
+
+pub(crate) const PROVIDER_STREAM_CHANNEL_CAPACITY: usize = 64;
+pub(crate) const MAX_PROVIDER_SSE_LINE_BYTES: usize = 256 * 1024;
+pub(crate) const MAX_PROVIDER_PARTIAL_LINE_BYTES: usize = MAX_PROVIDER_SSE_LINE_BYTES;
+pub(crate) const MAX_PROVIDER_ERROR_BODY_BYTES: usize = 64 * 1024;
+
+pub(crate) trait StreamEventSenderExt {
+    fn send_if_open(&self, event: StreamEvent) -> impl Future<Output = bool> + Send;
+}
+
+impl StreamEventSenderExt for mpsc::Sender<StreamEvent> {
+    fn send_if_open(&self, event: StreamEvent) -> impl Future<Output = bool> + Send {
+        let event_sender = self.clone();
+
+        async move { event_sender.send(event).await.is_ok() }
+    }
+}
+
+pub(crate) trait ProviderResponseExt {
+    fn bounded_error_message(self, event_sender: &mpsc::Sender<StreamEvent>) -> impl Future<Output = Option<String>> + Send;
+}
+
+impl ProviderResponseExt for reqwest::Response {
+    fn bounded_error_message(self, event_sender: &mpsc::Sender<StreamEvent>) -> impl Future<Output = Option<String>> + Send {
+        let event_sender = event_sender.clone();
+
+        async move {
+            let status = self.status().as_u16();
+            let mut response_stream = self.bytes_stream();
+            let mut response_body = Vec::new();
+
+            loop {
+                let chunk_result = tokio::select! {
+                    () = event_sender.closed() => return None,
+                    chunk_result = response_stream.next() => chunk_result,
+                };
+                let Some(chunk_result) = chunk_result else {
+                    break;
+                };
+                let response_chunk = match chunk_result {
+                    Ok(response_chunk) => response_chunk,
+                    Err(error) => return Some(format!("HTTP {status}: failed to read provider error response: {error}")),
+                };
+                let Some(resulting_length) = response_body.len().checked_add(response_chunk.len()) else {
+                    return Some(format!("HTTP {status}: provider error response body exceeded the configured limit"));
+                };
+
+                if resulting_length > MAX_PROVIDER_ERROR_BODY_BYTES {
+                    return Some(format!("HTTP {status}: provider error response body exceeded the configured limit"));
+                }
+
+                response_body.extend_from_slice(&response_chunk);
+            }
+
+            let response_text = String::from_utf8_lossy(&response_body);
+            let response_text = response_text.trim();
+
+            if response_text.is_empty() {
+                Some(format!("HTTP {status}"))
+            } else {
+                Some(format!("HTTP {status}: {response_text}"))
+            }
+        }
+    }
+}
+
+macro_rules! send_stream_event {
+    ($event_sender:expr, $event:expr) => {
+        if !$event_sender.send_if_open($event).await {
+            return;
+        }
+    };
+}
+
+pub(crate) use send_stream_event;
+
+pub(crate) fn owned_completion_stream<StreamReader, StreamReaderFuture>(stream_reader: StreamReader) -> CompletionStream
+where
+    StreamReader: FnOnce(mpsc::Sender<StreamEvent>) -> StreamReaderFuture + Send + 'static,
+    StreamReaderFuture: Future<Output = ()> + Send + 'static,
+{
+    let (event_sender, event_receiver) = mpsc::channel(PROVIDER_STREAM_CHANNEL_CAPACITY);
+    let cancellation_sender = event_sender.clone();
+    let mut stream_task = tokio::spawn(stream_reader(event_sender));
+
+    tokio::spawn(async move {
+        tokio::select! {
+            () = cancellation_sender.closed() => {
+                stream_task.abort();
+                let _ = stream_task.await;
+            }
+            stream_result = &mut stream_task => {
+                if let Err(error) = stream_result {
+                    let _ = cancellation_sender
+                        .send(StreamEvent::Error {
+                            message: format!("provider stream task failed: {error}"),
+                        })
+                        .await;
+                }
+            }
+        }
+    });
+
+    CompletionStream::new(event_receiver)
+}
 
 const OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 
@@ -506,8 +612,6 @@ impl Provider for OpenAi {
             Auth::Custom(_) => String::new(),
         };
 
-        let (tx, rx) = mpsc::channel(256);
-
         let req = self
             .client
             .post(&url)
@@ -516,172 +620,301 @@ impl Provider for OpenAi {
             .json(&body)
             .build()
             .map_err(CerseiError::Http)?;
-
         let client = self.client.clone();
+        let completion_stream = owned_completion_stream(move |tx| async move {
+            let response_result = tokio::select! {
+                () = tx.closed() => return,
+                response_result = client.execute(req) => response_result,
+            };
 
-        tokio::spawn(async move {
-            match client.execute(req).await {
+            match response_result {
                 Ok(response) => {
                     if !response.status().is_success() {
-                        let status = response.status().as_u16();
-                        let body = response.text().await.unwrap_or_default();
-                        let _ = tx
-                            .send(StreamEvent::Error {
-                                message: format!("HTTP {}: {}", status, body),
-                            })
-                            .await;
+                        let Some(message) = response.bounded_error_message(&tx).await else {
+                            return;
+                        };
+
+                        send_stream_event!(tx, StreamEvent::Error { message });
+
                         return;
                     }
 
-                    let _ = tx
-                        .send(StreamEvent::MessageStart {
+                    send_stream_event!(
+                        tx,
+                        StreamEvent::MessageStart {
                             id: String::new(),
                             model: String::new(),
-                        })
-                        .await;
+                        }
+                    );
+
                     let mut stream = response.bytes_stream();
-                    let mut buffer = String::new();
+                    let mut buffer = Vec::new();
+                    let mut stream_bytes = 0_usize;
                     let mut text_started = false;
-                    // Track tool calls being assembled across chunks
-                    // OpenAI sends: tool_calls[i].id, tool_calls[i].function.name (first chunk)
-                    //               tool_calls[i].function.arguments (subsequent chunks, accumulated)
-                    let mut tool_calls: std::collections::HashMap<usize, (String, String, String)> = std::collections::HashMap::new(); // index -> (id, name, args_json)
+                    // Track tool calls being assembled across chunks.
+                    // OpenAI sends the id and name first, then argument fragments.
+                    let mut tool_calls: std::collections::HashMap<usize, (String, String, String)> = std::collections::HashMap::new();
                     let mut has_tool_calls = false;
 
-                    while let Some(chunk) = stream.next().await {
-                        match chunk {
+                    loop {
+                        let chunk_result = tokio::select! {
+                            () = tx.closed() => return,
+                            chunk_result = stream.next() => chunk_result,
+                        };
+                        let Some(chunk_result) = chunk_result else {
+                            break;
+                        };
+
+                        match chunk_result {
                             Ok(bytes) => {
-                                buffer.push_str(&String::from_utf8_lossy(&bytes));
-                                while let Some(pos) = buffer.find("\n") {
-                                    let line = buffer[..pos].to_string();
-                                    buffer = buffer[pos + 1..].to_string();
+                                let Some(resulting_stream_bytes) = stream_bytes.checked_add(bytes.len()) else {
+                                    send_stream_event!(
+                                        tx,
+                                        StreamEvent::Error {
+                                            message: "provider stream exceeded the configured limit".to_string(),
+                                        }
+                                    );
 
-                                    if let Some(data) = line.strip_prefix("data: ") {
-                                        let data = data.trim();
-                                        if data == "[DONE]" {
-                                            // Emit accumulated tool calls
-                                            for (idx, (id, name, args)) in &tool_calls {
-                                                let _ = tx
-                                                    .send(StreamEvent::ContentBlockStart {
-                                                        index: *idx + 1,
-                                                        block_type: "tool_use".into(),
-                                                        id: Some(id.clone()),
-                                                        name: Some(name.clone()),
-                                                    })
-                                                    .await;
-                                                // Send full args as InputJsonDelta
-                                                let _ = tx
-                                                    .send(StreamEvent::InputJsonDelta {
-                                                        index: *idx + 1,
-                                                        partial_json: args.clone(),
-                                                    })
-                                                    .await;
-                                                let _ = tx.send(StreamEvent::ContentBlockStop { index: *idx + 1 }).await;
+                                    return;
+                                };
+                                stream_bytes = resulting_stream_bytes;
+
+                                if stream_bytes > crate::MAX_PROVIDER_STREAM_BYTES {
+                                    send_stream_event!(
+                                        tx,
+                                        StreamEvent::Error {
+                                            message: "provider stream exceeded the configured limit".to_string(),
+                                        }
+                                    );
+
+                                    return;
+                                }
+
+                                buffer.extend_from_slice(&bytes);
+
+                                let partial_line_bytes = buffer
+                                    .iter()
+                                    .rposition(|byte| *byte == b'\n')
+                                    .map_or(buffer.len(), |line_end| buffer.len().saturating_sub(line_end + 1));
+
+                                if partial_line_bytes > MAX_PROVIDER_PARTIAL_LINE_BYTES {
+                                    send_stream_event!(
+                                        tx,
+                                        StreamEvent::Error {
+                                            message: "provider SSE partial line exceeded the configured limit".to_string(),
+                                        }
+                                    );
+
+                                    return;
+                                }
+
+                                while let Some(line_end) = buffer.iter().position(|byte| *byte == b'\n') {
+                                    if line_end > MAX_PROVIDER_SSE_LINE_BYTES {
+                                        send_stream_event!(
+                                            tx,
+                                            StreamEvent::Error {
+                                                message: "provider SSE line exceeded the configured limit".to_string(),
                                             }
+                                        );
 
-                                            if text_started {
-                                                let _ = tx.send(StreamEvent::ContentBlockStop { index: 0 }).await;
-                                            }
+                                        return;
+                                    }
 
-                                            let stop = if has_tool_calls { StopReason::ToolUse } else { StopReason::EndTurn };
+                                    let line = String::from_utf8_lossy(&buffer[..line_end]).into_owned();
+                                    buffer.drain(..=line_end);
+                                    let Some(data) = line.strip_prefix("data:") else {
+                                        continue;
+                                    };
+                                    let data = data.trim();
 
-                                            // Extract usage if available
-                                            let _ = tx
-                                                .send(StreamEvent::MessageDelta {
-                                                    stop_reason: Some(stop),
-                                                    usage: None,
-                                                })
-                                                .await;
-                                            let _ = tx.send(StreamEvent::MessageStop).await;
-                                            return;
+                                    if data == "[DONE]" {
+                                        for (tool_index, (tool_id, tool_name, tool_arguments)) in &tool_calls {
+                                            send_stream_event!(
+                                                tx,
+                                                StreamEvent::ContentBlockStart {
+                                                    index: *tool_index + 1,
+                                                    block_type: "tool_use".into(),
+                                                    id: Some(tool_id.clone()),
+                                                    name: Some(tool_name.clone()),
+                                                }
+                                            );
+                                            send_stream_event!(
+                                                tx,
+                                                StreamEvent::InputJsonDelta {
+                                                    index: *tool_index + 1,
+                                                    partial_json: tool_arguments.clone(),
+                                                }
+                                            );
+                                            send_stream_event!(tx, StreamEvent::ContentBlockStop { index: *tool_index + 1 });
                                         }
 
-                                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-                                            let delta = &json["choices"][0]["delta"];
-                                            let finish_reason = json["choices"][0]["finish_reason"].as_str();
+                                        if text_started {
+                                            send_stream_event!(tx, StreamEvent::ContentBlockStop { index: 0 });
+                                        }
 
-                                            // Text content
-                                            if let Some(text) = delta["content"].as_str() {
-                                                if !text_started {
-                                                    text_started = true;
-                                                    let _ = tx
-                                                        .send(StreamEvent::ContentBlockStart {
-                                                            index: 0,
-                                                            block_type: "text".into(),
-                                                            id: None,
-                                                            name: None,
-                                                        })
-                                                        .await;
+                                        let stop_reason = if has_tool_calls { StopReason::ToolUse } else { StopReason::EndTurn };
+
+                                        send_stream_event!(
+                                            tx,
+                                            StreamEvent::MessageDelta {
+                                                stop_reason: Some(stop_reason),
+                                                usage: None,
+                                            }
+                                        );
+                                        send_stream_event!(tx, StreamEvent::MessageStop);
+
+                                        return;
+                                    }
+
+                                    let Ok(json) = serde_json::from_str::<serde_json::Value>(data) else {
+                                        continue;
+                                    };
+                                    let delta = &json["choices"][0]["delta"];
+                                    let finish_reason = json["choices"][0]["finish_reason"].as_str();
+
+                                    if let Some(text) = delta["content"].as_str() {
+                                        if !text_started {
+                                            text_started = true;
+                                            send_stream_event!(
+                                                tx,
+                                                StreamEvent::ContentBlockStart {
+                                                    index: 0,
+                                                    block_type: "text".into(),
+                                                    id: None,
+                                                    name: None,
                                                 }
-                                                let _ = tx
-                                                    .send(StreamEvent::TextDelta {
-                                                        index: 0,
-                                                        text: text.to_string(),
-                                                    })
-                                                    .await;
+                                            );
+                                        }
+
+                                        send_stream_event!(
+                                            tx,
+                                            StreamEvent::TextDelta {
+                                                index: 0,
+                                                text: text.to_string(),
+                                            }
+                                        );
+                                    }
+
+                                    if let Some(tool_call_values) = delta["tool_calls"].as_array() {
+                                        has_tool_calls = true;
+
+                                        for tool_call_value in tool_call_values {
+                                            let tool_index = tool_call_value["index"].as_u64().unwrap_or(0) as usize;
+
+                                            if tool_index >= crate::MAX_PROVIDER_CONTENT_BLOCKS {
+                                                send_stream_event!(
+                                                    tx,
+                                                    StreamEvent::Error {
+                                                        message: "provider content block index exceeded the configured limit".to_string(),
+                                                    }
+                                                );
+
+                                                return;
                                             }
 
-                                            // Tool calls (accumulated across chunks)
-                                            if let Some(tc_array) = delta["tool_calls"].as_array() {
-                                                has_tool_calls = true;
-                                                for tc in tc_array {
-                                                    let idx = tc["index"].as_u64().unwrap_or(0) as usize;
-                                                    let entry = tool_calls
-                                                        .entry(idx)
-                                                        .or_insert_with(|| (String::new(), String::new(), String::new()));
+                                            let tool_call = tool_calls
+                                                .entry(tool_index)
+                                                .or_insert_with(|| (String::new(), String::new(), String::new()));
 
-                                                    // First chunk has id and function.name
-                                                    if let Some(id) = tc["id"].as_str() {
-                                                        entry.0 = id.to_string();
-                                                    }
-                                                    if let Some(name) = tc["function"]["name"].as_str() {
-                                                        entry.1 = name.to_string();
-                                                    }
-                                                    // Arguments accumulate across chunks
-                                                    if let Some(args) = tc["function"]["arguments"].as_str() {
-                                                        entry.2.push_str(args);
-                                                    }
-                                                }
+                                            if let Some(tool_id) = tool_call_value["id"].as_str() {
+                                                tool_call.0 = tool_id.to_string();
                                             }
 
-                                            // Usage from the final chunk
-                                            if let Some(usage) = json["usage"].as_object() {
-                                                let input_tokens = usage.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                                                let output_tokens = usage.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                                                let _ = tx
-                                                    .send(StreamEvent::MessageDelta {
-                                                        stop_reason: finish_reason.and_then(|r| match r {
-                                                            "stop" => Some(StopReason::EndTurn),
-                                                            "tool_calls" => Some(StopReason::ToolUse),
-                                                            "length" => Some(StopReason::MaxTokens),
-                                                            _ => None,
-                                                        }),
-                                                        usage: Some(Usage {
-                                                            input_tokens,
-                                                            output_tokens,
-                                                            ..Default::default()
-                                                        }),
-                                                    })
-                                                    .await;
+                                            if let Some(tool_name) = tool_call_value["function"]["name"].as_str() {
+                                                tool_call.1 = tool_name.to_string();
+                                            }
+
+                                            if let Some(arguments) = tool_call_value["function"]["arguments"].as_str() {
+                                                let Some(argument_length) = tool_call.2.len().checked_add(arguments.len()) else {
+                                                    send_stream_event!(
+                                                        tx,
+                                                        StreamEvent::Error {
+                                                            message: "provider tool arguments exceeded the configured limit".to_string(),
+                                                        }
+                                                    );
+
+                                                    return;
+                                                };
+
+                                                if argument_length > crate::MAX_PROVIDER_TOOL_ARGUMENT_BYTES {
+                                                    send_stream_event!(
+                                                        tx,
+                                                        StreamEvent::Error {
+                                                            message: "provider tool arguments exceeded the configured limit".to_string(),
+                                                        }
+                                                    );
+
+                                                    return;
+                                                }
+
+                                                tool_call.2.push_str(arguments);
                                             }
                                         }
                                     }
+
+                                    if let Some(usage) = json["usage"].as_object() {
+                                        let input_tokens = usage.get("prompt_tokens").and_then(serde_json::Value::as_u64).unwrap_or(0);
+                                        let output_tokens = usage.get("completion_tokens").and_then(serde_json::Value::as_u64).unwrap_or(0);
+
+                                        send_stream_event!(
+                                            tx,
+                                            StreamEvent::MessageDelta {
+                                                stop_reason: finish_reason.and_then(|reason| {
+                                                    match reason {
+                                                        "stop" => Some(StopReason::EndTurn),
+                                                        "tool_calls" => Some(StopReason::ToolUse),
+                                                        "length" => Some(StopReason::MaxTokens),
+                                                        _ => None,
+                                                    }
+                                                }),
+                                                usage: Some(Usage {
+                                                    input_tokens,
+                                                    output_tokens,
+                                                    ..Default::default()
+                                                }),
+                                            }
+                                        );
+                                    }
                                 }
                             }
-                            Err(e) => {
-                                let _ = tx.send(StreamEvent::Error { message: e.to_string() }).await;
+                            Err(error) => {
+                                send_stream_event!(
+                                    tx,
+                                    StreamEvent::Error {
+                                        message: error.to_string(),
+                                    }
+                                );
+
                                 return;
                             }
                         }
                     }
+
+                    let message = if String::from_utf8_lossy(&buffer).trim().is_empty() {
+                        "provider SSE stream ended before the completion delimiter"
+                    } else {
+                        "provider SSE stream ended with an incomplete line"
+                    };
+
+                    send_stream_event!(
+                        tx,
+                        StreamEvent::Error {
+                            message: message.to_string(),
+                        }
+                    );
                 }
-                Err(e) => {
-                    let _ = tx.send(StreamEvent::Error { message: e.to_string() }).await;
+                Err(error) => {
+                    send_stream_event!(
+                        tx,
+                        StreamEvent::Error {
+                            message: error.to_string(),
+                        }
+                    );
                 }
             }
         });
 
-        Ok(CompletionStream::new(rx))
+        Ok(completion_stream)
     }
 }
 
@@ -692,6 +925,7 @@ pub struct OpenAiBuilder {
     api_key: Option<String>,
     base_url: Option<String>,
     model: Option<String>,
+    client: Option<reqwest::Client>,
 }
 
 impl OpenAiBuilder {
@@ -710,6 +944,11 @@ impl OpenAiBuilder {
         self
     }
 
+    pub fn client(mut self, client: reqwest::Client) -> Self {
+        self.client = Some(client);
+        self
+    }
+
     pub fn build(self) -> Result<OpenAi> {
         let auth = if let Some(key) = self.api_key {
             Auth::ApiKey(key)
@@ -723,7 +962,279 @@ impl OpenAiBuilder {
             auth,
             base_url: self.base_url.unwrap_or_else(|| OPENAI_API_BASE.to_string()),
             default_model: self.model.unwrap_or_else(|| "gpt-4o".to_string()),
-            client: reqwest::Client::new(),
+            client: self.client.unwrap_or_default(),
         })
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use std::io;
+    use std::time::Duration;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+    use tokio::sync::oneshot;
+
+    pub(crate) struct MockProviderServer {
+        endpoint: String,
+        disconnect_receiver: Option<oneshot::Receiver<()>>,
+        server_task: tokio::task::JoinHandle<()>,
+    }
+
+    impl MockProviderServer {
+        pub(crate) async fn fixed(status: u16, body: Vec<u8>) -> Self {
+            Self::spawn(status, MockResponseBody::Fixed(body)).await
+        }
+
+        pub(crate) async fn endless(status: u16, repeated_chunk: Vec<u8>) -> Self {
+            Self::spawn(status, MockResponseBody::Endless(repeated_chunk)).await
+        }
+
+        async fn spawn(status: u16, response_body: MockResponseBody) -> Self {
+            let listener = TcpListener::bind("127.0.0.1:0").await.expect("mock provider listener should bind");
+            let local_address = listener.local_addr().expect("mock provider address should resolve");
+            let (disconnect_sender, disconnect_receiver) = oneshot::channel();
+            let server_task = tokio::spawn(async move {
+                let (mut socket, _peer_address) = listener.accept().await.expect("mock provider should accept request");
+
+                read_request(&mut socket).await.expect("mock provider request should be readable");
+
+                match response_body {
+                    MockResponseBody::Fixed(body) => {
+                        let response_header = format!(
+                            "HTTP/1.1 {status} {}\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                            status_reason(status),
+                            body.len()
+                        );
+
+                        if socket.write_all(response_header.as_bytes()).await.is_ok() {
+                            let _ = socket.write_all(&body).await;
+                        }
+                    }
+                    MockResponseBody::Endless(repeated_chunk) => {
+                        let response_header = format!(
+                            "HTTP/1.1 {status} {}\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n",
+                            status_reason(status)
+                        );
+
+                        if socket.write_all(response_header.as_bytes()).await.is_err() {
+                            let _ = disconnect_sender.send(());
+
+                            return;
+                        }
+
+                        loop {
+                            let chunk_header = format!("{:X}\r\n", repeated_chunk.len());
+                            let write_result = async {
+                                socket.write_all(chunk_header.as_bytes()).await?;
+                                socket.write_all(&repeated_chunk).await?;
+                                socket.write_all(b"\r\n").await?;
+                                socket.flush().await
+                            }
+                            .await;
+
+                            if write_result.is_err() {
+                                let _ = disconnect_sender.send(());
+
+                                return;
+                            }
+
+                            tokio::time::sleep(Duration::from_millis(5)).await;
+                        }
+                    }
+                }
+            });
+
+            Self {
+                endpoint: format!("http://{local_address}"),
+                disconnect_receiver: Some(disconnect_receiver),
+                server_task,
+            }
+        }
+
+        pub(crate) fn endpoint(&self) -> &str {
+            &self.endpoint
+        }
+
+        pub(crate) async fn wait_for_disconnect(&mut self) {
+            let disconnect_receiver = self
+                .disconnect_receiver
+                .take()
+                .expect("disconnect receiver should only be awaited once");
+
+            tokio::time::timeout(Duration::from_secs(2), disconnect_receiver)
+                .await
+                .expect("provider connection should terminate after receiver drop")
+                .expect("mock provider should observe connection termination");
+        }
+    }
+
+    impl Drop for MockProviderServer {
+        fn drop(&mut self) {
+            self.server_task.abort();
+        }
+    }
+
+    enum MockResponseBody {
+        Fixed(Vec<u8>),
+        Endless(Vec<u8>),
+    }
+
+    async fn read_request(socket: &mut TcpStream) -> io::Result<()> {
+        let mut request_bytes = Vec::new();
+        let mut read_buffer = [0_u8; 4096];
+
+        loop {
+            let bytes_read = socket.read(&mut read_buffer).await?;
+
+            if bytes_read == 0 {
+                return Ok(());
+            }
+
+            request_bytes.extend_from_slice(&read_buffer[..bytes_read]);
+
+            let Some(header_end) = request_bytes.windows(4).position(|window| window == b"\r\n\r\n") else {
+                continue;
+            };
+            let body_start = header_end + 4;
+            let request_headers = String::from_utf8_lossy(&request_bytes[..header_end]);
+            let content_length = request_headers
+                .lines()
+                .find_map(|line| {
+                    let (header_name, header_value) = line.split_once(':')?;
+
+                    header_name
+                        .eq_ignore_ascii_case("content-length")
+                        .then(|| header_value.trim().parse::<usize>().ok())
+                        .flatten()
+                })
+                .unwrap_or(0);
+
+            if request_bytes.len() >= body_start.saturating_add(content_length) {
+                return Ok(());
+            }
+        }
+    }
+
+    fn status_reason(status: u16) -> &'static str {
+        match status {
+            200 => "OK",
+            400 => "Bad Request",
+            429 => "Too Many Requests",
+            500 => "Internal Server Error",
+            _ => "Response",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_support::MockProviderServer;
+    use super::*;
+    use std::time::Duration;
+
+    fn provider(base_url: &str) -> OpenAi {
+        OpenAi::builder()
+            .api_key("test-api-key")
+            .base_url(base_url)
+            .client(reqwest::Client::new())
+            .build()
+            .expect("OpenAI provider should build")
+    }
+
+    #[tokio::test]
+    async fn stream_recovers_after_malformed_event_and_preserves_completion_semantics() {
+        let response_body = concat!(
+            "data: not-json\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"},\"finish_reason\":null}]}\n",
+            "data: [DONE]\n"
+        );
+        let mock_server = MockProviderServer::fixed(200, response_body.as_bytes().to_vec()).await;
+        let response = provider(mock_server.endpoint())
+            .complete_blocking(CompletionRequest::new("test-model"))
+            .await
+            .expect("valid OpenAI stream should complete");
+
+        assert_eq!(response.message.get_all_text(), "hello");
+        assert_eq!(response.stop_reason, StopReason::EndTurn);
+    }
+
+    #[tokio::test]
+    async fn stream_rejects_never_delimited_partial_line() {
+        let response_body = vec![b'x'; MAX_PROVIDER_PARTIAL_LINE_BYTES + 1];
+        let mock_server = MockProviderServer::fixed(200, response_body).await;
+        let error = provider(mock_server.endpoint())
+            .complete_blocking(CompletionRequest::new("test-model"))
+            .await
+            .expect_err("unterminated OpenAI stream should fail");
+
+        assert!(error.to_string().contains("partial line exceeded"));
+    }
+
+    #[tokio::test]
+    async fn stream_rejects_accumulated_tool_arguments_over_limit() {
+        const ARGUMENT_FRAGMENT_BYTES: usize = 200 * 1024;
+
+        let argument_fragment = "a".repeat(ARGUMENT_FRAGMENT_BYTES);
+        let fragment_count = crate::MAX_PROVIDER_TOOL_ARGUMENT_BYTES / ARGUMENT_FRAGMENT_BYTES + 1;
+        let mut response_body = String::new();
+
+        for _fragment_index in 0..fragment_count {
+            let event = serde_json::json!({
+                "choices": [{
+                    "delta": {
+                        "tool_calls": [{
+                            "index": 0,
+                            "function": {
+                                "arguments": argument_fragment,
+                            }
+                        }]
+                    },
+                    "finish_reason": serde_json::Value::Null,
+                }]
+            });
+
+            response_body.push_str("data: ");
+            response_body.push_str(&event.to_string());
+            response_body.push('\n');
+        }
+
+        let mock_server = MockProviderServer::fixed(200, response_body.into_bytes()).await;
+        let error = provider(mock_server.endpoint())
+            .complete_blocking(CompletionRequest::new("test-model"))
+            .await
+            .expect_err("oversized OpenAI tool arguments should fail");
+
+        assert!(error.to_string().contains("tool arguments exceeded"));
+    }
+
+    #[tokio::test]
+    async fn error_response_body_is_streamed_and_bounded() {
+        let response_body = vec![b'e'; MAX_PROVIDER_ERROR_BODY_BYTES + 1];
+        let mock_server = MockProviderServer::fixed(500, response_body).await;
+        let error = provider(mock_server.endpoint())
+            .complete_blocking(CompletionRequest::new("test-model"))
+            .await
+            .expect_err("oversized OpenAI error response should fail");
+
+        assert!(error.to_string().contains("error response body exceeded"));
+    }
+
+    #[tokio::test]
+    async fn dropping_receiver_aborts_stream_task_and_connection() {
+        let mut mock_server = MockProviderServer::endless(200, b"x".to_vec()).await;
+        let completion_stream = provider(mock_server.endpoint())
+            .complete(CompletionRequest::new("test-model"))
+            .await
+            .expect("OpenAI stream should start");
+        let mut event_receiver = completion_stream.into_receiver();
+
+        tokio::time::timeout(Duration::from_secs(1), event_receiver.recv())
+            .await
+            .expect("OpenAI message start should arrive")
+            .expect("OpenAI stream should remain open");
+        drop(event_receiver);
+
+        mock_server.wait_for_disconnect().await;
     }
 }

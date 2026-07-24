@@ -72,7 +72,7 @@ impl DocumentState {
             return Some(Vec::new());
         }
 
-        let current_schema_name = semantic_index.schema_name_at_position(position);
+        let current_schema_name = semantic_index.schema_name_at_position(self.position_context(position)?);
 
         Some(semantic_index.type_suggestions(line_prefix, current_schema_name))
     }

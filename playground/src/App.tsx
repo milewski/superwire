@@ -1,4 +1,4 @@
-import { CheckCircle2, Copy, Database, DatabaseZap, GitBranch, Maximize2, Minimize2, Moon, Pencil, Play, Plus, RefreshCcw, Square, Sun, Trash2, Workflow } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCircle2, Copy, Database, DatabaseZap, GitBranch, KeyRound, Maximize2, Menu, Minimize2, Moon, Pencil, Play, Plus, RefreshCcw, Square, Sun, Trash2, Workflow } from 'lucide-react';
 import type { ReactElement } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,25 @@ import PlaygroundTabChip from '@/components/playground/tab-chip';
 import RunStateBadge from '@/components/playground/run-state-badge';
 import WorkflowGraphView from '@/components/playground/workflow-graph-view';
 import logoSource from '../../documentation/docs/public/logo-horizontal.svg';
-import type { ExecutorEvent, PlaygroundView, WorkflowEditorView, WorkflowExecutionGraph, WorkflowTab } from './types';
+import {
+  CancellationTransition,
+  ExecutorCacheOperation,
+  ExecutorDiagnosticCode,
+  ExecutorDiagnosticRetryability,
+  ExecutorDiagnosticSeverity,
+  ExecutorDiagnosticSubjectType,
+  ExecutorEventKind,
+  ExecutorStage,
+  type CancellationResponse,
+  type ExecutionDiagnostic,
+  type ExecutionDiagnosticSubject,
+  type ExecutorEvent,
+  type PlaygroundView,
+  type WorkflowEditorView,
+  type WorkflowExecutionGraph,
+  type WorkflowTab,
+} from './types';
+import { formatExecutionDiagnosticData } from './eventFormatting';
 import WireEditor from './WireEditor';
 import { parseWorkflowSourceMetadata, workflowSourceWithMetadata, workflowSourceWithoutMetadata } from './workflowMetadata';
 import {
@@ -35,6 +53,25 @@ const themeStorageKey = 'superwire.playground.theme';
 const runIdentifierHeader = 'x-superwire-run-id';
 const streamReconnectDelayMilliseconds = 1000;
 const defaultGraphMessage = 'Open the graph view to generate a visual workflow plan.';
+const executorEventKinds = new Set<string>(Object.values(ExecutorEventKind));
+const executorCacheOperations = new Set<string>(Object.values(ExecutorCacheOperation));
+const executorDiagnosticCodes = new Set<string>(Object.values(ExecutorDiagnosticCode));
+const executorStages = new Set<string>(Object.values(ExecutorStage));
+const executorDiagnosticSeverities = new Set<string>(Object.values(ExecutorDiagnosticSeverity));
+const executorDiagnosticRetryabilities = new Set<string>(Object.values(ExecutorDiagnosticRetryability));
+const executorDiagnosticSubjectTypes = new Set<string>(Object.values(ExecutorDiagnosticSubjectType));
+const cancellationTransitions = new Set<string>(Object.values(CancellationTransition));
+const maxSseLineBytes = 256 * 1024;
+const maxSseDataBytes = 768 * 1024;
+const maxSseFrameBytes = 1024 * 1024;
+const maxSseBufferedTextBytes = 2 * 1024 * 1024;
+const maxSseTotalBytes = 16 * 1024 * 1024;
+const maxAcceptedEventIdentifiers = 2048;
+const maxRetainedUiEvents = 500;
+const maxRetainedUiEventBytes = 4 * 1024 * 1024;
+const eventHistoryTruncationMessage = 'Older browser event history was truncated to stay within local safety limits.';
+const utf8Encoder = new TextEncoder();
+const serializedExecutorEventByteLengths = new WeakMap<ExecutorEvent, number>();
 
 type RenameDialogTarget =
   | { kind: 'workflow'; tabId: string }
@@ -54,16 +91,64 @@ interface LspPosition {
   character: number;
 }
 
+enum WorkflowOperationKind {
+  Validate = 'validate',
+  Format = 'format',
+  Graph = 'graph',
+  Export = 'export',
+}
+
+interface WorkflowContentSnapshot {
+  source: string;
+  inputJson: string;
+  secretsJson: string;
+}
+
+interface WorkflowOperationToken {
+  tabId: string;
+  kind: WorkflowOperationKind;
+  revision: number;
+  snapshot: WorkflowContentSnapshot;
+}
+
+interface WorkflowRunOwnership {
+  sequence: number;
+  abortController: AbortController;
+  runIdentifier: string | null;
+  cancellationRequested: boolean;
+  snapshot: WorkflowContentSnapshot;
+}
+
+interface StreamGapConfirmationRequest {
+  requestIdentifier: number;
+  tabId: string;
+  runSequence: number;
+  diagnostic: ExecutionDiagnostic;
+  resumeAfter: string | null;
+  historyLoss: boolean;
+  abortSignal: AbortSignal;
+  abortListener: () => void;
+  resolve: (accepted: boolean) => void;
+}
+
+interface WorkflowProblem {
+  key: string;
+  message: string;
+  diagnostic: ExecutionDiagnostic | null;
+  tone: 'error' | 'warning' | 'cancelled' | 'gap';
+}
+
 export default function App() {
   const [tabs, setTabs] = useState<WorkflowTab[]>(() => [createWorkflowTab('Launch brief')]);
   const [activeTabId, setActiveTabId] = useState('');
   const [darkMode, setDarkMode] = useState(true);
+  const [problemsOpen, setProblemsOpen] = useState(true);
   const [outputOpen, setOutputOpen] = useState(true);
   const [eventsOpen, setEventsOpen] = useState(true);
   const [maximizedWorkflowPanel, setMaximizedWorkflowPanel] = useState<MaximizedWorkflowPanel>(null);
   const [eventGroupingMode, setEventGroupingMode] = useState<EventGroupingMode>(EventGroupingMode.Chronological);
-  const [abortController, setAbortController] = useState<AbortController | null>(null);
-  const [currentRunIdentifier, setCurrentRunIdentifier] = useState<string | null>(null);
+  const [includeSecretsConfirmationOpen, setIncludeSecretsConfirmationOpen] = useState(false);
+  const [streamGapConfirmationQueue, setStreamGapConfirmationQueue] = useState<StreamGapConfirmationRequest[]>([]);
   const [renameDialogTarget, setRenameDialogTarget] = useState<RenameDialogTarget | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
@@ -77,6 +162,14 @@ export default function App() {
   const graphDebounceTimeoutRef = useRef<number | null>(null);
   const pendingEventBatchesRef = useRef(new Map<string, ExecutorEvent[]>());
   const eventBatchFlushFrameRef = useRef<number | null>(null);
+  const tabsRef = useRef(tabs);
+  const runSequenceRef = useRef(0);
+  const runOwnershipByTabRef = useRef(new Map<string, WorkflowRunOwnership>());
+  const streamGapConfirmationQueueRef = useRef<StreamGapConfirmationRequest[]>([]);
+  const streamGapConfirmationSequenceRef = useRef(0);
+  const operationRevisionByKeyRef = useRef(new Map<string, number>());
+  const scheduledValidationByTabRef = useRef(new Map<string, number>());
+  const visibleStreamGapConfirmationRequest = streamGapConfirmationQueue[0] ?? null;
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
   const canRun = activeTab?.runState !== 'running';
   const activeView: PlaygroundView = activeTab?.activeView ?? 'workflow';
@@ -86,6 +179,7 @@ export default function App() {
   const editorMessageTone = activeJsonValidationError ? 'error' : resolveEditorMessageTone(activeTab);
   const editorStateTone = activeTab ? workflowEditorTone(activeTab) : 'neutral';
   const editorMessage = activeJsonValidationError ?? activeTab?.message ?? 'Ready.';
+  const activeProblems = activeTab ? workflowProblems(activeTab, activeJsonValidationError) : [];
   const activeCodeFragment = activeTab?.codeFragments.find((fragment) => fragment.id === activeTab.activeCodeFragmentId) ?? activeTab?.codeFragments[0];
   const activeCodeFragmentSourceMap = activeTab && activeCodeFragment
     ? sourceMapForFragment(activeTab.codeFragments, activeTab.codeFragmentsUseMarkers, activeCodeFragment.id)
@@ -94,6 +188,8 @@ export default function App() {
     activeTab && activeCodeFragment && editorJumpTarget?.tabId === activeTab.id && editorJumpTarget.fragmentId === activeCodeFragment.id
       ? editorJumpTarget
       : null;
+
+  tabsRef.current = tabs;
 
   useEffect(() => {
     restoreFromStorage(setTabs, setActiveTabId, setDarkMode);
@@ -124,6 +220,14 @@ export default function App() {
   useEffect(() => () => {
     if (eventBatchFlushFrameRef.current !== null) {
       window.cancelAnimationFrame(eventBatchFlushFrameRef.current);
+    }
+
+    for (const timeoutIdentifier of scheduledValidationByTabRef.current.values()) {
+      window.clearTimeout(timeoutIdentifier);
+    }
+
+    for (const ownership of runOwnershipByTabRef.current.values()) {
+      ownership.abortController.abort();
     }
   }, []);
 
@@ -195,11 +299,90 @@ export default function App() {
     setTabs((currentTabs) => currentTabs.map((tab) => (tab.id === tabId ? updater(tab) : tab)));
   }
 
+  function snapshotForTab(tab: WorkflowTab): WorkflowContentSnapshot {
+    return {
+      source: tab.source,
+      inputJson: tab.inputJson,
+      secretsJson: tab.secretsJson,
+    };
+  }
+
+  function operationKey(tabId: string, kind: WorkflowOperationKind) {
+    return `${tabId}:${kind}`;
+  }
+
+  function beginWorkflowOperation(tab: WorkflowTab, kind: WorkflowOperationKind): WorkflowOperationToken {
+    const key = operationKey(tab.id, kind);
+    const revision = (operationRevisionByKeyRef.current.get(key) ?? 0) + 1;
+    operationRevisionByKeyRef.current.set(key, revision);
+
+    return {
+      tabId: tab.id,
+      kind,
+      revision,
+      snapshot: snapshotForTab(tab),
+    };
+  }
+
+  function invalidateWorkflowOperation(tabId: string, kind: WorkflowOperationKind) {
+    const key = operationKey(tabId, kind);
+    operationRevisionByKeyRef.current.set(key, (operationRevisionByKeyRef.current.get(key) ?? 0) + 1);
+  }
+
+  function invalidateAllWorkflowOperations(tabId: string) {
+    for (const kind of Object.values(WorkflowOperationKind)) {
+      invalidateWorkflowOperation(tabId, kind);
+    }
+  }
+
+  function workflowOperationIsCurrent(token: WorkflowOperationToken) {
+    const currentRevision = operationRevisionByKeyRef.current.get(operationKey(token.tabId, token.kind));
+    const currentTab = tabsRef.current.find((tab) => tab.id === token.tabId);
+
+    return currentRevision === token.revision && currentTab !== undefined && workflowSnapshotsMatch(snapshotForTab(currentTab), token.snapshot);
+  }
+
+  function cancelScheduledValidation(tabId: string) {
+    const timeoutIdentifier = scheduledValidationByTabRef.current.get(tabId);
+
+    if (timeoutIdentifier !== undefined) {
+      window.clearTimeout(timeoutIdentifier);
+      scheduledValidationByTabRef.current.delete(tabId);
+    }
+  }
+
+  function scheduleActiveWorkflowValidation() {
+    if (!activeTab || activeTab.runState === 'running') {
+      return;
+    }
+
+    cancelScheduledValidation(activeTab.id);
+
+    const tabId = activeTab.id;
+    const timeoutIdentifier = window.setTimeout(() => {
+      scheduledValidationByTabRef.current.delete(tabId);
+      void validateWorkflowByTabId(tabId);
+    }, 180);
+    scheduledValidationByTabRef.current.set(tabId, timeoutIdentifier);
+  }
+
+  function runOwnershipIsCurrent(tabId: string, sequence: number) {
+    return runOwnershipByTabRef.current.get(tabId)?.sequence === sequence;
+  }
+
   function setTabView(nextView: PlaygroundView) {
+    if (activeTab) {
+      cancelScheduledValidation(activeTab.id);
+    }
+
     updateActiveTab((tab) => ({ ...tab, activeView: nextView }));
   }
 
   function setWorkflowEditorView(nextView: WorkflowEditorView) {
+    if (activeTab) {
+      cancelScheduledValidation(activeTab.id);
+    }
+
     updateActiveTab((tab) => ({ ...tab, activeEditorView: nextView }));
   }
 
@@ -238,6 +421,7 @@ export default function App() {
       message: 'Duplicated workflow.',
       outputJson: '',
       eventLog: [],
+      runtimeDiagnostic: null,
       graphState: 'idle',
       graphMessage: defaultGraphMessage,
       graphData: null,
@@ -251,6 +435,25 @@ export default function App() {
   }
 
   function closeTab(tabId: string) {
+    const tabToClose = tabs.find((tab) => tab.id === tabId);
+    const runOwnership = runOwnershipByTabRef.current.get(tabId);
+
+    if (tabToClose?.runState === 'running' && !window.confirm(`Stop and close ${tabToClose.name}?`)) {
+      return;
+    }
+
+    cancelScheduledValidation(tabId);
+    invalidateAllWorkflowOperations(tabId);
+
+    if (runOwnership) {
+      if (runOwnership.runIdentifier) {
+        void cancelWorkflowRun(runOwnership.runIdentifier).catch(() => undefined);
+      }
+
+      runOwnership.abortController.abort();
+      runOwnershipByTabRef.current.delete(tabId);
+    }
+
     if (tabs.length === 1) {
       const tab = createWorkflowTab('Launch brief');
       setTabs([tab]);
@@ -290,6 +493,16 @@ export default function App() {
     });
   }
 
+  function moveWorkflowTab(tabId: string, offset: -1 | 1) {
+    const tabIndex = tabs.findIndex((tab) => tab.id === tabId);
+    const targetTab = tabs[tabIndex + offset];
+
+    if (targetTab) {
+      reorderTab(tabId, targetTab.id);
+      setToastMessage(`Moved workflow ${offset < 0 ? 'left' : 'right'}.`);
+    }
+  }
+
   function handleTabDragStart(tabId: string) {
     setDraggedTabId(tabId);
     setDragOverTabId(tabId);
@@ -319,6 +532,10 @@ export default function App() {
   }
 
   function setActiveCodeFragment(fragmentId: string) {
+    if (activeTab) {
+      cancelScheduledValidation(activeTab.id);
+    }
+
     updateActiveTab((tab) => ({ ...tab, activeCodeFragmentId: fragmentId, activeEditorView: 'code' }));
   }
 
@@ -335,6 +552,8 @@ export default function App() {
       activeEditorView: 'code',
       codeFragmentsUseMarkers: true,
       source: workflowSourceFromCodeFragments(nextFragments, true),
+      validationState: 'idle',
+      message: 'Workflow changed. Validate or run to refresh status.',
       graphState: 'idle',
       graphMessage: 'Graph needs to be regenerated after source changes.',
       graphData: null,
@@ -364,6 +583,8 @@ export default function App() {
           codeFragmentsUseMarkers: parsedResult.useMarkers,
           inputJson: metadata.inputJson ?? tab.inputJson,
           secretsJson: metadata.secretsJson ?? tab.secretsJson,
+          validationState: 'idle',
+          message: 'Workflow changed. Validate or run to refresh status.',
           graphState: 'idle',
           graphMessage: 'Graph needs to be regenerated after source changes.',
           graphData: null,
@@ -375,6 +596,8 @@ export default function App() {
         ...tab,
         source: workflowSourceWithoutMetadata(nextSourceBeforeParsing),
         codeFragments: nextFragments,
+        validationState: 'idle',
+        message: 'Workflow changed. Validate or run to refresh status.',
         graphState: 'idle',
         graphMessage: 'Graph needs to be regenerated after source changes.',
         graphData: null,
@@ -397,6 +620,8 @@ export default function App() {
           activeCodeFragmentId: codeFragment.id,
           activeEditorView: 'code',
           codeFragmentsUseMarkers: false,
+          validationState: 'idle',
+          message: 'Workflow changed. Validate or run to refresh status.',
           graphState: 'idle',
           graphMessage: 'Graph needs to be regenerated after source changes.',
           graphData: null,
@@ -422,6 +647,8 @@ export default function App() {
         codeFragments: nextFragments,
         activeCodeFragmentId: nextActiveFragmentId,
         codeFragmentsUseMarkers: useMarkers,
+        validationState: 'idle',
+        message: 'Workflow changed. Validate or run to refresh status.',
         graphState: 'idle',
         graphMessage: 'Graph needs to be regenerated after source changes.',
         graphData: null,
@@ -453,12 +680,25 @@ export default function App() {
         codeFragments: nextFragments,
         codeFragmentsUseMarkers: true,
         source: workflowSourceFromCodeFragments(nextFragments, true),
+        validationState: 'idle',
+        message: 'Workflow changed. Validate or run to refresh status.',
         graphState: 'idle',
         graphMessage: 'Graph needs to be regenerated after source changes.',
         graphData: null,
         updatedAt: Date.now(),
       };
     });
+  }
+
+  function moveCodeFragment(fragmentId: string, offset: -1 | 1) {
+    const currentTab = requireActiveTab(activeTab);
+    const fragmentIndex = currentTab.codeFragments.findIndex((fragment) => fragment.id === fragmentId);
+    const targetFragment = currentTab.codeFragments[fragmentIndex + offset];
+
+    if (targetFragment) {
+      reorderCodeFragment(fragmentId, targetFragment.id);
+      setToastMessage(`Moved fragment ${offset < 0 ? 'left' : 'right'}.`);
+    }
   }
 
   function handleCodeFragmentDragStart(fragmentId: string) {
@@ -540,6 +780,8 @@ export default function App() {
         ...tab,
         codeFragments: nextFragments,
         source: workflowSourceFromCodeFragments(nextFragments, tab.codeFragmentsUseMarkers),
+        validationState: 'idle',
+        message: 'Workflow changed. Validate or run to refresh status.',
         graphState: 'idle',
         graphMessage: 'Graph needs to be regenerated after source changes.',
         graphData: null,
@@ -558,7 +800,6 @@ export default function App() {
     if (includeInput) {
       body.input = parseJsonObject(currentTab.inputJson, 'input');
       body.options = {
-        include_events: true,
         max_concurrency: 5,
         use_cache: currentTab.useCache,
         cache_key: currentTab.cacheKey,
@@ -570,6 +811,7 @@ export default function App() {
 
   async function validateWorkflow() {
     const currentTab = requireActiveTab(activeTab);
+    cancelScheduledValidation(currentTab.id);
     const valid = await validateWorkflowByTabId(currentTab.id);
 
     if (valid) {
@@ -578,20 +820,17 @@ export default function App() {
   }
 
   function validateActiveWorkflowOnBlur() {
-    if (!activeTab || activeTab.runState === 'running') {
-      return;
-    }
-
-    void validateWorkflowByTabId(activeTab.id);
+    scheduleActiveWorkflowValidation();
   }
 
   async function validateWorkflowByTabId(tabId: string) {
-    const currentTab = tabs.find((tab) => tab.id === tabId);
+    const currentTab = tabsRef.current.find((tab) => tab.id === tabId);
 
-    if (!currentTab) {
+    if (!currentTab || currentTab.runState === 'running') {
       return false;
     }
 
+    const operationToken = beginWorkflowOperation(currentTab, WorkflowOperationKind.Validate);
     updateTab(currentTab.id, (tab) => ({ ...tab, validationState: 'running', message: 'Validating workflow...' }));
 
     try {
@@ -600,26 +839,42 @@ export default function App() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(requestBody(currentTab, false)),
       });
-      const payload = await response.json();
+      const payload = await responsePayload(response);
 
-      if (!response.ok || !payload.valid) {
-        updateTab(currentTab.id, (tab) => ({ ...tab, validationState: 'invalid', message: payload.details ?? payload.error ?? 'Workflow is invalid.' }));
+      if (!workflowOperationIsCurrent(operationToken)) {
+        return false;
+      }
+
+      if (!response.ok || payload.valid !== true) {
+        const diagnostic = diagnosticFromErrorPayload(payload);
+        updateTab(currentTab.id, (tab) => ({
+          ...tab,
+          validationState: 'invalid',
+          message: diagnostic?.message ?? stringPayloadValue(payload.details) ?? stringPayloadValue(payload.error) ?? 'Workflow is invalid.',
+          runtimeDiagnostic: diagnostic ?? tab.runtimeDiagnostic,
+        }));
 
         return false;
       }
 
       updateTab(currentTab.id, (tab) => ({ ...tab, validationState: 'valid', message: 'Workflow is valid.' }));
+
       return true;
     } catch (error) {
-      updateTab(currentTab.id, (tab) => ({ ...tab, validationState: 'invalid', message: errorMessage(error) }));
+      if (workflowOperationIsCurrent(operationToken)) {
+        updateTab(currentTab.id, (tab) => ({ ...tab, validationState: 'idle', message: `Validation unavailable: ${errorMessage(error)}` }));
+      }
+
       return false;
     }
   }
 
   async function formatWorkflow() {
     const currentTab = requireActiveTab(activeTab);
-    const currentCodeFragment = currentTab.codeFragments.find((fragment) => fragment.id === currentTab.activeCodeFragmentId);
-    updateActiveTab((tab) => ({ ...tab, message: 'Formatting workflow...' }));
+    cancelScheduledValidation(currentTab.id);
+    invalidateWorkflowOperation(currentTab.id, WorkflowOperationKind.Validate);
+    const operationToken = beginWorkflowOperation(currentTab, WorkflowOperationKind.Format);
+    updateTab(currentTab.id, (tab) => ({ ...tab, message: 'Formatting workflow...' }));
 
     try {
       const response = await fetch('/format', {
@@ -627,27 +882,37 @@ export default function App() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ workflow_source: workflowSourceWithoutMetadata(currentTab.source) }),
       });
-      const payload = await response.json();
+      const payload = await responsePayload(response);
 
-      if (!response.ok) {
-        updateTab(currentTab.id, (tab) => ({ ...tab, validationState: 'invalid', message: payload.error ?? 'Unable to format workflow.' }));
+      if (!workflowOperationIsCurrent(operationToken)) {
+        return;
+      }
+
+      const formattedWorkflowSource = stringPayloadValue(payload.formatted_workflow_source);
+
+      if (!response.ok || !formattedWorkflowSource) {
+        const diagnostic = diagnosticFromErrorPayload(payload);
+        updateTab(currentTab.id, (tab) => ({
+          ...tab,
+          validationState: 'invalid',
+          message: diagnostic?.message ?? stringPayloadValue(payload.error) ?? 'Unable to format workflow.',
+          runtimeDiagnostic: diagnostic ?? tab.runtimeDiagnostic,
+        }));
 
         return;
       }
 
-      const parsedResult = parseWorkflowSourceFragments(payload.formatted_workflow_source, currentTab.name);
+      const parsedResult = parseWorkflowSourceFragments(formattedWorkflowSource, currentTab.name);
       const formattedCodeFragments = preserveWorkflowCodeFragmentIdentities(parsedResult.fragments, currentTab.codeFragments);
-      const activeCodeFragmentId =
-        formattedCodeFragments.find((fragment) => fragment.id === currentTab.activeCodeFragmentId)?.id
-        ?? formattedCodeFragments.find((fragment) => fragment.name === currentCodeFragment?.name)?.id
-        ?? formattedCodeFragments[0]?.id
-        ?? currentTab.activeCodeFragmentId;
 
       updateTab(currentTab.id, (tab) => ({
         ...tab,
         source: workflowSourceFromCodeFragments(formattedCodeFragments, parsedResult.useMarkers),
         codeFragments: formattedCodeFragments,
-        activeCodeFragmentId,
+        activeCodeFragmentId:
+          formattedCodeFragments.find((fragment) => fragment.id === tab.activeCodeFragmentId)?.id
+          ?? formattedCodeFragments[0]?.id
+          ?? tab.activeCodeFragmentId,
         codeFragmentsUseMarkers: parsedResult.useMarkers,
         validationState: 'valid',
         message: 'Workflow formatted.',
@@ -658,7 +923,9 @@ export default function App() {
       }));
       setToastMessage('Workflow formatted.');
     } catch (error) {
-      updateTab(currentTab.id, (tab) => ({ ...tab, validationState: 'invalid', message: errorMessage(error) }));
+      if (workflowOperationIsCurrent(operationToken)) {
+        updateTab(currentTab.id, (tab) => ({ ...tab, message: `Formatting unavailable: ${errorMessage(error)}` }));
+      }
     }
   }
 
@@ -668,16 +935,28 @@ export default function App() {
     }
 
     const currentTab = requireActiveTab(activeTab);
-    const nextAbortController = new AbortController();
-    setAbortController(nextAbortController);
+    cancelScheduledValidation(currentTab.id);
+    invalidateAllWorkflowOperations(currentTab.id);
+    runSequenceRef.current += 1;
+
+    const ownership: WorkflowRunOwnership = {
+      sequence: runSequenceRef.current,
+      abortController: new AbortController(),
+      runIdentifier: null,
+      cancellationRequested: false,
+      snapshot: snapshotForTab(currentTab),
+    };
+    runOwnershipByTabRef.current.set(currentTab.id, ownership);
     setEventsOpen(true);
-    updateActiveTab((tab) => ({
+    setMaximizedWorkflowPanel(null);
+    updateTab(currentTab.id, (tab) => ({
       ...tab,
       runState: 'running',
       validationState: 'idle',
       message: 'Running workflow...',
       outputJson: '',
       eventLog: [],
+      runtimeDiagnostic: null,
     }));
 
     try {
@@ -688,59 +967,249 @@ export default function App() {
           'content-type': 'application/json',
         },
         body: JSON.stringify(requestBody(currentTab, true)),
-        signal: nextAbortController.signal,
+        signal: ownership.abortController.signal,
       });
 
       if (!response.ok || !response.body) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error ?? `Request failed with ${response.status}`);
+        const payload = await responsePayload(response).catch(() => ({}));
+        throw responseDiagnosticError(payload, `Request failed with ${response.status}`);
       }
 
-      setCurrentRunIdentifier(response.headers.get(runIdentifierHeader));
-
-      const events = await readWorkflowEventStream(response, currentTab.id, nextAbortController.signal, acceptSseChunk, updateTab);
-      const failedEvent = events.find((event) => event.kind === 'workflow_failed');
-
-      if (failedEvent) {
-        updateTab(currentTab.id, (tab) => ({ ...tab, runState: 'failed', message: failedEvent.message ?? 'Workflow failed.' }));
+      if (!runOwnershipIsCurrent(currentTab.id, ownership.sequence)) {
+        ownership.abortController.abort();
 
         return;
       }
 
-      updateTab(currentTab.id, (tab) => ({ ...tab, runState: 'completed', validationState: 'valid', message: 'Workflow completed.' }));
+      ownership.runIdentifier = response.headers.get(runIdentifierHeader);
+
+      if (ownership.cancellationRequested && ownership.runIdentifier) {
+        const cancellationResponse = await cancelWorkflowRun(ownership.runIdentifier);
+
+        if (applyCancellationTransition(currentTab.id, ownership, cancellationResponse.transition)) {
+          return;
+        }
+      }
+
+      const events = await readWorkflowEventStream(
+        response,
+        currentTab.id,
+        ownership.abortController.signal,
+        acceptSseChunk,
+        updateTab,
+        (diagnostic, resumeAfter, historyLoss) => requestStreamGapResumeConfirmation(
+          currentTab.id,
+          ownership.sequence,
+          diagnostic,
+          resumeAfter,
+          historyLoss,
+          ownership.abortController.signal,
+        ),
+      );
+
+      if (!runOwnershipIsCurrent(currentTab.id, ownership.sequence)) {
+        return;
+      }
+
+      const terminalEvent = latestTerminalWorkflowEvent(events);
+
+      if (!terminalEvent) {
+        throw new Error('Workflow stream ended without a terminal event.');
+      }
+
+      if (terminalEvent.kind === ExecutorEventKind.WorkflowFailed) {
+        updateTab(currentTab.id, (tab) => ({
+          ...tab,
+          runState: 'failed',
+          message: terminalEvent.diagnostic?.message ?? terminalEvent.message ?? 'Workflow failed.',
+          runtimeDiagnostic: terminalEvent.diagnostic ?? tab.runtimeDiagnostic,
+        }));
+
+        return;
+      }
+
+      if (terminalEvent.kind === ExecutorEventKind.WorkflowCancelled) {
+        updateTab(currentTab.id, (tab) => ({
+          ...tab,
+          runState: 'cancelled',
+          message: terminalEvent.diagnostic?.message ?? terminalEvent.message ?? 'Workflow cancelled.',
+          runtimeDiagnostic: terminalEvent.diagnostic ?? tab.runtimeDiagnostic,
+        }));
+
+        return;
+      }
+
+      updateTab(currentTab.id, (tab) => ({
+        ...tab,
+        runState: 'completed',
+        validationState: workflowSnapshotsMatch(snapshotForTab(tab), ownership.snapshot) ? 'valid' : 'idle',
+        message: workflowSnapshotsMatch(snapshotForTab(tab), ownership.snapshot)
+          ? 'Workflow completed.'
+          : 'Workflow completed for an earlier editor revision. Run again to refresh the result.',
+      }));
     } catch (error) {
+      if (!runOwnershipIsCurrent(currentTab.id, ownership.sequence)) {
+        return;
+      }
+
       if (error instanceof DOMException && error.name === 'AbortError') {
-        updateTab(currentTab.id, (tab) => ({ ...tab, runState: 'idle', message: 'Run cancelled.' }));
+        updateTab(currentTab.id, (tab) => (
+          tab.runState === 'running'
+            ? { ...tab, runState: 'idle', message: 'Run connection stopped.' }
+            : tab
+        ));
 
         return;
       }
 
-      updateTab(currentTab.id, (tab) => ({ ...tab, runState: 'failed', validationState: 'invalid', message: errorMessage(error) }));
+      const diagnostic = error instanceof WorkflowDiagnosticError ? error.diagnostic : null;
+      updateTab(currentTab.id, (tab) => ({
+        ...tab,
+        runState: 'failed',
+        message: diagnostic?.message ?? errorMessage(error),
+        runtimeDiagnostic: diagnostic ?? tab.runtimeDiagnostic,
+      }));
     } finally {
-      setAbortController(null);
-      setCurrentRunIdentifier(null);
+      removeStreamGapConfirmationRequests(currentTab.id, ownership.sequence);
+      if (runOwnershipIsCurrent(currentTab.id, ownership.sequence)) {
+        runOwnershipByTabRef.current.delete(currentTab.id);
+      }
     }
   }
 
   async function stopRun() {
-    if (abortController) {
-      try {
-        if (currentRunIdentifier) {
-          updateActiveTab((tab) => ({ ...tab, message: 'Cancelling workflow...' }));
-          await cancelWorkflowRun(currentRunIdentifier);
+    const currentTab = requireActiveTab(activeTab);
+    const ownership = runOwnershipByTabRef.current.get(currentTab.id);
 
-          return;
-        }
-      } catch (error) {
-        updateActiveTab((tab) => ({ ...tab, message: `Run cancelled locally. ${errorMessage(error)}` }));
-      }
-
-      abortController.abort();
+    if (!ownership) {
+      updateTab(currentTab.id, (tab) => ({ ...tab, runState: 'idle', message: 'Run connection was lost. Start a new run to continue.' }));
 
       return;
     }
 
-    updateActiveTab((tab) => ({ ...tab, runState: 'idle', message: 'Run connection was lost. Start a new run to continue.' }));
+    ownership.cancellationRequested = true;
+
+    if (!ownership.runIdentifier) {
+      updateTab(currentTab.id, (tab) => ({ ...tab, message: 'Waiting for the server run identifier before cancelling...' }));
+
+      return;
+    }
+
+    updateTab(currentTab.id, (tab) => ({ ...tab, message: 'Requesting workflow cancellation...' }));
+
+    try {
+      const cancellationResponse = await cancelWorkflowRun(ownership.runIdentifier);
+      applyCancellationTransition(currentTab.id, ownership, cancellationResponse.transition);
+    } catch (error) {
+      const diagnostic = error instanceof WorkflowDiagnosticError ? error.diagnostic : null;
+      updateTab(currentTab.id, (tab) => ({
+        ...tab,
+        message: diagnostic?.message ?? `Server cancellation failed. ${errorMessage(error)}`,
+        runtimeDiagnostic: diagnostic ?? tab.runtimeDiagnostic,
+      }));
+      setToastMessage('Cancellation was not confirmed; the event stream is still active.');
+    }
+  }
+
+  function applyCancellationTransition(tabId: string, ownership: WorkflowRunOwnership, transition: CancellationTransition) {
+    if (transition === CancellationTransition.Accepted) {
+      updateTab(tabId, (tab) => ({ ...tab, message: 'Cancellation accepted. Waiting for the terminal workflow event...' }));
+
+      return false;
+    }
+
+    if (transition === CancellationTransition.AlreadyRequested) {
+      updateTab(tabId, (tab) => ({ ...tab, message: 'Cancellation was already requested. Waiting for the terminal workflow event...' }));
+
+      return false;
+    }
+
+    if (transition === CancellationTransition.AlreadyTerminal) {
+      updateTab(tabId, (tab) => ({ ...tab, message: 'The workflow is already terminal. Waiting for the retained terminal event...' }));
+
+      return false;
+    }
+
+    const diagnostic = unknownRunCancellationDiagnostic();
+    updateTab(tabId, (tab) => ({
+      ...tab,
+      runState: 'failed',
+      message: diagnostic.message,
+      runtimeDiagnostic: diagnostic,
+    }));
+    ownership.abortController.abort();
+
+    return true;
+  }
+
+  function requestStreamGapResumeConfirmation(
+    tabId: string,
+    runSequence: number,
+    diagnostic: ExecutionDiagnostic,
+    resumeAfter: string | null,
+    historyLoss: boolean,
+    abortSignal: AbortSignal,
+  ) {
+    if (abortSignal.aborted) {
+      return Promise.resolve(false);
+    }
+
+    return new Promise<boolean>((resolve) => {
+      const requestIdentifier = streamGapConfirmationSequenceRef.current;
+      streamGapConfirmationSequenceRef.current += 1;
+      const abortListener = () => removeStreamGapConfirmationRequests(tabId, runSequence);
+      const request: StreamGapConfirmationRequest = {
+        requestIdentifier,
+        tabId,
+        runSequence,
+        diagnostic,
+        resumeAfter,
+        historyLoss,
+        abortSignal,
+        abortListener,
+        resolve,
+      };
+
+      abortSignal.addEventListener('abort', abortListener, { once: true });
+      streamGapConfirmationQueueRef.current = [...streamGapConfirmationQueueRef.current, request];
+      setStreamGapConfirmationQueue(streamGapConfirmationQueueRef.current);
+    });
+  }
+
+  function removeStreamGapConfirmationRequests(tabId: string, runSequence: number) {
+    const removedRequests = streamGapConfirmationQueueRef.current.filter((request) => (
+      request.tabId === tabId && request.runSequence === runSequence
+    ));
+
+    if (removedRequests.length === 0) {
+      return;
+    }
+
+    streamGapConfirmationQueueRef.current = streamGapConfirmationQueueRef.current.filter((request) => (
+      request.tabId !== tabId || request.runSequence !== runSequence
+    ));
+
+    for (const request of removedRequests) {
+      request.abortSignal.removeEventListener('abort', request.abortListener);
+      request.resolve(false);
+    }
+
+    setStreamGapConfirmationQueue([...streamGapConfirmationQueueRef.current]);
+  }
+
+  function resolveStreamGapResumeConfirmation(requestIdentifier: number | undefined, accepted: boolean) {
+    const request = streamGapConfirmationQueueRef.current[0];
+
+    if (!request || request.requestIdentifier !== requestIdentifier) {
+      return;
+    }
+
+    streamGapConfirmationQueueRef.current = streamGapConfirmationQueueRef.current.filter((queuedRequest) => (
+      queuedRequest.requestIdentifier !== request.requestIdentifier
+    ));
+    request.abortSignal.removeEventListener('abort', request.abortListener);
+    setStreamGapConfirmationQueue([...streamGapConfirmationQueueRef.current]);
+    request.resolve(accepted);
   }
 
   function toggleCache() {
@@ -767,6 +1236,8 @@ export default function App() {
 
   function formatRuntimeJson(fieldName: 'inputJson' | 'secretsJson') {
     const currentTab = requireActiveTab(activeTab);
+    cancelScheduledValidation(currentTab.id);
+    invalidateWorkflowOperation(currentTab.id, WorkflowOperationKind.Validate);
 
     try {
       const parsedValue = parseJsonObject(currentTab[fieldName], fieldName === 'inputJson' ? 'input' : 'secrets');
@@ -775,20 +1246,24 @@ export default function App() {
       updateTab(currentTab.id, (tab) => ({
         ...tab,
         [fieldName]: formattedJson,
+        validationState: 'idle',
         message: `${fieldName === 'inputJson' ? 'Input' : 'Secrets'} JSON formatted.`,
+        graphState: fieldName === 'secretsJson' ? 'idle' : tab.graphState,
+        graphMessage: fieldName === 'secretsJson' ? 'Graph needs to be regenerated after secrets changes.' : tab.graphMessage,
+        graphData: fieldName === 'secretsJson' ? null : tab.graphData,
         updatedAt: Date.now(),
       }));
       setToastMessage(`${fieldName === 'inputJson' ? 'Input' : 'Secrets'} JSON formatted.`);
     } catch (error) {
-      updateTab(currentTab.id, (tab) => ({
-        ...tab,
-        validationState: 'invalid',
-        message: errorMessage(error),
-      }));
+      updateTab(currentTab.id, (tab) => ({ ...tab, message: errorMessage(error) }));
     }
   }
 
   function formatActiveEditor() {
+    if (activeTab) {
+      cancelScheduledValidation(activeTab.id);
+    }
+
     if (activeEditorView === 'input') {
       formatRuntimeJson('inputJson');
 
@@ -805,9 +1280,12 @@ export default function App() {
   }
 
   function applyWorkflowTemplate(template: WorkflowTemplate) {
+    const currentTab = requireActiveTab(activeTab);
     const parsedResult = parseWorkflowSourceFragments(template.source, template.name);
+    cancelScheduledValidation(currentTab.id);
+    invalidateAllWorkflowOperations(currentTab.id);
 
-    updateActiveTab((tab) => ({
+    updateTab(currentTab.id, (tab) => ({
       ...tab,
       source: template.source,
       codeFragments: parsedResult.fragments,
@@ -821,6 +1299,7 @@ export default function App() {
       runState: 'idle',
       outputJson: '',
       eventLog: [],
+      runtimeDiagnostic: null,
       graphState: 'idle',
       graphMessage: 'Graph needs to be regenerated after loading this template.',
       graphData: null,
@@ -828,8 +1307,11 @@ export default function App() {
     }));
   }
 
-  async function exportWorkflowSource() {
+  async function exportWorkflowSource(includeSecrets: boolean) {
     const currentTab = requireActiveTab(activeTab);
+    cancelScheduledValidation(currentTab.id);
+    invalidateWorkflowOperation(currentTab.id, WorkflowOperationKind.Validate);
+    const operationToken = beginWorkflowOperation(currentTab, WorkflowOperationKind.Export);
 
     try {
       updateTab(currentTab.id, (tab) => ({ ...tab, message: 'Formatting workflow before copying...' }));
@@ -842,35 +1324,49 @@ export default function App() {
       const payload = await responsePayload(response);
       const formattedWorkflowSource = stringPayloadValue(payload.formatted_workflow_source);
 
+      if (!workflowOperationIsCurrent(operationToken)) {
+        return;
+      }
+
       if (!response.ok || !formattedWorkflowSource) {
-        throw new Error(stringPayloadValue(payload.error) ?? 'Unable to format workflow before copying.');
+        throw responseDiagnosticError(payload, 'Unable to format workflow before copying.');
       }
 
       const parsedResult = parseWorkflowSourceFragments(formattedWorkflowSource, currentTab.name);
       const formattedCodeFragments = preserveWorkflowCodeFragmentIdentities(parsedResult.fragments, currentTab.codeFragments);
-      const activeCodeFragmentId =
-        formattedCodeFragments.find((fragment) => fragment.id === currentTab.activeCodeFragmentId)?.id
-        ?? formattedCodeFragments[0]?.id
-        ?? currentTab.activeCodeFragmentId;
       const formattedSource = workflowSourceFromCodeFragments(formattedCodeFragments, parsedResult.useMarkers);
+      const clipboardSource = includeSecrets
+        ? workflowSourceWithMetadata(formattedSource, currentTab.name, currentTab.inputJson, currentTab.secretsJson)
+        : formattedSource;
 
-      await navigator.clipboard.writeText(workflowSourceWithMetadata(formattedSource, currentTab.name, currentTab.inputJson, currentTab.secretsJson));
-      setToastMessage('Workflow copied to clipboard.');
+      await navigator.clipboard.writeText(clipboardSource);
+
+      if (!workflowOperationIsCurrent(operationToken)) {
+        return;
+      }
+
+      const successMessage = includeSecrets ? 'Portable workflow bundle copied with secrets.' : 'Workflow source copied without runtime secrets.';
+      setToastMessage(successMessage);
       updateTab(currentTab.id, (tab) => ({
         ...tab,
         source: formattedSource,
         codeFragments: formattedCodeFragments,
-        activeCodeFragmentId,
+        activeCodeFragmentId:
+          formattedCodeFragments.find((fragment) => fragment.id === tab.activeCodeFragmentId)?.id
+          ?? formattedCodeFragments[0]?.id
+          ?? tab.activeCodeFragmentId,
         codeFragmentsUseMarkers: parsedResult.useMarkers,
         validationState: 'valid',
-        message: 'Workflow copied to clipboard.',
+        message: successMessage,
         graphState: 'idle',
         graphMessage: 'Graph needs to be regenerated after formatting.',
         graphData: null,
         updatedAt: Date.now(),
       }));
     } catch (error) {
-      updateTab(currentTab.id, (tab) => ({ ...tab, validationState: 'invalid', message: errorMessage(error) }));
+      if (workflowOperationIsCurrent(operationToken)) {
+        updateTab(currentTab.id, (tab) => ({ ...tab, message: errorMessage(error) }));
+      }
     }
   }
 
@@ -886,7 +1382,7 @@ export default function App() {
       setToastMessage('Output copied to clipboard.');
       updateTab(currentTab.id, (tab) => ({ ...tab, message: 'Output copied to clipboard.' }));
     } catch (error) {
-      updateTab(currentTab.id, (tab) => ({ ...tab, validationState: 'invalid', message: errorMessage(error) }));
+      updateTab(currentTab.id, (tab) => ({ ...tab, message: errorMessage(error) }));
     }
   }
 
@@ -912,16 +1408,19 @@ export default function App() {
 
   async function loadGraph() {
     const currentTab = requireActiveTab(activeTab);
+    cancelScheduledValidation(currentTab.id);
     await loadGraphByTabId(currentTab.id);
   }
 
   async function loadGraphByTabId(tabId: string) {
-    const currentTab = tabs.find((tab) => tab.id === tabId);
+    const currentTab = tabsRef.current.find((tab) => tab.id === tabId);
 
     if (!currentTab) {
       return;
     }
 
+    invalidateWorkflowOperation(currentTab.id, WorkflowOperationKind.Validate);
+    const operationToken = beginWorkflowOperation(currentTab, WorkflowOperationKind.Graph);
     updateTab(currentTab.id, (tab) => ({ ...tab, graphState: 'loading', graphMessage: 'Building workflow graph...' }));
 
     try {
@@ -932,12 +1431,18 @@ export default function App() {
       });
       const payload = await responsePayload(response);
 
-      if (!response.ok || !payload.valid) {
+      if (!workflowOperationIsCurrent(operationToken)) {
+        return;
+      }
+
+      if (!response.ok || payload.valid !== true) {
+        const diagnostic = diagnosticFromErrorPayload(payload);
         updateTab(currentTab.id, (tab) => ({
           ...tab,
           graphState: 'failed',
-          graphMessage: stringPayloadValue(payload.details) ?? stringPayloadValue(payload.error) ?? 'Unable to build workflow graph.',
+          graphMessage: diagnostic?.message ?? stringPayloadValue(payload.details) ?? stringPayloadValue(payload.error) ?? 'Unable to build workflow graph.',
           graphData: null,
+          runtimeDiagnostic: diagnostic ?? tab.runtimeDiagnostic,
         }));
 
         return;
@@ -951,12 +1456,14 @@ export default function App() {
         validationState: 'valid',
       }));
     } catch (error) {
-      updateTab(currentTab.id, (tab) => ({
-        ...tab,
-        graphState: 'failed',
-        graphMessage: errorMessage(error),
-        graphData: null,
-      }));
+      if (workflowOperationIsCurrent(operationToken)) {
+        updateTab(currentTab.id, (tab) => ({
+          ...tab,
+          graphState: 'failed',
+          graphMessage: errorMessage(error),
+          graphData: null,
+        }));
+      }
     }
   }
 
@@ -969,6 +1476,24 @@ export default function App() {
 
     enqueueWorkflowEvent(tabId, event);
 
+    if (event.kind === ExecutorEventKind.StreamGap && event.diagnostic) {
+      const diagnostic = event.diagnostic;
+      updateTab(tabId, (tab) => ({
+        ...tab,
+        message: 'Workflow event history has a gap. Reconnecting from the last confirmed event...',
+        runtimeDiagnostic: diagnostic,
+      }));
+    }
+
+    if (event.kind === ExecutorEventKind.CacheDegraded && event.diagnostic) {
+      const diagnostic = event.diagnostic;
+      updateTab(tabId, (tab) => ({
+        ...tab,
+        message: diagnostic.message,
+        runtimeDiagnostic: diagnostic,
+      }));
+    }
+
     if (isTerminalWorkflowEvent(event)) {
       flushPendingWorkflowEvents();
     }
@@ -978,8 +1503,8 @@ export default function App() {
 
   function enqueueWorkflowEvent(tabId: string, event: ExecutorEvent) {
     const pendingEvents = pendingEventBatchesRef.current.get(tabId) ?? [];
-    pendingEvents.push(event);
-    pendingEventBatchesRef.current.set(tabId, pendingEvents);
+    const retainedEvents = retainEventHistory(pendingEvents, [event], true);
+    pendingEventBatchesRef.current.set(tabId, retainedEvents);
 
     if (eventBatchFlushFrameRef.current !== null) {
       return;
@@ -1015,7 +1540,7 @@ export default function App() {
 
       return {
         ...tab,
-        eventLog: [...tab.eventLog, ...pendingEvents],
+        eventLog: retainEventHistory(tab.eventLog, pendingEvents, true),
         outputJson,
       };
     }));
@@ -1025,7 +1550,7 @@ export default function App() {
     for (let eventIndex = events.length - 1; eventIndex >= 0; eventIndex -= 1) {
       const event = events[eventIndex];
 
-      if (event.kind === 'workflow_completed') {
+      if (event.kind === ExecutorEventKind.WorkflowCompleted) {
         return event;
       }
     }
@@ -1038,12 +1563,28 @@ export default function App() {
   const playgroundControls = activeTab ? (
     <div className="playground__controls" data-stuck={playgroundControlsStuck ? 'true' : 'false'}>
       <nav className="playground-mode-switch" aria-label="Playground mode">
-        <Button variant={activeView === 'workflow' ? 'secondary' : 'ghost'} size="lg" className="playground-mode-switch__button" onClick={() => setTabView('workflow')}><Workflow /> Workflow</Button>
-        <Button variant={activeView === 'graph' ? 'secondary' : 'ghost'} size="lg" className="playground-mode-switch__button" onClick={() => setTabView('graph')}><GitBranch /> Graph</Button>
+        <Button
+          variant={activeView === 'workflow' ? 'secondary' : 'ghost'}
+          size="lg"
+          className="playground-mode-switch__button"
+          aria-pressed={activeView === 'workflow'}
+          onClick={() => setTabView('workflow')}
+        >
+          <Workflow /> Workflow
+        </Button>
+        <Button
+          variant={activeView === 'graph' ? 'secondary' : 'ghost'}
+          size="lg"
+          className="playground-mode-switch__button"
+          aria-pressed={activeView === 'graph'}
+          onClick={() => setTabView('graph')}
+        >
+          <GitBranch /> Graph
+        </Button>
       </nav>
 
       <div className="playground-actions">
-        <div className="playground-cache-controls" aria-label="Cache settings">
+        <div className="playground-cache-controls playground-actions__desktop" role="group" aria-label="Cache settings">
           <ActionTooltip label={activeTab.useCache ? 'Disable agent cache for this workflow tab' : 'Enable agent cache for this workflow tab'}>
             <Button
               variant={activeTab.useCache ? 'secondary' : 'ghost'}
@@ -1055,21 +1596,39 @@ export default function App() {
               <Database />
             </Button>
           </ActionTooltip>
-          <ActionTooltip label="Regenerate cache key for this workflow tab">
-            <Button variant="ghost" size="icon-lg" aria-label="Purge cache" onClick={purgeCache}>
+          <ActionTooltip label="Regenerate the cache key for future runs">
+            <Button variant="ghost" size="icon-lg" aria-label="Regenerate cache key" onClick={purgeCache}>
               <DatabaseZap />
             </Button>
           </ActionTooltip>
         </div>
-        {activeTab.runState === 'running' ? (
-          <ActionTooltip label="Stop the current workflow run">
-            <Button variant="destructive" size="lg" onClick={stopRun}><Square /> Stop</Button>
-          </ActionTooltip>
-        ) : (
-          <ActionTooltip label="Run the workflow with the current input and secrets">
-            <Button className="playground-actions__run" disabled={!canRun} size="lg" onClick={runWorkflow}><Play /> Run workflow</Button>
-          </ActionTooltip>
-        )}
+
+        {activeView === 'workflow' ? (
+          <details className="playground-command-menu">
+            <summary><Menu /> Actions</summary>
+            <div className="playground-command-menu__content">
+              <Button variant="ghost" size="sm" disabled={activeTab.runState === 'running'} onClick={() => void exportWorkflowSource(false)}><Copy /> Copy source</Button>
+              <Button variant="ghost" size="sm" disabled={activeTab.runState === 'running'} onClick={() => setIncludeSecretsConfirmationOpen(true)}><KeyRound /> Copy with secrets</Button>
+              <Button variant="ghost" size="sm" disabled={activeTab.runState === 'running'} onClick={formatActiveEditor}><RefreshCcw /> Format</Button>
+              <Button variant="ghost" size="sm" disabled={activeTab.runState === 'running'} onClick={() => void validateWorkflow()}><CheckCircle2 /> Validate</Button>
+              <Button variant="ghost" size="sm" disabled={activeTab.runState === 'running'} onClick={addCodeFragment}><Plus /> Add fragment</Button>
+              <Button variant="ghost" size="sm" aria-pressed={activeTab.useCache} onClick={toggleCache}><Database /> {activeTab.useCache ? 'Disable cache' : 'Enable cache'}</Button>
+              <Button variant="ghost" size="sm" onClick={purgeCache}><DatabaseZap /> Regenerate cache key</Button>
+            </div>
+          </details>
+        ) : null}
+
+        <div className="playground-run-control">
+          {activeTab.runState === 'running' ? (
+            <ActionTooltip label="Stop the current workflow run">
+              <Button variant="destructive" size="lg" onClick={() => void stopRun()}><Square /> Stop</Button>
+            </ActionTooltip>
+          ) : (
+            <ActionTooltip label="Run the workflow with the current input and secrets">
+              <Button className="playground-actions__run" disabled={!canRun} size="lg" onClick={() => void runWorkflow()}><Play /> Run workflow</Button>
+            </ActionTooltip>
+          )}
+        </div>
       </div>
     </div>
   ) : null;
@@ -1087,7 +1646,7 @@ export default function App() {
 
                 <div className="playground__topbar-actions">
                   <ActionTooltip label="Toggle color theme">
-                    <Button className="playground__theme-toggle" variant="ghost" size="icon-lg" aria-label="Toggle theme" onClick={toggleTheme}>
+                    <Button className="playground__theme-toggle" variant="ghost" size="icon-lg" aria-label={darkMode ? 'Use light theme' : 'Use dark theme'} onClick={toggleTheme}>
                       {darkMode ? <Sun /> : <Moon />}
                     </Button>
                   </ActionTooltip>
@@ -1095,7 +1654,7 @@ export default function App() {
               </header>
 
               <Tabs value={activeTab?.id ?? ''} onValueChange={setActiveTabId} className="playground__tabs">
-                <TabsList variant="line" className="h-auto flex-wrap justify-start gap-3 bg-transparent p-0">
+                <TabsList variant="line" className="playground-tabs__list h-auto flex-nowrap justify-start gap-3 bg-transparent p-0">
                   {tabs.map((tab) => (
                     <PlaygroundTabChip
                       key={tab.id}
@@ -1110,13 +1669,15 @@ export default function App() {
                       onDrop={() => handleTabDrop(tab.id)}
                       onDragEnd={clearTabDragState}
                       trigger={(
-                        <TabsTrigger value={tab.id} className="playground-tab-chip__trigger">
+                        <TabsTrigger value={tab.id} className="playground-tab-chip__trigger" aria-invalid={tab.validationState === 'invalid' || tab.runState === 'failed'}>
                           <span className="playground-tab-chip__dot" />
                           <span className="playground-tab-chip__title">{tab.name}</span>
                           <RunStateBadge state={tab.runState} />
                         </TabsTrigger>
                       )}
                       actions={[
+                        { label: `Move ${tab.name} left`, icon: <ArrowLeft />, disabled: tabs[0]?.id === tab.id, onClick: () => moveWorkflowTab(tab.id, -1) },
+                        { label: `Move ${tab.name} right`, icon: <ArrowRight />, disabled: tabs.at(-1)?.id === tab.id, onClick: () => moveWorkflowTab(tab.id, 1) },
                         { label: `Rename ${tab.name}`, icon: <Pencil />, onClick: () => openRenameDialog(tab.id) },
                         { label: `Duplicate ${tab.name}`, icon: <Copy />, onClick: () => duplicateTabById(tab.id) },
                         { label: `Close ${tab.name}`, icon: <Trash2 />, onClick: () => closeTab(tab.id) },
@@ -1132,9 +1693,10 @@ export default function App() {
                   <section className="playground__content">
                     {activeView === 'workflow' ? (
                       <section className="workflow-layout">
-                        <div className="workflow-layout__sticky-scope">
-                          {playgroundControlsSentinel}
-                          {playgroundControls}
+                        {playgroundControlsSentinel}
+                        {playgroundControls}
+                        <div className="workflow-workspace">
+                        <div className="workflow-layout__sticky-scope workflow-editor-pane">
 
                           {shouldShowTemplatePicker ? (
                             <PanelCard title="Start from a template" description="Pick a fixture to quickly explore the DSL." className="template-picker" bodyClassName="template-picker__grid">
@@ -1154,26 +1716,30 @@ export default function App() {
                                   <strong>{activeTab.name}</strong>
                                 </div>
                                 <div className="workflow-fragment-actions">
-                                  <ActionTooltip label="Copy this workflow, input, and secrets as portable source">
-                                    <Button variant="ghost" size="sm" onClick={exportWorkflowSource}><Copy /> Copy to clipboard</Button>
+                                  <ActionTooltip label="Copy formatted workflow source without input or secrets">
+                                    <Button variant="ghost" size="sm" disabled={activeTab.runState === 'running'} onClick={() => void exportWorkflowSource(false)}><Copy /> Copy source</Button>
+                                  </ActionTooltip>
+                                  <ActionTooltip label="Copy a portable bundle after confirming that secrets are included">
+                                    <Button variant="ghost" size="sm" disabled={activeTab.runState === 'running'} onClick={() => setIncludeSecretsConfirmationOpen(true)}><KeyRound /> Include secrets</Button>
                                   </ActionTooltip>
                                   <ActionTooltip label="Format the active editor contents">
-                                    <Button variant="ghost" size="sm" aria-label="Format active editor" onClick={formatActiveEditor}><RefreshCcw /> Format</Button>
+                                    <Button variant="ghost" size="sm" aria-label="Format active editor" disabled={activeTab.runState === 'running'} onClick={formatActiveEditor}><RefreshCcw /> Format</Button>
                                   </ActionTooltip>
                                   <ActionTooltip label="Validate the workflow without running agents">
-                                    <Button variant="ghost" size="sm" aria-label="Validate workflow" onClick={validateWorkflow}><CheckCircle2 /> Validate</Button>
+                                    <Button variant="ghost" size="sm" aria-label="Validate workflow" disabled={activeTab.runState === 'running'} onClick={() => void validateWorkflow()}><CheckCircle2 /> Validate</Button>
                                   </ActionTooltip>
                                   <ActionTooltip label="Add a new workflow code fragment">
-                                    <Button variant="outline" size="sm" onClick={addCodeFragment}><Plus /> Fragment</Button>
+                                    <Button variant="outline" size="sm" disabled={activeTab.runState === 'running'} onClick={addCodeFragment}><Plus /> Fragment</Button>
                                   </ActionTooltip>
                                 </div>
                               </div>
-                              <div className="workflow-editor-tabs" aria-label="Workflow editor tabs">
-                                <div className="workflow-editor-tabs__fragments" aria-label="Workflow code fragments">
+                              <div className="workflow-editor-tabs" role="toolbar" aria-label="Workflow editor views">
+                                <div className="workflow-editor-tabs__fragments" role="group" aria-label="Workflow code fragments">
                                   {activeTab.codeFragments.map((fragment) => (
                                     <PlaygroundTabChip
                                       key={fragment.id}
                                       size="small"
+                                      draggable={activeTab.runState !== 'running'}
                                       active={activeEditorView === 'code' && fragment.id === activeTab.activeCodeFragmentId}
                                       dragging={draggedCodeFragmentId === fragment.id}
                                       dragOver={dragOverCodeFragmentId === fragment.id}
@@ -1182,19 +1748,21 @@ export default function App() {
                                       onDrop={() => handleCodeFragmentDrop(fragment.id)}
                                       onDragEnd={clearCodeFragmentDragState}
                                       trigger={(
-                                        <button type="button" className="playground-tab-chip__trigger" onClick={() => setActiveCodeFragment(fragment.id)}>
+                                        <button type="button" className="playground-tab-chip__trigger" aria-pressed={activeEditorView === 'code' && fragment.id === activeTab.activeCodeFragmentId} onClick={() => setActiveCodeFragment(fragment.id)}>
                                           <span className="playground-tab-chip__title">{fragment.name}</span>
                                         </button>
                                       )}
                                       actions={[
-                                        { label: `Rename ${fragment.name}`, icon: <Pencil />, onClick: () => openCodeFragmentRenameDialog(activeTab.id, fragment.id) },
-                                        { label: `Close ${fragment.name}`, icon: <Trash2 />, onClick: () => closeCodeFragment(fragment.id) },
+                                        { label: `Move ${fragment.name} left`, icon: <ArrowLeft />, disabled: activeTab.runState === 'running' || activeTab.codeFragments[0]?.id === fragment.id, onClick: () => moveCodeFragment(fragment.id, -1) },
+                                        { label: `Move ${fragment.name} right`, icon: <ArrowRight />, disabled: activeTab.runState === 'running' || activeTab.codeFragments.at(-1)?.id === fragment.id, onClick: () => moveCodeFragment(fragment.id, 1) },
+                                        { label: `Rename ${fragment.name}`, icon: <Pencil />, disabled: activeTab.runState === 'running', onClick: () => openCodeFragmentRenameDialog(activeTab.id, fragment.id) },
+                                        { label: `Close ${fragment.name}`, icon: <Trash2 />, disabled: activeTab.runState === 'running', onClick: () => closeCodeFragment(fragment.id) },
                                       ]}
                                     />
                                   ))}
                                 </div>
 
-                                <div className="workflow-editor-tabs__variables" aria-label="Workflow variables">
+                                <div className="workflow-editor-tabs__variables" role="group" aria-label="Workflow runtime values">
                                   <PlaygroundTabChip
                                     size="small"
                                     active={activeEditorView === 'input'}
@@ -1202,7 +1770,7 @@ export default function App() {
                                     dragging={false}
                                     dragOver={false}
                                     trigger={(
-                                      <button type="button" className="playground-tab-chip__trigger" onClick={() => setWorkflowEditorView('input')}>
+                                      <button type="button" className="playground-tab-chip__trigger" aria-pressed={activeEditorView === 'input'} onClick={() => setWorkflowEditorView('input')}>
                                         <span className="playground-tab-chip__title">Input</span>
                                       </button>
                                     )}
@@ -1215,7 +1783,7 @@ export default function App() {
                                     dragging={false}
                                     dragOver={false}
                                     trigger={(
-                                      <button type="button" className="playground-tab-chip__trigger" onClick={() => setWorkflowEditorView('secrets')}>
+                                      <button type="button" className="playground-tab-chip__trigger" aria-pressed={activeEditorView === 'secrets'} onClick={() => setWorkflowEditorView('secrets')}>
                                         <span className="playground-tab-chip__title">Secrets</span>
                                       </button>
                                     )}
@@ -1233,6 +1801,8 @@ export default function App() {
                                   darkMode={darkMode}
                                   inputJson={activeTab.inputJson}
                                   secretsJson={activeTab.secretsJson}
+                                  readOnly={activeTab.runState === 'running'}
+                                  ariaLabel={`${activeCodeFragment.name} workflow source editor`}
                                   jumpTarget={activeEditorJumpTarget}
                                   onChange={updateActiveCodeFragmentSource}
                                   onBlur={validateActiveWorkflowOnBlur}
@@ -1244,8 +1814,16 @@ export default function App() {
                                   key={`${activeTab.id}-input`}
                                   value={activeTab.inputJson}
                                   fullEditor
+                                  readOnly={activeTab.runState === 'running'}
+                                  ariaLabel="Workflow input JSON editor"
                                   className="workflow-editor__json"
-                                  onChange={(inputJson) => updateActiveTab((tab) => ({ ...tab, inputJson, updatedAt: Date.now() }))}
+                                  onChange={(inputJson) => updateActiveTab((tab) => ({
+                                    ...tab,
+                                    inputJson,
+                                    validationState: 'idle',
+                                    message: 'Workflow input changed. Validate or run to refresh status.',
+                                    updatedAt: Date.now(),
+                                  }))}
                                 />
                               ) : null}
                               {activeEditorView === 'secrets' ? (
@@ -1253,10 +1831,14 @@ export default function App() {
                                   key={`${activeTab.id}-secrets`}
                                   value={activeTab.secretsJson}
                                   fullEditor
+                                  readOnly={activeTab.runState === 'running'}
+                                  ariaLabel="Workflow secrets JSON editor"
                                   className="workflow-editor__json"
                                   onChange={(secretsJson) => updateActiveTab((tab) => ({
                                     ...tab,
                                     secretsJson,
+                                    validationState: 'idle',
+                                    message: 'Workflow secrets changed. Validate or run to refresh status.',
                                     graphState: 'idle',
                                     graphMessage: 'Graph needs to be regenerated after secrets changes.',
                                     graphData: null,
@@ -1264,14 +1846,41 @@ export default function App() {
                                   }))}
                                 />
                               ) : null}
-                              <div className={`workflow-editor__message workflow-editor__message--${editorMessageTone}`}>
+                              <div className={`workflow-editor__message workflow-editor__message--${editorMessageTone}`} role={editorMessageTone === 'error' ? 'alert' : 'status'} aria-live="polite" aria-atomic="true">
                                 <span className="workflow-editor__message-line workflow-editor__message-line--full">{editorMessage}</span>
                               </div>
                             </Card>
                           </div>
                         </div>
 
-                        <div className="workflow-layout__bottom" data-maximized={maximizedWorkflowPanel ?? 'none'}>
+                        <aside className="workflow-layout__bottom workflow-inspector" data-maximized={maximizedWorkflowPanel ?? 'none'} aria-label="Workflow execution inspector">
+                          <PanelCard
+                            collapsible
+                            open={problemsOpen}
+                            title="Problems"
+                            description={activeProblems.length === 0 ? 'No current workflow problems.' : `${activeProblems.length} current problem${activeProblems.length === 1 ? '' : 's'}.`}
+                            className="workflow-log-panel workflow-log-panel--problems"
+                            bodyClassName="workflow-log-panel__body"
+                            onToggle={() => setProblemsOpen((currentValue) => !currentValue)}
+                          >
+                            {activeProblems.length > 0 ? (
+                              <ul className="workflow-problems" aria-live="polite">
+                                {activeProblems.map((problem) => (
+                                  <li key={problem.key} data-tone={problem.tone}>
+                                    <strong>{problem.message}</strong>
+                                    {problem.diagnostic ? (
+                                      <details>
+                                        <summary>Diagnostic details</summary>
+                                        <pre>{formatExecutionDiagnosticData(problem.diagnostic)}</pre>
+                                      </details>
+                                    ) : null}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <div className="empty-state compact" role="status">No validation or run failures.</div>
+                            )}
+                          </PanelCard>
                           <PanelCard
                             collapsible
                             open={outputOpen}
@@ -1315,6 +1924,7 @@ export default function App() {
                           >
                             <EventLog events={activeTab.eventLog} eventGroupingMode={eventGroupingMode} onEventGroupingModeChange={setEventGroupingMode} />
                           </PanelCard>
+                        </aside>
                         </div>
                       </section>
                     ) : null}
@@ -1357,12 +1967,14 @@ export default function App() {
               submitRenameDialog();
             }}
           >
+            <label htmlFor="rename-workflow-input" className="rename-dialog__label">Name</label>
             <input
+              id="rename-workflow-input"
               autoFocus
               value={renameDraft}
               onChange={(event) => setRenameDraft(event.target.value)}
               className="rename-dialog__input"
-              placeholder="Workflow tab name"
+              placeholder={renameDialogTarget?.kind === 'codeFragment' ? 'Code fragment name' : 'Workflow tab name'}
             />
 
             <DialogFooter>
@@ -1375,10 +1987,150 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={includeSecretsConfirmationOpen} onOpenChange={setIncludeSecretsConfirmationOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Copy workflow with secrets?</DialogTitle>
+            <DialogDescription>
+              This portable bundle includes the current input and plaintext secrets. Only paste it into a trusted destination.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" type="button">Cancel</Button>
+            </DialogClose>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                setIncludeSecretsConfirmationOpen(false);
+                void exportWorkflowSource(true);
+              }}
+            >
+              <KeyRound /> Copy with secrets
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={visibleStreamGapConfirmationRequest !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            resolveStreamGapResumeConfirmation(visibleStreamGapConfirmationRequest?.requestIdentifier, false);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {visibleStreamGapConfirmationRequest?.historyLoss
+                ? 'Resume with missing event history?'
+                : 'Resume interrupted event stream?'}
+            </DialogTitle>
+            <DialogDescription>
+              {visibleStreamGapConfirmationRequest?.historyLoss
+                ? `Events before ${streamGapOldestAvailable(visibleStreamGapConfirmationRequest.diagnostic) ?? 'the retained window'} are no longer available. Resuming continues from the oldest retained event and cannot reconstruct the missing history.`
+                : `The stream stopped after event ${visibleStreamGapConfirmationRequest?.resumeAfter ?? 'the last confirmed event'}. Confirm replay from the last confirmed event.`}
+            </DialogDescription>
+          </DialogHeader>
+
+          {visibleStreamGapConfirmationRequest ? (
+            <JsonCodeEditor
+              value={formatExecutionDiagnosticData(visibleStreamGapConfirmationRequest.diagnostic)}
+              readOnly
+              uncappedHeight
+              ariaLabel="Stream history gap diagnostic"
+              className="stream-gap-dialog__diagnostic"
+            />
+          ) : null}
+
+          <DialogFooter>
+            <Button variant="outline" type="button" onClick={() => resolveStreamGapResumeConfirmation(visibleStreamGapConfirmationRequest?.requestIdentifier, false)}>Stop following run</Button>
+            <Button variant="destructive" type="button" onClick={() => resolveStreamGapResumeConfirmation(visibleStreamGapConfirmationRequest?.requestIdentifier, true)}>
+              {visibleStreamGapConfirmationRequest?.historyLoss ? 'Resume with missing history' : 'Resume from last confirmed event'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {toastMessage ? <div className="playground-toast" role="status">{toastMessage}</div> : null}
 
     </TooltipProvider>
   );
+}
+
+function workflowSnapshotsMatch(leftSnapshot: WorkflowContentSnapshot, rightSnapshot: WorkflowContentSnapshot) {
+  return (
+    leftSnapshot.source === rightSnapshot.source
+    && leftSnapshot.inputJson === rightSnapshot.inputJson
+    && leftSnapshot.secretsJson === rightSnapshot.secretsJson
+  );
+}
+
+function workflowProblems(tab: WorkflowTab, jsonValidationError: string | null) {
+  const problemsByKey = new Map<string, WorkflowProblem>();
+
+  if (jsonValidationError) {
+    problemsByKey.set(`json:${jsonValidationError}`, {
+      key: `json:${jsonValidationError}`,
+      message: jsonValidationError,
+      diagnostic: null,
+      tone: 'error',
+    });
+  }
+
+  if (tab.validationState === 'invalid') {
+    const message = tab.message || 'Workflow validation failed.';
+    problemsByKey.set(`validation:${message}`, {
+      key: `validation:${message}`,
+      message,
+      diagnostic: null,
+      tone: 'error',
+    });
+  }
+
+  if (tab.runState === 'failed' && !tab.runtimeDiagnostic) {
+    const message = tab.message || 'Workflow run failed.';
+    problemsByKey.set(`run:${message}`, {
+      key: `run:${message}`,
+      message,
+      diagnostic: null,
+      tone: 'error',
+    });
+  }
+
+  for (const event of tab.eventLog) {
+    if (event.diagnostic) {
+      addDiagnosticProblem(problemsByKey, event.diagnostic);
+    }
+  }
+
+  if (tab.runtimeDiagnostic) {
+    addDiagnosticProblem(problemsByKey, tab.runtimeDiagnostic);
+  }
+
+  return Array.from(problemsByKey.values());
+}
+
+function addDiagnosticProblem(problemsByKey: Map<string, WorkflowProblem>, diagnostic: ExecutionDiagnostic) {
+  const subjectKey = JSON.stringify(diagnostic.subject);
+  const key = `${diagnostic.code}:${diagnostic.stage}:${subjectKey}:${diagnostic.message}`;
+  const tone = diagnostic.code === ExecutorDiagnosticCode.Cancelled
+    ? 'cancelled'
+    : diagnostic.code === ExecutorDiagnosticCode.StreamGap
+      ? 'gap'
+      : diagnostic.severity === ExecutorDiagnosticSeverity.Warning
+        ? 'warning'
+        : 'error';
+
+  problemsByKey.set(key, {
+    key,
+    message: diagnostic.message,
+    diagnostic,
+    tone,
+  });
 }
 
 function persistPlaygroundState(tabs: WorkflowTab[], activeTabId: string, darkMode: boolean) {
@@ -1414,8 +2166,10 @@ function persistableWorkflowTab(tab: WorkflowTab): WorkflowTab {
     ...tab,
     runState: idleRunState,
     message: idleMessage,
+    secretsJson: '{}',
     outputJson: '',
     eventLog: [],
+    runtimeDiagnostic: null,
     graphState: 'idle',
     graphMessage: defaultGraphMessage,
     graphData: null,
@@ -1450,7 +2204,7 @@ function parseStoredWorkflowTabs(savedTabs: string) {
     const parsedTabs = JSON.parse(savedTabs) as unknown;
 
     if (Array.isArray(parsedTabs)) {
-      return parsedTabs.map(recoverWorkflowTabAfterReload);
+      return parsedTabs.map((tab) => ({ ...recoverWorkflowTabAfterReload(tab), secretsJson: '{}' }));
     }
   } catch (error) {
     console.warn('Unable to restore saved playground tabs.', error);
@@ -1459,29 +2213,50 @@ function parseStoredWorkflowTabs(savedTabs: string) {
   return [createWorkflowTab('Launch brief')];
 }
 
-type UpdateTab = (tabId: string, updater: (tab: WorkflowTab) => WorkflowTab) => void;
+export type UpdateTab = (tabId: string, updater: (tab: WorkflowTab) => WorkflowTab) => void;
 
 interface SseStreamProgress {
   events: ExecutorEvent[];
   lastEventIdentifier: string | null;
   acceptedEventIdentifiers: Set<string>;
+  acceptedEventIdentifierOrder: string[];
   terminalEvent: ExecutorEvent | null;
+  historyGapDiagnostic: ExecutionDiagnostic | null;
+  historyGapConfirmationGranted: boolean;
 }
 
-async function readWorkflowEventStream(
+export interface WorkflowEventStreamDependencies {
+  reconnect: (runIdentifier: string, replayCursor: string | null, abortSignal: AbortSignal) => Promise<Response>;
+  waitForReconnect: (abortSignal: AbortSignal) => Promise<void>;
+}
+
+export async function readWorkflowEventStream(
   initialResponse: Response,
   tabId: string,
   abortSignal: AbortSignal,
   acceptChunk: (chunk: string, tabId: string) => ExecutorEvent | null,
   updateTab: UpdateTab,
+  confirmStreamGap: (
+    diagnostic: ExecutionDiagnostic,
+    resumeAfter: string | null,
+    historyLoss: boolean,
+  ) => Promise<boolean>,
+  dependencies: WorkflowEventStreamDependencies = {
+    reconnect: reconnectWorkflowEventStream,
+    waitForReconnect: waitForReconnectDelay,
+  },
 ) {
   const runIdentifier = initialResponse.headers.get(runIdentifierHeader);
   let response = initialResponse;
+  let replayCursorOverride: string | null = null;
   const progress: SseStreamProgress = {
     events: [],
     lastEventIdentifier: null,
     acceptedEventIdentifiers: new Set(),
+    acceptedEventIdentifierOrder: [],
     terminalEvent: null,
+    historyGapDiagnostic: null,
+    historyGapConfirmationGranted: false,
   };
 
   while (true) {
@@ -1492,9 +2267,21 @@ async function readWorkflowEventStream(
         return progress.events;
       }
     } catch (error) {
-      if (abortSignal.aborted) {
+      if (abortSignal.aborted || error instanceof WorkflowStreamLimitError) {
         throw error;
       }
+    }
+
+    if (progress.historyGapDiagnostic && !progress.historyGapConfirmationGranted) {
+      const resumeAfter = streamGapRequestedAfter(progress.historyGapDiagnostic) ?? progress.lastEventIdentifier;
+      const acceptedReplay = await confirmStreamGap(progress.historyGapDiagnostic, resumeAfter, false);
+
+      if (!acceptedReplay) {
+        throw new WorkflowStreamUnavailableError(progress.historyGapDiagnostic);
+      }
+
+      replayCursorOverride = resumeAfter;
+      progress.historyGapConfirmationGranted = true;
     }
 
     if (!runIdentifier) {
@@ -1504,53 +2291,111 @@ async function readWorkflowEventStream(
     let reconnected = false;
 
     while (!reconnected) {
-      updateTab(tabId, (tab) => ({ ...tab, message: 'Run connection was lost. Reconnecting...' }));
-      await waitForReconnectDelay(abortSignal);
+      const replayCursor = replayCursorOverride ?? progress.lastEventIdentifier;
+      updateTab(tabId, (tab) => ({
+        ...tab,
+        message: progress.historyGapDiagnostic
+          ? 'Workflow event history has a gap. Reconnecting from the last confirmed event...'
+          : 'Run connection was lost. Reconnecting...',
+      }));
+      await dependencies.waitForReconnect(abortSignal);
 
       try {
-        response = await reconnectWorkflowEventStream(runIdentifier, progress.lastEventIdentifier, abortSignal);
+        response = await dependencies.reconnect(runIdentifier, replayCursor, abortSignal);
+        replayCursorOverride = null;
+        progress.historyGapDiagnostic = null;
+        progress.historyGapConfirmationGranted = false;
         reconnected = true;
       } catch (error) {
         if (abortSignal.aborted || error instanceof WorkflowStreamUnavailableError) {
           throw error;
+        }
+
+        if (error instanceof WorkflowStreamGapError) {
+          progress.historyGapDiagnostic = error.diagnostic;
+          progress.historyGapConfirmationGranted = false;
+          updateTab(tabId, (tab) => ({
+            ...tab,
+            message: 'Earlier workflow events have expired. Confirmation is required to resume with incomplete history.',
+            runtimeDiagnostic: error.diagnostic,
+            eventLog: appendDiagnosticEvent(tab.eventLog, ExecutorEventKind.StreamGap, error.diagnostic),
+          }));
+
+          const oldestAvailable = streamGapOldestAvailable(error.diagnostic);
+
+          if (oldestAvailable === null) {
+            throw new WorkflowStreamUnavailableError(error.diagnostic);
+          }
+
+          const resumeAfter = eventIdentifierBefore(oldestAvailable);
+          const acceptedHistoryLoss = await confirmStreamGap(error.diagnostic, resumeAfter, true);
+
+          if (!acceptedHistoryLoss) {
+            throw new WorkflowStreamUnavailableError(error.diagnostic);
+          }
+
+          replayCursorOverride = resumeAfter;
+          progress.historyGapConfirmationGranted = true;
         }
       }
     }
   }
 }
 
-class WorkflowStreamUnavailableError extends Error {}
-
-async function cancelWorkflowRun(runIdentifier: string) {
-  const response = await fetch(`/execute/${encodeURIComponent(runIdentifier)}/cancel`, { method: 'POST' });
-
-  if (!response.ok && response.status !== 404) {
-    const payload: Record<string, unknown> = await responsePayload(response).catch(() => ({}));
-    throw new Error(typeof payload.error === 'string' ? payload.error : `Unable to cancel workflow run (${response.status}).`);
+export class WorkflowDiagnosticError extends Error {
+  constructor(readonly diagnostic: ExecutionDiagnostic) {
+    super(diagnostic.message);
   }
 }
 
-async function reconnectWorkflowEventStream(runIdentifier: string, lastEventIdentifier: string | null, abortSignal: AbortSignal) {
-  const headers: Record<string, string> = {
-    accept: 'text/event-stream',
-  };
+export class WorkflowStreamUnavailableError extends WorkflowDiagnosticError {}
 
-  if (lastEventIdentifier) {
-    headers['last-event-id'] = lastEventIdentifier;
+export class WorkflowStreamGapError extends WorkflowDiagnosticError {}
+
+export class WorkflowStreamLimitError extends WorkflowDiagnosticError {}
+
+async function cancelWorkflowRun(runIdentifier: string): Promise<CancellationResponse> {
+  const response = await fetch(`/execute/${encodeURIComponent(runIdentifier)}/cancel`, { method: 'POST' });
+  const payload = await responsePayload(response).catch(() => ({}));
+
+  if (!response.ok) {
+    throw responseDiagnosticError(payload, `Unable to cancel workflow run (${response.status}).`);
   }
 
-  const response = await fetch(`/execute/${encodeURIComponent(runIdentifier)}/events`, {
-    headers,
+  const cancellationResponse = parseCancellationResponse(payload);
+
+  if (!cancellationResponse) {
+    throw new Error('Cancellation response did not include a recognized transition.');
+  }
+
+  return cancellationResponse;
+}
+
+async function reconnectWorkflowEventStream(runIdentifier: string, replayCursor: string | null, abortSignal: AbortSignal) {
+  const query = replayCursor === null ? '' : `?after=${encodeURIComponent(replayCursor)}`;
+  const response = await fetch(`/execute/${encodeURIComponent(runIdentifier)}/events${query}`, {
+    headers: {
+      accept: 'text/event-stream',
+    },
     signal: abortSignal,
   });
 
-  if (response.status === 404) {
-    throw new WorkflowStreamUnavailableError('Workflow stream is no longer available on the server.');
-  }
-
   if (!response.ok || !response.body) {
-    const payload: Record<string, unknown> = await responsePayload(response).catch(() => ({}));
-    throw new Error(typeof payload.error === 'string' ? payload.error : `Unable to reconnect workflow stream (${response.status}).`);
+    const payload = await responsePayload(response).catch(() => ({}));
+    const diagnostic = diagnosticFromErrorPayload(payload);
+
+    if (response.status === 409 && diagnostic?.code === ExecutorDiagnosticCode.StreamGap) {
+      throw new WorkflowStreamGapError(diagnostic);
+    }
+
+    if (
+      (response.status === 404 && diagnostic?.code === ExecutorDiagnosticCode.UnknownRun)
+      || (response.status === 410 && diagnostic?.code === ExecutorDiagnosticCode.StreamExpired)
+    ) {
+      throw new WorkflowStreamUnavailableError(diagnostic);
+    }
+
+    throw responseDiagnosticError(payload, `Unable to reconnect workflow stream (${response.status}).`);
   }
 
   return response;
@@ -1582,6 +2427,97 @@ async function waitForReconnectDelay(abortSignal: AbortSignal) {
   });
 }
 
+export class BoundedSseBuffer {
+  private readonly decoder = new TextDecoder();
+  private buffer = '';
+  private totalByteLength = 0;
+
+  append(bytes: Uint8Array, lastEventIdentifier: string | null) {
+    this.totalByteLength += bytes.byteLength;
+
+    if (this.totalByteLength > maxSseTotalBytes) {
+      throw this.limitError('The workflow event stream exceeded the browser total-size safety limit. Start a new run with fewer events.', lastEventIdentifier);
+    }
+
+    this.buffer += this.decoder.decode(bytes, { stream: true });
+    this.normalizeLineEndings();
+    this.assertWithinLimits(lastEventIdentifier);
+
+    return this.drainCompletedFrames(lastEventIdentifier);
+  }
+
+  finish(lastEventIdentifier: string | null) {
+    this.buffer += this.decoder.decode();
+    this.normalizeLineEndings();
+    this.assertWithinLimits(lastEventIdentifier);
+    const frames = this.drainCompletedFrames(lastEventIdentifier);
+
+    if (this.buffer.trim()) {
+      this.assertDataWithinLimits(this.buffer, lastEventIdentifier);
+      frames.push(this.buffer);
+    }
+
+    this.buffer = '';
+
+    return frames;
+  }
+
+  private normalizeLineEndings() {
+    this.buffer = this.buffer.replaceAll('\r\n', '\n');
+  }
+
+  private assertWithinLimits(lastEventIdentifier: string | null) {
+    if (utf8Encoder.encode(this.buffer).byteLength > maxSseBufferedTextBytes) {
+      throw this.limitError('Workflow event buffering exceeded the browser safety limit. Start a new run with smaller event payloads.', lastEventIdentifier);
+    }
+
+    for (const frame of this.buffer.split('\n\n')) {
+      if (utf8Encoder.encode(frame).byteLength > maxSseFrameBytes) {
+        throw this.limitError('A workflow event frame exceeded the browser safety limit. Start a new run with smaller event payloads.', lastEventIdentifier);
+      }
+    }
+
+    for (const line of this.buffer.split('\n')) {
+      if (utf8Encoder.encode(line).byteLength > maxSseLineBytes) {
+        throw this.limitError('A workflow event stream line exceeded the browser safety limit. Start a new run with smaller event payloads.', lastEventIdentifier);
+      }
+    }
+  }
+
+  private drainCompletedFrames(lastEventIdentifier: string | null) {
+    const frames = this.buffer.split('\n\n');
+    this.buffer = frames.pop() ?? '';
+
+    for (const frame of frames) {
+      this.assertDataWithinLimits(frame, lastEventIdentifier);
+    }
+
+    return frames;
+  }
+
+  private assertDataWithinLimits(frame: string, lastEventIdentifier: string | null) {
+    const data = parseSseMessage(frame).data;
+
+    if (data && utf8Encoder.encode(data).byteLength > maxSseDataBytes) {
+      throw this.limitError('Workflow event data exceeded the browser safety limit. Start a new run with smaller event payloads.', lastEventIdentifier);
+    }
+  }
+
+  private limitError(message: string, lastEventIdentifier: string | null) {
+    return new WorkflowStreamLimitError({
+      code: ExecutorDiagnosticCode.InternalError,
+      stage: ExecutorStage.Stream,
+      severity: ExecutorDiagnosticSeverity.Error,
+      retryability: ExecutorDiagnosticRetryability.Never,
+      message,
+      subject: {
+        type: ExecutorDiagnosticSubjectType.Stream,
+        requested_after: lastEventIdentifier ?? undefined,
+      },
+    });
+  }
+}
+
 async function readSseStream(
   stream: ReadableStream<Uint8Array> | null,
   tabId: string,
@@ -1593,29 +2529,47 @@ async function readSseStream(
   }
 
   const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
+  const buffer = new BoundedSseBuffer();
 
-  while (true) {
-    const readResult = await reader.read();
+  try {
+    while (true) {
+      const readResult = await reader.read();
 
-    if (readResult.done) {
-      break;
+      if (readResult.done) {
+        break;
+      }
+
+      for (let byteOffset = 0; byteOffset < readResult.value.byteLength; byteOffset += maxSseLineBytes) {
+        const byteChunk = readResult.value.subarray(byteOffset, byteOffset + maxSseLineBytes);
+        const frames = buffer.append(byteChunk, progress.lastEventIdentifier);
+
+        for (const frame of frames) {
+          const sseMessage = parseSseMessage(frame);
+          acceptSseMessage(frame, sseMessage, tabId, acceptChunk, progress);
+
+          if (progress.historyGapDiagnostic) {
+            await reader.cancel();
+
+            return;
+          }
+        }
+      }
     }
 
-    buffer += decoder.decode(readResult.value, { stream: true });
-    const chunks = buffer.split('\n\n');
-    buffer = chunks.pop() ?? '';
+    for (const frame of buffer.finish(progress.lastEventIdentifier)) {
+      const sseMessage = parseSseMessage(frame);
+      acceptSseMessage(frame, sseMessage, tabId, acceptChunk, progress);
 
-    for (const chunk of chunks) {
-      const sseMessage = parseSseMessage(chunk);
-      acceptSseMessage(chunk, sseMessage, tabId, acceptChunk, progress);
+      if (progress.historyGapDiagnostic) {
+        return;
+      }
     }
-  }
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
 
-  if (buffer.trim()) {
-    const sseMessage = parseSseMessage(buffer);
-    acceptSseMessage(buffer, sseMessage, tabId, acceptChunk, progress);
+    throw error;
+  } finally {
+    reader.releaseLock();
   }
 }
 
@@ -1626,10 +2580,6 @@ function acceptSseMessage(
   acceptChunk: (chunk: string, tabId: string) => ExecutorEvent | null,
   progress: SseStreamProgress,
 ) {
-  if (sseMessage.eventIdentifier) {
-    progress.lastEventIdentifier = sseMessage.eventIdentifier;
-  }
-
   if (!sseMessage.data) {
     return;
   }
@@ -1644,11 +2594,24 @@ function acceptSseMessage(
     return;
   }
 
-  if (sseMessage.eventIdentifier) {
+  if (event.kind === ExecutorEventKind.StreamGap) {
+    progress.historyGapDiagnostic = event.diagnostic ?? null;
+    progress.historyGapConfirmationGranted = false;
+  } else if (sseMessage.eventIdentifier) {
+    progress.lastEventIdentifier = sseMessage.eventIdentifier;
     progress.acceptedEventIdentifiers.add(sseMessage.eventIdentifier);
+    progress.acceptedEventIdentifierOrder.push(sseMessage.eventIdentifier);
+
+    if (progress.acceptedEventIdentifierOrder.length > maxAcceptedEventIdentifiers) {
+      const expiredEventIdentifier = progress.acceptedEventIdentifierOrder.shift();
+
+      if (expiredEventIdentifier) {
+        progress.acceptedEventIdentifiers.delete(expiredEventIdentifier);
+      }
+    }
   }
 
-  progress.events.push(event);
+  progress.events = retainEventHistory(progress.events, [event], false);
 
   if (isTerminalWorkflowEvent(event)) {
     progress.terminalEvent = event;
@@ -1662,7 +2625,11 @@ function parseSseChunk(chunk: string): ExecutorEvent | null {
     return null;
   }
 
-  return JSON.parse(sseMessage.data) as ExecutorEvent;
+  try {
+    return parseExecutorEvent(parseJsonPreservingStreamCursors(sseMessage.data));
+  } catch {
+    return null;
+  }
 }
 
 interface SseMessage {
@@ -1691,7 +2658,386 @@ function parseSseMessage(chunk: string): SseMessage {
 }
 
 function isTerminalWorkflowEvent(event: ExecutorEvent) {
-  return event.kind === 'workflow_completed' || event.kind === 'workflow_failed';
+  return event.kind === ExecutorEventKind.WorkflowCompleted
+    || event.kind === ExecutorEventKind.WorkflowFailed
+    || event.kind === ExecutorEventKind.WorkflowCancelled;
+}
+
+function latestTerminalWorkflowEvent(events: ExecutorEvent[]) {
+  for (let eventIndex = events.length - 1; eventIndex >= 0; eventIndex -= 1) {
+    const event = events[eventIndex];
+
+    if (isTerminalWorkflowEvent(event)) {
+      return event;
+    }
+  }
+
+  return null;
+}
+
+function parseExecutorEvent(value: unknown): ExecutorEvent | null {
+  if (!isRecord(value) || !enumMember<ExecutorEventKind>(executorEventKinds, value.kind) || typeof value.timestamp_ms !== 'number') {
+    return null;
+  }
+
+  const diagnostic = value.diagnostic === undefined ? undefined : parseExecutionDiagnostic(value.diagnostic);
+
+  if (value.diagnostic !== undefined && !diagnostic) {
+    return null;
+  }
+
+  return {
+    kind: value.kind,
+    timestamp_ms: value.timestamp_ms,
+    agent_name: typeof value.agent_name === 'string' ? value.agent_name : undefined,
+    message: typeof value.message === 'string' ? value.message : undefined,
+    diagnostic,
+    data: value.data,
+  } as ExecutorEvent;
+}
+
+function parseExecutionDiagnostic(value: unknown): ExecutionDiagnostic | null {
+  if (
+    !isRecord(value)
+    || !enumMember<ExecutorDiagnosticCode>(executorDiagnosticCodes, value.code)
+    || !enumMember<ExecutorStage>(executorStages, value.stage)
+    || !enumMember<ExecutorDiagnosticSeverity>(executorDiagnosticSeverities, value.severity)
+    || !enumMember<ExecutorDiagnosticRetryability>(executorDiagnosticRetryabilities, value.retryability)
+    || typeof value.message !== 'string'
+  ) {
+    return null;
+  }
+
+  const subject = parseExecutionDiagnosticSubject(value.subject);
+  const cause = value.cause === undefined ? undefined : parseExecutionDiagnostic(value.cause);
+  const retryAfterMilliseconds = value.retry_after_ms;
+
+  if (
+    !subject
+    || (value.cause !== undefined && !cause)
+    || (
+      retryAfterMilliseconds !== undefined
+      && (typeof retryAfterMilliseconds !== 'number' || !Number.isInteger(retryAfterMilliseconds) || retryAfterMilliseconds < 0)
+    )
+  ) {
+    return null;
+  }
+
+  return {
+    code: value.code,
+    stage: value.stage,
+    severity: value.severity,
+    retryability: value.retryability,
+    message: value.message,
+    subject,
+    retry_after_ms: typeof retryAfterMilliseconds === 'number' ? retryAfterMilliseconds : undefined,
+    cause: cause ?? undefined,
+  };
+}
+
+function parseExecutionDiagnosticSubject(value: unknown): ExecutionDiagnosticSubject | null {
+  if (!isRecord(value) || !enumMember<ExecutorDiagnosticSubjectType>(executorDiagnosticSubjectTypes, value.type)) {
+    return null;
+  }
+
+  if (value.type === ExecutorDiagnosticSubjectType.Workflow) {
+    return { type: value.type };
+  }
+
+  if (value.type === ExecutorDiagnosticSubjectType.Agent) {
+    if (typeof value.agent_name !== 'string' || !optionalNonNegativeInteger(value.iteration_index)) {
+      return null;
+    }
+
+    return {
+      type: value.type,
+      agent_name: value.agent_name,
+      iteration_index: typeof value.iteration_index === 'number' ? value.iteration_index : undefined,
+    };
+  }
+
+  if (value.type === ExecutorDiagnosticSubjectType.Provider) {
+    if (
+      typeof value.agent_name !== 'string'
+      || !optionalString(value.provider_name)
+      || !optionalString(value.model_name)
+      || !optionalPositiveInteger(value.attempt)
+      || !optionalInteger(value.http_status)
+    ) {
+      return null;
+    }
+
+    return {
+      type: value.type,
+      agent_name: value.agent_name,
+      provider_name: typeof value.provider_name === 'string' ? value.provider_name : undefined,
+      model_name: typeof value.model_name === 'string' ? value.model_name : undefined,
+      attempt: typeof value.attempt === 'number' ? value.attempt : undefined,
+      http_status: typeof value.http_status === 'number' ? value.http_status : undefined,
+    };
+  }
+
+  if (value.type === ExecutorDiagnosticSubjectType.Tool) {
+    if (typeof value.tool_name !== 'string' || !optionalString(value.agent_name)) {
+      return null;
+    }
+
+    return {
+      type: value.type,
+      agent_name: typeof value.agent_name === 'string' ? value.agent_name : undefined,
+      tool_name: value.tool_name,
+    };
+  }
+
+  if (value.type === ExecutorDiagnosticSubjectType.Mcp) {
+    if (!optionalString(value.agent_name) || !optionalString(value.server_name) || !optionalString(value.target_name)) {
+      return null;
+    }
+
+    return {
+      type: value.type,
+      agent_name: typeof value.agent_name === 'string' ? value.agent_name : undefined,
+      server_name: typeof value.server_name === 'string' ? value.server_name : undefined,
+      target_name: typeof value.target_name === 'string' ? value.target_name : undefined,
+    };
+  }
+
+  if (value.type === ExecutorDiagnosticSubjectType.Cache) {
+    if (!enumMember<ExecutorCacheOperation>(executorCacheOperations, value.operation)) {
+      return null;
+    }
+
+    return { type: value.type, operation: value.operation };
+  }
+
+  const requestedAfter = parseEventIdentifier(value.requested_after);
+  const oldestAvailable = parseEventIdentifier(value.oldest_available);
+
+  if (requestedAfter === null || oldestAvailable === null) {
+    return null;
+  }
+
+  return {
+    type: value.type,
+    requested_after: requestedAfter,
+    oldest_available: oldestAvailable,
+  };
+}
+
+function parseEventIdentifier(value: unknown): string | undefined | null {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    return BigInt(value).toString();
+  }
+
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) {
+    return BigInt(value).toString();
+  }
+
+  return null;
+}
+
+function parseCancellationResponse(payload: Record<string, unknown>): CancellationResponse | null {
+  if (!enumMember<CancellationTransition>(cancellationTransitions, payload.transition)) {
+    return null;
+  }
+
+  return { transition: payload.transition };
+}
+
+function responseDiagnosticError(payload: Record<string, unknown>, fallbackMessage: string) {
+  const diagnostic = diagnosticFromErrorPayload(payload);
+
+  if (diagnostic) {
+    return new WorkflowDiagnosticError(diagnostic);
+  }
+
+  return new Error(stringPayloadValue(payload.error) ?? fallbackMessage);
+}
+
+function diagnosticFromErrorPayload(payload: Record<string, unknown>) {
+  return parseExecutionDiagnostic(payload.error);
+}
+
+function appendDiagnosticEvent(events: ExecutorEvent[], kind: ExecutorEventKind.StreamGap, diagnostic: ExecutionDiagnostic) {
+  const duplicateEvent = events.some((event) => (
+    event.kind === kind
+    && event.diagnostic?.code === diagnostic.code
+    && event.diagnostic.message === diagnostic.message
+  ));
+
+  if (duplicateEvent) {
+    return events;
+  }
+
+  return retainEventHistory(events, [{
+    kind,
+    timestamp_ms: Date.now(),
+    message: diagnostic.message,
+    diagnostic,
+    data: {},
+  }], true);
+}
+
+function retainEventHistory(existingEvents: ExecutorEvent[], incomingEvents: ExecutorEvent[], includeTruncationNotice: boolean) {
+  const retainedEvents = [...existingEvents, ...incomingEvents];
+  const protectedEvents = new Set<ExecutorEvent>();
+  const latestTerminalEvent = latestTerminalWorkflowEvent(retainedEvents);
+  let latestStreamGapEvent: ExecutorEvent | null = null;
+  let latestTruncationEvent: ExecutorEvent | null = null;
+
+  for (let eventIndex = retainedEvents.length - 1; eventIndex >= 0; eventIndex -= 1) {
+    const event = retainedEvents[eventIndex];
+
+    if (!event || event.kind !== ExecutorEventKind.StreamGap) {
+      continue;
+    }
+
+    if (!latestTruncationEvent && event.message === eventHistoryTruncationMessage) {
+      latestTruncationEvent = event;
+    } else if (!latestStreamGapEvent && event.message !== eventHistoryTruncationMessage) {
+      latestStreamGapEvent = event;
+    }
+
+    if (latestStreamGapEvent && latestTruncationEvent) {
+      break;
+    }
+  }
+
+  if (latestTerminalEvent) {
+    protectedEvents.add(latestTerminalEvent);
+  }
+
+  if (latestStreamGapEvent) {
+    protectedEvents.add(latestStreamGapEvent);
+  }
+
+  if (latestTruncationEvent) {
+    protectedEvents.add(latestTruncationEvent);
+  }
+
+  if (protectedEvents.size === 0 && retainedEvents.length > 0) {
+    protectedEvents.add(retainedEvents.at(-1) as ExecutorEvent);
+  }
+
+  const eventByteLengths = retainedEvents.map(serializedEventByteLength);
+  let retainedByteLength = eventByteLengths.reduce((totalBytes, eventBytes) => totalBytes + eventBytes, 0);
+  let historyTruncated = false;
+
+  while (retainedEvents.length > maxRetainedUiEvents || retainedByteLength > maxRetainedUiEventBytes) {
+    const removalIndex = retainedEvents.findIndex((event) => !protectedEvents.has(event));
+
+    if (removalIndex < 0) {
+      break;
+    }
+
+    retainedByteLength -= eventByteLengths[removalIndex] ?? 0;
+    retainedEvents.splice(removalIndex, 1);
+    eventByteLengths.splice(removalIndex, 1);
+    historyTruncated = true;
+  }
+
+  if (
+    historyTruncated
+    && includeTruncationNotice
+    && !retainedEvents.some((event) => event.message === eventHistoryTruncationMessage)
+  ) {
+    const diagnostic: ExecutionDiagnostic = {
+      code: ExecutorDiagnosticCode.StreamGap,
+      stage: ExecutorStage.Stream,
+      severity: ExecutorDiagnosticSeverity.Warning,
+      retryability: ExecutorDiagnosticRetryability.Safe,
+      message: eventHistoryTruncationMessage,
+      subject: { type: ExecutorDiagnosticSubjectType.Stream },
+    };
+
+    return retainEventHistory(retainedEvents, [{
+      kind: ExecutorEventKind.StreamGap,
+      timestamp_ms: Date.now(),
+      message: diagnostic.message,
+      diagnostic,
+      data: {},
+    }], false);
+  }
+
+  return retainedEvents;
+}
+
+function serializedEventByteLength(event: ExecutorEvent) {
+  const cachedByteLength = serializedExecutorEventByteLengths.get(event);
+
+  if (cachedByteLength !== undefined) {
+    return cachedByteLength;
+  }
+
+  try {
+    const byteLength = utf8Encoder.encode(JSON.stringify(event)).byteLength;
+    serializedExecutorEventByteLengths.set(event, byteLength);
+
+    return byteLength;
+  } catch {
+    return maxRetainedUiEventBytes;
+  }
+}
+
+function streamGapRequestedAfter(diagnostic: ExecutionDiagnostic | null) {
+  if (diagnostic?.subject.type !== ExecutorDiagnosticSubjectType.Stream) {
+    return null;
+  }
+
+  return diagnostic.subject.requested_after ?? null;
+}
+
+function streamGapOldestAvailable(diagnostic: ExecutionDiagnostic) {
+  if (diagnostic.subject.type !== ExecutorDiagnosticSubjectType.Stream) {
+    return null;
+  }
+
+  return diagnostic.subject.oldest_available ?? null;
+}
+
+function eventIdentifierBefore(eventIdentifier: string | null) {
+  if (!eventIdentifier || !/^\d+$/.test(eventIdentifier)) {
+    return null;
+  }
+
+  const numericEventIdentifier = BigInt(eventIdentifier);
+
+  return numericEventIdentifier > 0n ? (numericEventIdentifier - 1n).toString() : null;
+}
+
+function unknownRunCancellationDiagnostic(): ExecutionDiagnostic {
+  return {
+    code: ExecutorDiagnosticCode.UnknownRun,
+    stage: ExecutorStage.Cancellation,
+    severity: ExecutorDiagnosticSeverity.Error,
+    retryability: ExecutorDiagnosticRetryability.Never,
+    message: 'The server no longer recognizes this workflow run.',
+    subject: { type: ExecutorDiagnosticSubjectType.Workflow },
+  };
+}
+
+function enumMember<EnumValue extends string>(values: Set<string>, value: unknown): value is EnumValue {
+  return typeof value === 'string' && values.has(value);
+}
+
+function optionalString(value: unknown) {
+  return value === undefined || typeof value === 'string';
+}
+
+function optionalInteger(value: unknown) {
+  return value === undefined || (typeof value === 'number' && Number.isInteger(value));
+}
+
+function optionalNonNegativeInteger(value: unknown) {
+  return value === undefined || (typeof value === 'number' && Number.isInteger(value) && value >= 0);
+}
+
+function optionalPositiveInteger(value: unknown) {
+  return value === undefined || (typeof value === 'number' && Number.isInteger(value) && value > 0);
 }
 
 function jsonObjectValidationError(source: string) {
@@ -1736,7 +3082,7 @@ async function responsePayload(response: Response): Promise<Record<string, unkno
   }
 
   try {
-    const payload = JSON.parse(responseText) as unknown;
+    const payload = parseJsonPreservingStreamCursors(responseText);
 
     if (isRecord(payload)) {
       return payload;
@@ -1746,6 +3092,88 @@ async function responsePayload(response: Response): Promise<Record<string, unkno
   } catch {
     return { error: responseText };
   }
+}
+
+function parseJsonPreservingStreamCursors(source: string): unknown {
+  let normalizedSource = '';
+  let characterIndex = 0;
+
+  while (characterIndex < source.length) {
+    if (source[characterIndex] !== '"') {
+      normalizedSource += source[characterIndex];
+      characterIndex += 1;
+
+      continue;
+    }
+
+    const stringStartIndex = characterIndex;
+    characterIndex += 1;
+
+    while (characterIndex < source.length) {
+      if (source[characterIndex] === '\\') {
+        characterIndex += 2;
+
+        continue;
+      }
+
+      if (source[characterIndex] === '"') {
+        characterIndex += 1;
+
+        break;
+      }
+
+      characterIndex += 1;
+    }
+
+    const stringToken = source.slice(stringStartIndex, characterIndex);
+    normalizedSource += stringToken;
+    let delimiterIndex = characterIndex;
+
+    while (/\s/.test(source[delimiterIndex] ?? '')) {
+      delimiterIndex += 1;
+    }
+
+    if (source[delimiterIndex] !== ':') {
+      continue;
+    }
+
+    let propertyName: unknown;
+
+    try {
+      propertyName = JSON.parse(stringToken) as unknown;
+    } catch {
+      continue;
+    }
+
+    if (propertyName !== 'requested_after' && propertyName !== 'oldest_available') {
+      continue;
+    }
+
+    let valueIndex = delimiterIndex + 1;
+
+    while (/\s/.test(source[valueIndex] ?? '')) {
+      valueIndex += 1;
+    }
+
+    if (!/\d/.test(source[valueIndex] ?? '')) {
+      continue;
+    }
+
+    let valueEndIndex = valueIndex;
+
+    while (/\d/.test(source[valueEndIndex] ?? '')) {
+      valueEndIndex += 1;
+    }
+
+    if (!/[\s,}\]]/.test(source[valueEndIndex] ?? '')) {
+      continue;
+    }
+
+    normalizedSource += `${source.slice(characterIndex, valueIndex)}"${source.slice(valueIndex, valueEndIndex)}"`;
+    characterIndex = valueEndIndex;
+  }
+
+  return JSON.parse(normalizedSource) as unknown;
 }
 
 function stringPayloadValue(value: unknown) {
@@ -1809,7 +3237,7 @@ function workflowTabTone(tab: WorkflowTab): 'default' | 'error' {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function ActionTooltip({ children, label }: { children: ReactElement; label: string }) {

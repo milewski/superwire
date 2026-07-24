@@ -1,6 +1,5 @@
-use super::fixtures;
+use super::{fixtures, support};
 use crate::model::{ModelToolSource, ToolCallLimitScope};
-use crate::service::ExecutorService;
 use crate::tests::support::{request, TrackingModelProvider};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -9,7 +8,7 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use superwire_macros::workflow_source;
-use superwire_protocol::api::ValidationRequest;
+use superwire_protocol::api::{GraphRequest, ValidationRequest};
 use superwire_protocol::event::ExecutorEventKind;
 
 #[tokio::test]
@@ -58,7 +57,7 @@ async fn agent_tool_definitions_are_passed_to_model_provider() {
     .replace("__ENDPOINT__", &server.endpoint());
 
     let model_provider = TrackingModelProvider::new(vec![json!({ "value": "renamed" })]);
-    let service = ExecutorService::new(model_provider.clone());
+    let service = support::service_with_trusted_mcp(model_provider.clone());
 
     service
         .execute(request_with_input(&workflow_source, json!({ "user_id": 123 })))
@@ -97,6 +96,7 @@ async fn agent_tool_definitions_are_passed_to_model_provider() {
 pub(crate) struct TestMcpHttpServer {
     endpoint: String,
     recorded_methods: Arc<Mutex<Vec<TestMcpMethod>>>,
+    recorded_requests: Arc<Mutex<Vec<Value>>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -106,6 +106,7 @@ pub(crate) enum TestMcpMethod {
     ToolsCall,
     PromptsList,
     ResourcesList,
+    ResourceTemplatesList,
     ResourcesRead,
     PromptsGet,
     Unknown,
@@ -134,17 +135,26 @@ impl TestMcpHttpServer {
         let catalog = TestMcpCatalog;
         let recorded_methods = Arc::new(Mutex::new(Vec::new()));
         let server_recorded_methods = Arc::clone(&recorded_methods);
+        let recorded_requests = Arc::new(Mutex::new(Vec::new()));
+        let server_recorded_requests = Arc::clone(&recorded_requests);
 
         thread::spawn(move || {
-            for incoming_stream in listener.incoming().take(12) {
+            for incoming_stream in listener.incoming().take(24) {
                 let stream = incoming_stream.expect("test MCP stream should open");
-                handle_mcp_request(stream, &expected_headers, &catalog, &server_recorded_methods);
+                handle_mcp_request(
+                    stream,
+                    &expected_headers,
+                    &catalog,
+                    &server_recorded_methods,
+                    &server_recorded_requests,
+                );
             }
         });
 
         Self {
             endpoint,
             recorded_methods,
+            recorded_requests,
         }
     }
 
@@ -160,6 +170,19 @@ impl TestMcpHttpServer {
             .filter(|recorded_method| **recorded_method == method)
             .count()
     }
+
+    pub(crate) fn tool_call_arguments(&self) -> Vec<Value> {
+        self.recorded_requests
+            .lock()
+            .expect("MCP request records lock should not be poisoned")
+            .iter()
+            .filter_map(|request| {
+                (TestMcpMethod::from_request(request) == TestMcpMethod::ToolsCall)
+                    .then(|| request.pointer("/params/arguments").cloned())
+                    .flatten()
+            })
+            .collect()
+    }
 }
 
 impl TestMcpMethod {
@@ -170,6 +193,7 @@ impl TestMcpMethod {
             Some("tools/call") => Self::ToolsCall,
             Some("prompts/list") => Self::PromptsList,
             Some("resources/list") => Self::ResourcesList,
+            Some("resources/templates/list") => Self::ResourceTemplatesList,
             Some("resources/read") => Self::ResourcesRead,
             Some("prompts/get") => Self::PromptsGet,
             _ => Self::Unknown,
@@ -196,6 +220,7 @@ impl TestMcpCatalog {
             TestMcpMethod::ToolsCall => Some(jsonrpc_result(3, self.tool_call_result(request))),
             TestMcpMethod::PromptsList => Some(jsonrpc_result(2, json!({ "prompts": self.prompts() }))),
             TestMcpMethod::ResourcesList => Some(jsonrpc_result(2, json!({ "resources": self.resources() }))),
+            TestMcpMethod::ResourceTemplatesList => Some(jsonrpc_result(2, json!({ "resourceTemplates": self.resource_templates() }))),
             TestMcpMethod::ResourcesRead => Some(jsonrpc_result(3, self.project_readme_content())),
             TestMcpMethod::PromptsGet => Some(jsonrpc_result(2, self.system_prompt_result())),
             TestMcpMethod::Unknown => Some(jsonrpc_result(1, json!({}))),
@@ -205,6 +230,20 @@ impl TestMcpCatalog {
     fn tool_call_result(&self, request: &Value) -> Value {
         match request.pointer("/params/name").and_then(Value::as_str) {
             Some("fetch_qualitative_question_answers") => self.fetch_qualitative_question_answers_result(),
+            Some("fail_with_detail") => json!({
+                "content": [
+                    { "type": "text", "text": "remote validation failed" },
+                    { "type": "resource_link", "uri": "private://diagnostic/7" }
+                ],
+                "isError": true
+            }),
+            Some("multi_content") => json!({
+                "content": [
+                    { "type": "text", "text": "{\"success\":true}" },
+                    { "type": "resource_link", "uri": "file:///evidence.json" }
+                ],
+                "isError": false
+            }),
             _ => json!({ "content": [{ "type": "text", "text": "{}" }] }),
         }
     }
@@ -306,6 +345,34 @@ impl TestMcpCatalog {
                     ],
                     ["project_id", "task_id", "user_id"],
                 ),
+                object_schema([schema_field("success", primitive_schema(JsonSchemaType::Boolean))], ["success"]),
+            ),
+            mcp_tool(
+                "validate_label",
+                "Validate a constrained label",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "label": {
+                            "type": "string",
+                            "minLength": 3
+                        }
+                    },
+                    "required": ["label"],
+                    "additionalProperties": false
+                }),
+                object_schema([schema_field("success", primitive_schema(JsonSchemaType::Boolean))], ["success"]),
+            ),
+            mcp_tool(
+                "fail_with_detail",
+                "Return an MCP error result",
+                object_schema([], []),
+                object_schema([schema_field("success", primitive_schema(JsonSchemaType::Boolean))], ["success"]),
+            ),
+            mcp_tool(
+                "multi_content",
+                "Return multiple content items",
+                object_schema([], []),
                 object_schema([schema_field("success", primitive_schema(JsonSchemaType::Boolean))], ["success"]),
             ),
             self.fetch_qualitative_question_answers_tool(),
@@ -431,14 +498,33 @@ impl TestMcpCatalog {
         )
     }
 
-    fn resources(&self) -> Vec<Value> {
+    fn resource_templates(&self) -> Vec<Value> {
         vec![json!({
             "name": "project_readme",
             "title": "Project README",
-            "description": "The project readme file",
+            "description": "A project readme selected by workspace and optional section",
             "mimeType": "text/markdown",
-            "uri": "file://resources/project_readme"
+            "uriTemplate": "file://resources/{workspace_id}/project_readme{?section}"
         })]
+    }
+
+    fn resources(&self) -> Vec<Value> {
+        vec![
+            json!({
+                "name": "project_readme",
+                "title": "Project README",
+                "description": "The project readme file",
+                "mimeType": "text/markdown",
+                "uri": "file://resources/project_readme"
+            }),
+            json!({
+                "name": "static_policy",
+                "title": "Static Policy",
+                "description": "A static policy resource",
+                "mimeType": "text/plain",
+                "uri": "file://resources/static_policy"
+            }),
+        ]
     }
 
     fn prompts(&self) -> Vec<Value> {
@@ -481,6 +567,7 @@ fn handle_mcp_request(
     expected_headers: &BTreeMap<String, String>,
     catalog: &TestMcpCatalog,
     recorded_methods: &Arc<Mutex<Vec<TestMcpMethod>>>,
+    recorded_requests: &Arc<Mutex<Vec<Value>>>,
 ) {
     let mut reader = BufReader::new(stream.try_clone().expect("stream clone should succeed"));
     let mut request_headers = BTreeMap::new();
@@ -521,17 +608,21 @@ fn handle_mcp_request(
         .lock()
         .expect("MCP method records lock should not be poisoned")
         .push(method);
+    recorded_requests
+        .lock()
+        .expect("MCP request records lock should not be poisoned")
+        .push(request.clone());
 
     let response = if let Some(response_body) = catalog.response_for(method, &request) {
         let response_body = response_body.to_string();
 
         format!(
-            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nconnection: close\r\ncontent-length: {}\r\n\r\n{}",
             response_body.len(),
             response_body
         )
     } else {
-        "HTTP/1.1 202 Accepted\r\ncontent-length: 0\r\n\r\n".to_string()
+        "HTTP/1.1 202 Accepted\r\nconnection: close\r\ncontent-length: 0\r\n\r\n".to_string()
     };
 
     stream.write_all(response.as_bytes()).expect("response should write");
@@ -601,6 +692,7 @@ fn fixture_with_mcp_endpoint(workflow_source: &str, endpoint: &str) -> String {
     let endpoint_value = serde_json::to_string(endpoint).expect("endpoint string should serialize");
 
     workflow_source
+        .replace("\r\n", "\n")
         .replace("secrets.mcp_endpoint", &endpoint_value)
         .replace("secrets {\n    mcp_endpoint: string\n}\n\n", "")
 }
@@ -653,7 +745,7 @@ async fn mcp_resource_and_prompt_imports_are_added_to_agent_prompt() {
     .replace("__ENDPOINT__", &server.endpoint());
 
     let model_provider = TrackingModelProvider::new(vec![json!({ "value": "done" })]);
-    let service = ExecutorService::new(model_provider.clone());
+    let service = support::service_with_trusted_mcp(model_provider.clone());
 
     service
         .execute(request_with_input(&workflow_source, json!({ "workspace_id": "workspace-1" })))
@@ -679,7 +771,7 @@ async fn fixture_exposes_root_and_agent_level_max_calls_configuration() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = fixture_with_mcp_endpoint(fixtures::TOOL_MAX_CALLS_SCOPES, &server.endpoint());
     let model_provider = TrackingModelProvider::new(vec![json!({ "value": "first" }), json!({ "value": "second" })]);
-    let service = ExecutorService::new(model_provider.clone());
+    let service = support::service_with_trusted_mcp(model_provider.clone());
 
     service
         .execute(request_with_input(&workflow_source, Value::Null))
@@ -747,7 +839,7 @@ async fn explicit_mcp_resource_and_prompt_calls_are_available_as_values() {
     }
     .replace("__ENDPOINT__", &server.endpoint());
     let model_provider = TrackingModelProvider::new(Vec::new());
-    let service = ExecutorService::new(model_provider);
+    let service = support::service_with_trusted_mcp(model_provider);
 
     let output = service
         .execute(request_with_input(&workflow_source, json!({ "workspace_id": "workspace-1" })))
@@ -766,7 +858,7 @@ async fn mcp_read_resource_fixture_executes() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = fixture_with_mcp_endpoint(fixtures::MCP_READ_RESOURCE, &server.endpoint());
     let model_provider = TrackingModelProvider::new(Vec::new());
-    let service = ExecutorService::new(model_provider);
+    let service = support::service_with_trusted_mcp(model_provider);
 
     let output = service
         .execute(request_with_input(&workflow_source, json!({ "workspace_id": "workspace-1" })))
@@ -782,7 +874,7 @@ async fn mcp_render_prompt_fixture_executes() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = fixture_with_mcp_endpoint(fixtures::MCP_RENDER_PROMPT, &server.endpoint());
     let model_provider = TrackingModelProvider::new(Vec::new());
-    let service = ExecutorService::new(model_provider);
+    let service = support::service_with_trusted_mcp(model_provider);
 
     let output = service
         .execute(request_with_input(&workflow_source, json!({ "workspace_id": "workspace-1" })))
@@ -829,7 +921,7 @@ async fn mcp_render_prompt_executes_inside_null_fallback() {
     }
     .replace("__ENDPOINT__", &server.endpoint());
     let model_provider = TrackingModelProvider::new(vec![json!({ "summary": "done" })]);
-    let service = ExecutorService::new(model_provider.clone());
+    let service = support::service_with_trusted_mcp(model_provider.clone());
 
     let output = service
         .execute(request_with_input(&workflow_source, Value::Null))
@@ -852,7 +944,7 @@ async fn mcp_read_render_dependency_fixture_executes() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = fixture_with_mcp_endpoint(fixtures::MCP_READ_RENDER_DEPENDENCIES, &server.endpoint());
     let model_provider = TrackingModelProvider::new(Vec::new());
-    let service = ExecutorService::new(model_provider);
+    let service = support::service_with_trusted_mcp(model_provider);
 
     let output = service
         .execute(request_with_input(&workflow_source, json!({ "workspace_id": "workspace-1" })))
@@ -867,7 +959,7 @@ async fn mcp_read_render_dependency_fixture_executes() {
 }
 
 #[tokio::test]
-async fn accepts_null_input_when_all_input_fields_are_consumed_by_bindings() {
+async fn rejects_null_input_even_when_every_input_field_is_used_by_fixed_bindings() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = workflow_source! {
         provider openai from openai {
@@ -892,6 +984,7 @@ async fn accepts_null_input_when_all_input_fields_are_consumed_by_bindings() {
             bindings {
                 project_id: input.project_id
                 task_id: input.task_id
+
             }
         }
 
@@ -911,12 +1004,16 @@ async fn accepts_null_input_when_all_input_fields_are_consumed_by_bindings() {
     .replace("__ENDPOINT__", &server.endpoint());
 
     let model_provider = TrackingModelProvider::new(vec![serde_json::json!({ "value": "done" })]);
-    let service = ExecutorService::new(model_provider.clone());
+    let service = support::service_with_trusted_mcp(model_provider.clone());
 
-    service
+    let execution_error = service
         .execute(request(&workflow_source))
         .await
-        .expect("execution should accept null input when all fields are consumed by bindings");
+        .expect_err("execution should require declared input values before resolving fixed bindings");
+
+    assert!(execution_error.to_string().contains("no input object was provided"));
+    assert_eq!(model_provider.recorded_count(), 0);
+    assert_eq!(server.method_count(TestMcpMethod::ToolsList), 0);
 }
 
 #[test]
@@ -966,7 +1063,7 @@ fn validation_does_not_execute_workflow_dynamic_tool_calls() {
     }
     .replace("__ENDPOINT__", &server.endpoint());
 
-    let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
+    let service = support::service_with_trusted_mcp(TrackingModelProvider::new(Vec::new()));
 
     service
         .validate(ValidationRequest {
@@ -1028,7 +1125,7 @@ fn validation_does_not_execute_agent_dynamic_tool_calls() {
     }
     .replace("__ENDPOINT__", &server.endpoint());
 
-    let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
+    let service = support::service_with_trusted_mcp(TrackingModelProvider::new(Vec::new()));
 
     service
         .validate(ValidationRequest {
@@ -1086,7 +1183,7 @@ fn validation_does_not_fetch_mcp_prompt_imports() {
     }
     .replace("__ENDPOINT__", &server.endpoint());
 
-    let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
+    let service = support::service_with_trusted_mcp(TrackingModelProvider::new(Vec::new()));
 
     service
         .validate(ValidationRequest {
@@ -1142,7 +1239,7 @@ fn validation_does_not_read_mcp_resource_imports() {
     }
     .replace("__ENDPOINT__", &server.endpoint());
 
-    let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
+    let service = support::service_with_trusted_mcp(TrackingModelProvider::new(Vec::new()));
 
     service
         .validate(ValidationRequest {
@@ -1155,6 +1252,95 @@ fn validation_does_not_read_mcp_resource_imports() {
     assert_eq!(server.method_count(TestMcpMethod::ToolsList), 1);
     assert_eq!(server.method_count(TestMcpMethod::ResourcesList), 1);
     assert_eq!(server.method_count(TestMcpMethod::ResourcesRead), 0);
+}
+
+#[test]
+fn invalid_non_object_input_preflight_performs_no_mcp_calls() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        input {
+            project_id: number
+        }
+
+        output {
+            value: "ok"
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let error = crate::WorkflowExecutor::from_source_with_runtime_values(&workflow_source, &json!("not-an-object"), &Value::Null)
+        .expect_err("non-object input should fail before MCP discovery");
+
+    assert!(error.to_string().contains("declared `input` block expects"));
+    assert_eq!(server.method_count(TestMcpMethod::ToolsList), 0);
+}
+
+#[test]
+fn invalid_non_object_secrets_preflight_performs_no_mcp_calls() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        secrets {
+            api_key: string
+        }
+
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        output {
+            value: "ok"
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let error = crate::WorkflowExecutor::from_source_with_runtime_values(&workflow_source, &Value::Null, &json!("not-an-object"))
+        .expect_err("non-object secrets should fail before MCP discovery");
+
+    assert!(error.to_string().contains("declared `secrets` block expects"));
+    assert_eq!(server.method_count(TestMcpMethod::ToolsList), 0);
+}
+
+#[test]
+fn unresolved_dynamic_mcp_configuration_is_reported_before_any_network_call() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        input {
+            optional_endpoint: maybe string
+        }
+
+        mcp first {
+            endpoint: "__ENDPOINT__"
+        }
+
+        dynamic {
+            second_endpoint: input.optional_endpoint
+        }
+
+        mcp second {
+            endpoint: dynamic.second_endpoint
+        }
+
+        output {
+            value: "ok"
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let mcp_client_factory = superwire_mcp::HttpMcpClientFactory::for_network_policy(superwire_mcp::McpNetworkPolicy::Trusted);
+    let error = crate::WorkflowExecutor::from_source_with_runtime_values_and_mcp_client_factory(
+        &workflow_source,
+        &json!({ "optional_endpoint": null }),
+        &Value::Null,
+        &mcp_client_factory,
+    )
+    .expect_err("nullable dynamic MCP endpoint should fail before network discovery");
+
+    assert!(
+        error.to_string().contains("endpoint") && error.to_string().contains("string"),
+        "unexpected preflight error: {error}"
+    );
+    assert_eq!(server.method_count(TestMcpMethod::ToolsList), 0);
 }
 
 #[test]
@@ -1186,7 +1372,7 @@ fn validation_rejects_dynamic_tool_call_missing_required_input() {
     }
     .replace("__ENDPOINT__", &server.endpoint());
 
-    let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
+    let service = support::service_with_trusted_mcp(TrackingModelProvider::new(Vec::new()));
     let error = service
         .validate(ValidationRequest {
             workflow_source: Some(workflow_source),
@@ -1202,6 +1388,62 @@ fn validation_rejects_dynamic_tool_call_missing_required_input() {
         "unexpected validation error: {error_message}"
     );
 
+    assert_eq!(server.method_count(TestMcpMethod::ToolsList), 1);
+    assert_eq!(server.method_count(TestMcpMethod::ToolsCall), 0);
+}
+
+#[test]
+fn validation_rejects_discovered_fixed_binding_type_mismatch() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        provider openai from openai {
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+        }
+
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
+
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        tool list_participants from mcp.local.tool.list_participants {
+            bindings {
+                project_id: "not-a-number"
+                task_id: 7
+            }
+        }
+
+        agent participant_reader {
+            model: model.openai_model
+            uses: [tool.list_participants]
+            instruction: "List participants"
+            output {
+                value: string
+            }
+        }
+
+        output {
+            value: agent.participant_reader
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let service = support::service_with_trusted_mcp(TrackingModelProvider::new(Vec::new()));
+    let validation_error = service
+        .validate(ValidationRequest {
+            workflow_source: Some(workflow_source),
+            workflow_source_base64: None,
+            secrets: Value::Null,
+        })
+        .expect_err("validation should reject a fixed binding that violates the discovered schema");
+    let error_message = validation_error.to_string();
+
+    assert!(
+        error_message.contains("fixed argument `project_id` expects float, found string"),
+        "{error_message}"
+    );
     assert_eq!(server.method_count(TestMcpMethod::ToolsList), 1);
     assert_eq!(server.method_count(TestMcpMethod::ToolsCall), 0);
 }
@@ -1240,7 +1482,7 @@ fn validation_accepts_dynamic_tool_call_missing_nullable_input() {
     }
     .replace("__ENDPOINT__", &server.endpoint());
 
-    let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
+    let service = support::service_with_trusted_mcp(TrackingModelProvider::new(Vec::new()));
 
     service
         .validate(ValidationRequest {
@@ -1252,6 +1494,84 @@ fn validation_accepts_dynamic_tool_call_missing_nullable_input() {
 
     assert_eq!(server.method_count(TestMcpMethod::ToolsList), 1);
     assert_eq!(server.method_count(TestMcpMethod::ToolsCall), 0);
+}
+
+#[tokio::test]
+async fn rejects_discovered_input_constraints_before_mcp_invocation() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        input {
+            label: string
+        }
+
+        tool validate_label from mcp.local.tool.validate_label
+
+        dynamic {
+            result: call tool.validate_label {
+                input {
+                    label: input.label
+                }
+            }
+        }
+
+        output {
+            value: dynamic.result
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let service = support::service_with_trusted_mcp(TrackingModelProvider::new(Vec::new()));
+    let execution_error = service
+        .execute(request_with_input(&workflow_source, json!({ "label": "" })))
+        .await
+        .expect_err("minLength violation should fail before MCP invocation");
+
+    assert!(
+        execution_error.to_string().contains("merged input is invalid"),
+        "unexpected execution error: {execution_error}"
+    );
+    assert_eq!(server.method_count(TestMcpMethod::ToolsList), 1);
+    assert_eq!(server.method_count(TestMcpMethod::ToolsCall), 0);
+}
+
+#[tokio::test]
+async fn rejects_invalid_discovered_output_after_mcp_invocation() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        tool update_user from mcp.local.tool.update_user_name
+
+        dynamic {
+            result: call tool.update_user {
+                input {
+                    user_id: 42
+                    user_name: "Ada"
+                }
+            }
+        }
+
+        output {
+            value: dynamic.result
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let service = support::service_with_trusted_mcp(TrackingModelProvider::new(Vec::new()));
+    let execution_error = service
+        .execute(request(&workflow_source))
+        .await
+        .expect_err("invalid discovered output should fail");
+
+    assert!(
+        execution_error.to_string().contains("output is invalid"),
+        "unexpected execution error: {execution_error}"
+    );
+    assert_eq!(server.method_count(TestMcpMethod::ToolsCall), 1);
 }
 
 #[tokio::test]
@@ -1310,7 +1630,7 @@ async fn mcp_tool_call_projects_result_to_declared_output_schema() {
     }
     .replace("__ENDPOINT__", &server.endpoint());
 
-    let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
+    let service = support::service_with_trusted_mcp(TrackingModelProvider::new(Vec::new()));
     let output = service
         .execute(request_with_input(&workflow_source, json!({ "project_id": 31 })))
         .await
@@ -1386,7 +1706,7 @@ async fn mcp_batch_import_alias_to_same_tool_executes_each_local_tool_with_own_b
     }
     .replace("__ENDPOINT__", &server.endpoint());
 
-    let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
+    let service = support::service_with_trusted_mcp(TrackingModelProvider::new(Vec::new()));
     let mut receiver = service.execute_stream(request(&workflow_source));
     let mut started_calls = Vec::new();
 
@@ -1404,14 +1724,18 @@ async fn mcp_batch_import_alias_to_same_tool_executes_each_local_tool_with_own_b
     assert_eq!(tool_calls.len(), 2);
     assert!(tool_calls.iter().any(|event_data| {
         event_data["target_name"] == "fetch_qualitative_question_answers"
-            && event_data["params"]["project_id"] == 14
-            && event_data["params"]["task_types"] == json!(["video_recording", "open_written"])
+            && event_data["argument_names"] == json!(["project_id", "task_types"])
     }));
     assert!(tool_calls.iter().any(|event_data| {
-        event_data["target_name"] == "video_recording_answers"
-            && event_data["params"]["project_id"] == 14
-            && event_data["params"]["task_types"] == json!(["video_recording"])
+        event_data["target_name"] == "video_recording_answers" && event_data["argument_names"] == json!(["project_id", "task_types"])
     }));
+    assert_eq!(
+        server.tool_call_arguments(),
+        vec![
+            json!({ "project_id": 14, "task_types": ["video_recording", "open_written"] }),
+            json!({ "project_id": 14, "task_types": ["video_recording"] }),
+        ]
+    );
 }
 
 #[tokio::test]
@@ -1469,7 +1793,7 @@ async fn mcp_endpoint_from_secrets_applies_omitted_tool_schema_before_model_requ
     });
 
     let model_provider = TrackingModelProvider::new(vec![json!({ "value": "done" })]);
-    let service = ExecutorService::new(model_provider.clone());
+    let service = support::service_with_trusted_mcp(model_provider.clone());
     let mut request = request_with_input(workflow_source, json!({ "user_id": 123 }));
 
     request.secrets = secrets;
@@ -1540,7 +1864,7 @@ async fn mcp_nullable_array_input_schema_is_preserved_for_model_validation() {
     .replace("__ENDPOINT__", &server.endpoint());
 
     let model_provider = TrackingModelProvider::new(vec![json!({ "value": "done" })]);
-    let service = ExecutorService::new(model_provider.clone());
+    let service = support::service_with_trusted_mcp(model_provider.clone());
 
     service
         .execute(request_with_input(&workflow_source, json!({ "project_id": 31 })))
@@ -1555,10 +1879,10 @@ async fn mcp_nullable_array_input_schema_is_preserved_for_model_validation() {
     let tool_definition = request.tools.first().expect("tool definition should be present");
     let input_schema = tool_definition.input_schema.json_value();
 
-    assert_eq!(input_schema.pointer("/properties/name/oneOf/0/type"), Some(&json!("array")));
-    assert_eq!(input_schema.pointer("/properties/name/oneOf/1/type"), Some(&json!("null")));
-    assert_eq!(input_schema.pointer("/properties/languages/oneOf/0/type"), Some(&json!("array")));
-    assert_eq!(input_schema.pointer("/properties/languages/oneOf/1/type"), Some(&json!("null")));
+    assert_eq!(input_schema.pointer("/properties/name/type"), Some(&json!(["array", "null"])));
+    assert_eq!(input_schema.pointer("/properties/name/minItems"), Some(&json!(1)));
+    assert_eq!(input_schema.pointer("/properties/name/uniqueItems"), Some(&json!(true)));
+    assert_eq!(input_schema.pointer("/properties/languages/type"), Some(&json!(["array", "null"])));
 }
 
 #[tokio::test]
@@ -1566,7 +1890,7 @@ async fn mcp_tool_batch_imports_apply_shared_bindings_to_all_tools() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = fixture_with_mcp_endpoint(fixtures::MCP_TOOL_BATCH_IMPORTS, &server.endpoint());
     let model_provider = TrackingModelProvider::new(vec![json!({ "value": "done" })]);
-    let service = ExecutorService::new(model_provider.clone());
+    let service = support::service_with_trusted_mcp(model_provider.clone());
 
     service
         .execute(request_with_input(&workflow_source, json!({ "project_id": 31, "task_id": 42 })))
@@ -1635,4 +1959,157 @@ async fn mcp_tool_batch_imports_apply_shared_bindings_to_all_tools() {
             headers: BTreeMap::new(),
         }
     );
+}
+
+#[tokio::test]
+async fn deterministic_is_error_result_emits_failed_event_without_completion() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        tool failing_call from mcp.local.tool.fail_with_detail
+
+        output {
+            value: call tool.failing_call
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let service = support::service_with_trusted_mcp(TrackingModelProvider::new(Vec::new()));
+    let mut event_receiver = service.execute_stream(request(&workflow_source));
+    let mut call_events = Vec::new();
+
+    while let Some(event) = event_receiver.recv().await {
+        if matches!(
+            event.kind,
+            ExecutorEventKind::McpCallStarted | ExecutorEventKind::McpCallFailed | ExecutorEventKind::McpCallCompleted
+        ) {
+            call_events.push(event);
+        }
+    }
+
+    assert_eq!(
+        call_events.iter().map(|event| &event.kind).collect::<Vec<_>>(),
+        vec![&ExecutorEventKind::McpCallStarted, &ExecutorEventKind::McpCallFailed]
+    );
+    let failure_event = &call_events[1];
+    let failure_diagnostic = failure_event
+        .diagnostic
+        .as_ref()
+        .expect("MCP failure event should contain a diagnostic");
+
+    assert_eq!(
+        failure_diagnostic.code,
+        superwire_protocol::event::ExecutorDiagnosticCode::McpFailed
+    );
+    assert!(failure_diagnostic.message.contains("MCP call"));
+    assert!(!failure_diagnostic.message.contains("private://diagnostic/7"));
+    assert!(failure_event.data.as_ref().is_some_and(|data| data.get("error").is_none()));
+    assert_eq!(server.method_count(TestMcpMethod::ToolsCall), 1);
+}
+
+#[test]
+fn validation_and_graph_skip_runtime_input_values() {
+    let workflow_source = workflow_source! {
+        input {
+            project_id: number
+        }
+
+        output {
+            project_id: input.project_id
+        }
+    };
+    let service = support::service_with_trusted_mcp(TrackingModelProvider::new(Vec::new()));
+
+    service
+        .validate(ValidationRequest {
+            workflow_source: Some(workflow_source.to_string()),
+            workflow_source_base64: None,
+            secrets: Value::Null,
+        })
+        .expect("static validation should not require runtime input values");
+    service
+        .graph(GraphRequest {
+            workflow_source: Some(workflow_source.to_string()),
+            workflow_source_base64: None,
+            secrets: Value::Null,
+        })
+        .expect("graph generation should not require runtime input values");
+}
+
+#[tokio::test]
+async fn incompatible_multi_content_fails_output_schema_without_completion() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        tool multi_content from mcp.local.tool.multi_content
+
+        output {
+            value: call tool.multi_content
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let service = support::service_with_trusted_mcp(TrackingModelProvider::new(Vec::new()));
+    let mut event_receiver = service.execute_stream(request(&workflow_source));
+    let mut call_events = Vec::new();
+
+    while let Some(event) = event_receiver.recv().await {
+        if matches!(
+            event.kind,
+            ExecutorEventKind::McpCallStarted | ExecutorEventKind::McpCallFailed | ExecutorEventKind::McpCallCompleted
+        ) {
+            call_events.push(event);
+        }
+    }
+
+    assert_eq!(
+        call_events.iter().map(|event| &event.kind).collect::<Vec<_>>(),
+        vec![&ExecutorEventKind::McpCallStarted, &ExecutorEventKind::McpCallFailed]
+    );
+    let failure_event = &call_events[1];
+    let failure_diagnostic = failure_event
+        .diagnostic
+        .as_ref()
+        .expect("MCP output failure should contain a diagnostic");
+
+    assert_eq!(
+        failure_diagnostic.code,
+        superwire_protocol::event::ExecutorDiagnosticCode::McpFailed
+    );
+    assert!(failure_event.data.as_ref().is_some_and(|data| data.get("error").is_none()));
+    assert!(failure_event.data.as_ref().is_some_and(|data| data.get("output").is_none()));
+    assert_eq!(server.method_count(TestMcpMethod::ToolsCall), 1);
+}
+
+#[tokio::test]
+async fn static_resource_rejects_runtime_bindings_without_read_request() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        resource static_policy from mcp.local.resource.static_policy {
+            bindings {
+                section: "setup"
+            }
+        }
+
+        output {
+            value: "unreachable"
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let service = support::service_with_trusted_mcp(TrackingModelProvider::new(Vec::new()));
+    let execution_error = service
+        .execute(request(&workflow_source))
+        .await
+        .expect_err("static resource bindings should be rejected");
+
+    assert!(execution_error.to_string().contains("bindings are not supported"));
+    assert_eq!(server.method_count(TestMcpMethod::ResourcesRead), 0);
 }

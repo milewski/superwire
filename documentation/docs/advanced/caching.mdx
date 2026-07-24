@@ -1,87 +1,117 @@
 ---
-title: Agent Caching
-description: Configure in-memory and Redis-backed agent execution caching.
+title: Agent caching
+description: Configure cache drivers, sensitive stored context, request scopes, bypass, rotation, and invalidation.
 ---
 
-Superwire can cache completed agent executions for repeat requests that use the same client-provided cache key. The executor only reads or writes cache entries when `options.cache_key` is present and `options.use_cache` is not `false`.
+Caching stores each completed agent execution as both its structured output and its provider context. It does not cache the final HTTP wrapper independently.
 
-## Cache drivers
+## Drivers
 
-The executor supports two cache drivers:
-
-| Driver | Use case |
+| Driver | Use |
 | --- | --- |
-| `in-memory` | Local development or a single executor process. Entries are lost when the process exits and are not shared across replicas. |
-| `redis` | Shared cache storage for multiple executor processes or deployments that need cache persistence outside the executor process. |
+| `in-memory` | Local development or one executor process; lost on exit and not shared. |
+| `redis` | Shared cache across executor processes. |
 
-The default cache driver is `in-memory`.
-
-## Run with in-memory cache
+The executor defaults to in-memory with a `1h` TTL.
 
 ```bash
 superwire-executor --cache-driver in-memory --cache-ttl 1h
 ```
 
-## Run with Redis cache
-
-Use `--cache-driver redis` and provide the Redis host. Add `--redis-password` when your Redis instance requires authentication.
-
 ```bash
 superwire-executor \
   --cache-driver redis \
-  --redis-host 127.0.0.1:6379 \
+  --redis-host redis.internal:6379 \
   --redis-password "$REDIS_PASSWORD" \
   --redis-database 0 \
   --cache-ttl 30m
 ```
 
-For Redis without a password, omit `--redis-password`.
+Omit `--redis-password` only for an isolated development instance that intentionally has no authentication.
 
-```bash
-superwire-executor --cache-driver redis --redis-host redis.internal:6379 --cache-ttl 30m
-```
+## Stored data and Redis security
 
-## Request cache keys
+Redis entries are JSON objects containing `output` and `context`. For the Cersei provider, `context` is serialized message history: it can include prior conversation, the current rendered user prompt (including interpolated runtime values or asset content), and assistant output. A Redis dump therefore exposes substantially more than the final workflow output.
 
-Cache entries are separated by `options.cache_key` in the `/execute` request body. Requests with the same cache key can reuse matching agent outputs. Requests with different cache keys do not share entries.
+Values are serialized without application-layer encryption, and the current cache connection uses `redis://`. For a production Redis cache:
 
-```bash
-curl -X POST http://localhost:13703/execute \
-  -H "content-type: application/json" \
-  -d '{
-    "workflow_source": "agent reply { instruction: \"Say hello\" output: string } output { result: agent.reply }",
-    "options": {
-      "cache_key": "tenant-1:conversation-42"
-    }
-  }'
-```
+- isolate it on a private network and require Redis authentication/firewall policy;
+- provide transport encryption through trusted network infrastructure or a TLS tunnel/proxy;
+- encrypt Redis persistence files and backups with deployment-managed controls;
+- use tenant/authorization-aware cache keys, a short TTL, and explicit invalidation;
+- disable shared caching (`use_cache: false` or `--no-cache`) when prompts/context contain secrets, regulated data, or data that must not persist.
 
-When `options.cache_key` is omitted or empty, the executor bypasses cache reads and writes for that request.
+The hashed Redis key hides the client cache identifier; it does not encrypt or redact the stored value.
 
-## Rotate or invalidate a cache key
+## HTTP cache scope
 
-The simplest way to invalidate cached results is to send a new cache key. The playground does this automatically when the page loads, and its purge cache action regenerates the current workflow tab's cache key.
-
-If you need to delete stored entries for a cache key, call `POST /cache/invalidate`.
-
-```bash
-curl -X POST http://localhost:13703/cache/invalidate \
-  -H "content-type: application/json" \
-  -d '{ "cache_key": "tenant-1:conversation-42" }'
-```
-
-The response includes the number of entries removed from the configured cache driver.
-
-## Disable caching per request
-
-Set `options.use_cache` to `false` to bypass reads and writes for a request.
+HTTP cache access requires a non-empty client key:
 
 ```json
 {
-  "workflow_source_base64": "...",
+  "workflow_source_base64": "BASE64_SOURCE",
+  "input": {"name": "Ada"},
+  "secrets": {"api_key": "replace-at-runtime"},
+  "options": {
+    "cache_key": "tenant-1:conversation-42",
+    "use_cache": true
+  }
+}
+```
+
+`use_cache` defaults to true, but no key means no HTTP cache reads or writes. Different keys never share entries.
+
+Choose keys that include every application boundary required to prevent inappropriate reuse, such as tenant, conversation, user permission version, or workflow revision. Do not put credentials in a key.
+
+## Disable per request
+
+```json
+{
+  "workflow_source_base64": "BASE64_SOURCE",
   "options": {
     "cache_key": "tenant-1:conversation-42",
     "use_cache": false
   }
 }
 ```
+
+## Rotate or delete
+
+Changing the key starts a fresh cache scope but leaves old entries until TTL/eviction. Delete entries explicitly:
+
+```bash
+curl --fail-with-body http://localhost:13703/cache/invalidate \
+  -H 'Content-Type: application/json' \
+  -d '{"cache_key":"tenant-1:conversation-42"}'
+```
+
+Response:
+
+```json
+{
+  "purged_entries": 3
+}
+```
+
+The Playground purge control rotates the tab key; it does not call this deletion route.
+
+## Degraded cache behavior
+
+Cache reads and writes are availability aids, not execution correctness dependencies:
+
+- a read failure bypasses cache, executes the agent, and emits `cache_degraded` with `subject.operation: "read"`;
+- a write failure returns the fresh result and emits the warning with operation `write`;
+- an invalidation-driver failure returns HTTP 503 `cache_unavailable` with cache operation `purge`; it never reports an unconfirmed deletion as successful.
+
+Read/write degradation emits a `cache_degraded` warning with `code: "cache_unavailable"`, `stage: "cache"`, and `severity: "warning"` while execution continues. Invalidation is different: its typed diagnostic has error severity and retryability `safe`, and the response contains no `purged_entries`. A successful zero count means the purge completed and found no matching entries.
+
+## CLI cache
+
+`superwire-cli workflow run` uses a local cache session and defaults to in-memory caching. Configure `--cache-driver`, `--cache-ttl`, or `--no-cache`. CLI runs do not use the HTTP `options.cache_key` contract.
+
+## Correctness guidance
+
+- Cache only deterministic-enough agent boundaries for the application's needs.
+- Rotate/invalidate after workflow/model/tool behavior changes when stale output is unsafe.
+- Apply the [stored-data controls](#stored-data-and-redis-security) before using Redis.
+- Do not assume cache hits skip all validation; source and runtime configuration still form the execution contract.

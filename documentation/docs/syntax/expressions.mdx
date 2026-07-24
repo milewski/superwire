@@ -1,9 +1,7 @@
 ---
 title: Expressions
-description: Values and operations used inside declarations.
+description: Literals, references, dynamic values, templates, fallbacks, variants, assets, MCP calls, and context.
 ---
-
-Expressions appear in provider settings, model settings, dynamic blocks, agent instructions, bindings, and final outputs.
 
 ## Literals
 
@@ -13,7 +11,28 @@ Expressions appear in provider settings, model settings, dynamic blocks, agent i
 12.5
 true
 false
+null
+["bug", "feature"]
+{ title: "Example", score: 9 }
 ```
+
+Integer literals must fit the DSL's integer range. An oversized integer is a syntax error; it is never silently converted to a floating-point value.
+
+## Quoted-string escapes
+
+Quoted DSL strings accept only:
+
+| Sequence | Value |
+| --- | --- |
+| `\\` | Backslash |
+| `\"` | Double quote |
+| `\n` | Newline |
+| `\r` | Carriage return |
+| `\t` | Tab |
+| `\{` | Left brace |
+| `\}` | Right brace |
+
+The same grammar applies to expression strings, multiline expression strings, and plain quoted syntax. Supported sequences retain their meaning through parse/format round-trips. An unknown sequence such as `\q` is an `UnsupportedEscapeSequence` parse diagnostic at the escape; the parser never silently removes the backslash.
 
 ## References
 
@@ -22,103 +41,112 @@ input.topic
 secrets.api_key
 agent.extract.summary
 dynamic.project_context
+model.fast
+tool.fetch_task
+resource.project_readme
+prompt.writer_instructions
 ```
 
-Use `.*.` to pluck a field from each item in an array. The result is an array of the selected values.
+Value references use `input`, `secrets`, `agent`, `dynamic`, `tool`, `resource`, and `prompt`. `model` appears where a model usage is expected. `schema` is a type namespace, not a runtime value root.
+
+## Array pluck
 
 ```wire
 input.attachments.*.video_url
-dynamic.video_recording_answers.answers.*.url
+input.attachments.**.video_url
+input.attachments.***.video_url
 ```
 
-For example, if `attachments` is `[{ video_url: "a.mp4" }, { video_url: "b.mp4" }]`, then `input.attachments.*.video_url` evaluates to `["a.mp4", "b.mp4"]`. Missing fields, non-object items, and null values become `null`. Use `.**.` to filter those null values out, or `.***.` to reject null and mixed-type plucked values. These operators are only valid on arrays.
+- `.*.` preserves one output slot per item; missing/non-object/null fields become `null`.
+- `.**.` drops null plucked values.
+- `.***.` rejects null values and mixed runtime types.
 
-## Arrays and objects
-
-```wire
-["bug", "feature", "question"]
-
-{
-    project_id: input.project_id
-    task_id: input.task_id
-}
-```
+All three operators require an array at the pluck point.
 
 ## Dynamic blocks
 
-A `dynamic` block builds an object at runtime. Each field is evaluated as a normal expression.
-
 ```wire
 dynamic {
-    example: 123
-    readme: read resource.project_readme
-    instructions: render prompt.writer_instructions
-    another: {
-        value: 123
+    project: {
+        id: input.project_id
+        label: input.label ?? "unlabeled"
     }
 }
 ```
 
-Dynamic fields may contain literals, object values, resource reads, prompt renders, agent outputs, tool calls, and other supported runtime expressions.
+A top-level dynamic field is referenced as `dynamic.project`. An agent may contain its own `dynamic {}` block for values evaluated in that agent's local/loop/tool scope.
+
+## Local templates
+
+`template(...)` takes exactly two arguments: a string template source identifier and a bindings object. It returns a string.
+
+```wire
+instruction: template("prompts/research.md", {
+    topic: input.topic
+    audience: input.audience
+})
+```
+
+The runtime first treats the identifier as a file path and tries its configured fallback locations. If no file resolves, the identifier itself becomes the template source. Template placeholders use `{{ binding_name }}` and every binding/placeholder must match.
+
+<Warning>
+  Template files are read by the executor process. A file available to a local CLI is not automatically present in a remote or Docker executor; mount or package it deliberately. MCP prompts use `render prompt.name` instead.
+</Warning>
+
+## Null fallback
+
+```wire
+input.optional_label ?? "unlabeled"
+agent.router.route#escalation.reason ?? "not escalated"
+```
+
+`??` returns the left value when non-null, otherwise the right expression. Both branches must be type-compatible in their context.
+
+## Variant projection
+
+```wire
+agent.router.route#answer.text
+agent.router.route#escalation.reason
+```
+
+`#case.field` projects a field only when the tagged variant is that case; otherwise it yields null. Pair it with `??` when the surrounding output needs a non-null value.
+
+## Variant match
+
+```wire
+match agent.router.route {
+    answer.text
+    escalation.reason
+}
+```
+
+A match selects a field path based on the active case. Branch values must have one compatible type. See [Control flow](/syntax/control-flow).
 
 ## Assets
 
-Use `asset` to attach model-supported assets to an instruction. The source can be a URL, a `data:*;base64,...` value, a runtime string expression, or an array of strings.
-
 ```wire
-agent analyzer {
-    model: model.vision
+asset input.image_url
 
-    instruction: "What is in this image? {{ asset input.image_url }}"
-
-    output {
-        result: string
-    }
+asset "https://example.test/demo.mp4" {
+    type: "video"
+    media_type: "video/mp4"
 }
 ```
 
-Assets can also be stored in `dynamic` blocks and referenced later.
+Options are `type`, `media_type`, `title`, `context`, and `citations`. The selected model profile must declare the corresponding `image`, `video`, or `document` asset kind.
 
-```wire
-dynamic {
-    image: asset "https://example.com/image.png"
-    video: asset "https://example.com/demo.mp4" {
-        type: "video"
-        media_type: "video/mp4"
-    }
-    videos: asset input.attachments.*.video_url {
-        type: "video"
-    }
-}
-```
-
-Supported asset options are:
-
-| Option | Purpose |
-| --- | --- |
-| `type` | Explicit asset kind: `image`, `video`, or `document`. |
-| `media_type` | Explicit MIME type such as `image/png`, `video/mp4`, or `application/pdf`. |
-| `title` | Optional title for document-like assets. |
-| `context` | Optional context for document-like assets. |
-| `citations` | Enables or disables provider citations when supported. |
-
-Model profiles must declare the asset kinds they support with `assets`.
-
-## Tool calls
-
-Use `bindings {}` to assign runtime values to the tool input schema.
+## Deterministic tool calls
 
 ```wire
 dynamic {
     task: call tool.fetch_task {
-        bindings {
-            task_id: input.task_id
-        }
     }
 }
 ```
 
-## Resources and prompts
+Tool-level fixed `bindings` are applied automatically. A call can supply model-visible `input`, override/add call-time `bindings`, and narrow `max_calls` when those fields are valid for the imported tool.
+
+## MCP resources and prompts
 
 ```wire
 dynamic {
@@ -127,12 +155,16 @@ dynamic {
 }
 ```
 
-## Context continuation
+Resource/prompt calls can contain binding blocks when their remote schema requires values.
+
+## Context values
 
 ```wire
-agent continue_investigation {
-    context: agent.investigate_task
+context: agent.research
+
+context: compact agent.research {
+    instruction: "Preserve only decisions and evidence."
 }
 ```
 
-`context: agent.name` passes the prior agent's message history so another agent can continue the work.
+A direct context expression passes message history. `compact` performs a compaction model step first. Structured references such as `agent.research.findings` read output values instead.

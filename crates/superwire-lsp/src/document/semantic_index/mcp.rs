@@ -260,8 +260,8 @@ impl SemanticIndex {
 
     fn schema_fields_from_mcp_tool_lock(mcp_tool_lock: &McpToolLock, property_name: ToolPropertyName) -> Vec<TypedField> {
         match property_name {
-            ToolPropertyName::Input | ToolPropertyName::Bindings => mcp_tool_lock.input_fields_except(&[]),
-            ToolPropertyName::Output => mcp_tool_lock.output_fields(),
+            ToolPropertyName::Input | ToolPropertyName::Bindings => mcp_tool_lock.input_fields_except(&[]).unwrap_or_default(),
+            ToolPropertyName::Output => mcp_tool_lock.output_fields().unwrap_or_default(),
             ToolPropertyName::Description | ToolPropertyName::MaxCalls => Vec::new(),
         }
     }

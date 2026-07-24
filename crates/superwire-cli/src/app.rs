@@ -2,7 +2,7 @@ use std::ffi::OsString;
 
 use clap::{Parser, Subcommand};
 use serde_json::json;
-use superwire_mcp::{HttpMcpClientFactory, McpClientFactory};
+use superwire_mcp::{HttpMcpClientFactory, McpClientFactory, McpNetworkPolicy};
 
 use crate::commands::fmt::FormatCommand;
 use crate::commands::workflow::WorkflowCommand;
@@ -10,6 +10,21 @@ use crate::diagnostics::CommandError;
 
 pub struct Application {
     arguments: CommandLineArguments,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ErrorOutputFormat {
+    Human,
+    Json,
+}
+
+impl ErrorOutputFormat {
+    fn from_environment() -> Self {
+        match std::env::var("SUPERWIRE_ERROR_FORMAT").as_deref() {
+            Ok("json") => Self::Json,
+            Ok(_) | Err(_) => Self::Human,
+        }
+    }
 }
 
 impl Application {
@@ -28,23 +43,24 @@ impl Application {
 
     #[must_use]
     pub fn run(self) -> ExitStatus {
-        self.run_with_mcp_client_factory(&HttpMcpClientFactory)
+        self.run_with_mcp_client_factory(&HttpMcpClientFactory::for_network_policy(McpNetworkPolicy::Trusted))
     }
 
     pub fn run_with_mcp_client_factory(self, mcp_client_factory: &dyn McpClientFactory) -> ExitStatus {
         match self.arguments.command.execute_with_mcp_client_factory(mcp_client_factory) {
             Ok(()) => ExitStatus::from_exit_code(ExitCode::Success),
             Err(command_error) => {
-                if std::env::var("SUPERWIRE_ERROR_FORMAT").ok().as_deref() == Some("json") {
-                    let error_payload = json!({
-                        "code": command_error.code(),
-                        "message": command_error.message(),
-                        "details": command_error.details(),
-                    });
+                match ErrorOutputFormat::from_environment() {
+                    ErrorOutputFormat::Json => {
+                        let error_payload = json!({
+                            "code": command_error.code(),
+                            "message": command_error.message(),
+                            "details": command_error.details(),
+                        });
 
-                    eprintln!("{error_payload}");
-                } else {
-                    eprintln!("{command_error}");
+                        eprintln!("{error_payload}");
+                    }
+                    ErrorOutputFormat::Human => eprintln!("{command_error}"),
                 }
 
                 ExitStatus::from_exit_code(command_error.exit_code())

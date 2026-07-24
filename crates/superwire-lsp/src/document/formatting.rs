@@ -1,6 +1,6 @@
 use superwire_dsl::parse_workflow;
 
-use lsp_types::{Position, Range};
+use lsp_types::Range;
 
 use super::{DocumentFormattingEdit, DocumentState};
 
@@ -21,22 +21,8 @@ impl DocumentState {
     }
 
     fn full_document_range(&self) -> Range {
-        Range {
-            start: Position { line: 0, character: 0 },
-            end: self.document_end_position(),
-        }
-    }
-
-    fn document_end_position(&self) -> Position {
-        let source_lines = self.text.split('\n').collect::<Vec<_>>();
-
-        let end_line = source_lines.len().saturating_sub(1);
-        let end_character = source_lines.last().map_or(0, |line_text| line_text.chars().count());
-
-        Position {
-            line: u32_from_usize_saturating(end_line),
-            character: u32_from_usize_saturating(end_character),
-        }
+        self.range_for_byte_offsets(0, self.text.len())
+            .unwrap_or_else(|| self.line_index.zero_range())
     }
 
     fn simple_formatted_source(&self) -> String {
@@ -84,8 +70,4 @@ impl DocumentState {
 
         formatted_text
     }
-}
-
-fn u32_from_usize_saturating(value: usize) -> u32 {
-    u32::try_from(value).unwrap_or(u32::MAX)
 }

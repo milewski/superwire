@@ -1,3 +1,6 @@
+use super::reference::ReferenceCompletionPath;
+use super::scope::CompletionScope;
+use super::syntax::LexicalCompletionSite;
 use super::text_utils::{
     for_clause_iterable_prefix, is_identifier, leading_identifier, split_for_clause_binding, trailing_identifier, trailing_reference_token,
 };
@@ -5,6 +8,75 @@ use super::CompletionSuggestion;
 use lsp_types::CompletionItemKind;
 use superwire_dsl::{AgentExpressionPropertyName, DeclarationKeyword, ForClauseKeyword, ImportKeyword, ReferenceKeyword};
 use superwire_semantic::InferenceSetting;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompletionSite {
+    Comment,
+    MultilineStringLiteral,
+    Interpolation,
+    StringLiteral,
+    TypeExpression,
+    Reference,
+    DeclarationHeader,
+    PropertyName(CompletionScope),
+    PropertyValue(CompletionScope),
+    Root,
+    Unknown,
+}
+
+impl CompletionSite {
+    #[must_use]
+    pub fn from_context(
+        line_prefix: &str,
+        completion_scope: CompletionScope,
+        lexical_completion_site: LexicalCompletionSite,
+        is_type_position: bool,
+    ) -> Self {
+        match lexical_completion_site {
+            LexicalCompletionSite::Comment => return Self::Comment,
+            LexicalCompletionSite::MultilineStringLiteral => return Self::MultilineStringLiteral,
+            LexicalCompletionSite::Interpolation => return Self::Interpolation,
+            LexicalCompletionSite::StringLiteral => {}
+            LexicalCompletionSite::Code => {}
+        }
+
+        if is_type_position {
+            return Self::TypeExpression;
+        }
+
+        if ReferenceCompletionPath::from_line_prefix(line_prefix).is_some() {
+            return Self::Reference;
+        }
+
+        if DeclarationHeaderCompletionContext::from_line_prefix(line_prefix).is_some() {
+            return Self::DeclarationHeader;
+        }
+
+        if lexical_completion_site == LexicalCompletionSite::StringLiteral {
+            return Self::StringLiteral;
+        }
+
+        if line_prefix.contains(':') {
+            return Self::PropertyValue(completion_scope);
+        }
+
+        match completion_scope {
+            CompletionScope::General => Self::Root,
+            CompletionScope::ProviderProperties
+            | CompletionScope::ModelProperties
+            | CompletionScope::ModelUsageProperties
+            | CompletionScope::McpServerProperties
+            | CompletionScope::AgentProperties
+            | CompletionScope::ToolProperties
+            | CompletionScope::InferenceSettings
+            | CompletionScope::AssetOptions
+            | CompletionScope::AgentFileProperties
+            | CompletionScope::McpToolBatchImport
+            | CompletionScope::McpPromptImport => Self::PropertyName(completion_scope),
+            CompletionScope::TypedDeclarations | CompletionScope::DynamicValues => Self::Unknown,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeclarationHeaderCompletionContext {

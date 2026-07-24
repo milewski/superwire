@@ -120,9 +120,9 @@ async fn finalize_fail_returns_model_error() {
         .run_expect_error()
         .await;
 
-    let ExecutorError::Model { message, .. } = output.error else {
+    let ExecutorError::Model(error) = output.error else {
         panic!("expected model error");
     };
 
-    assert!(message.contains("missing required upstream data"));
+    assert_eq!(error.diagnostic().message, "model reported that it could not complete the request");
 }

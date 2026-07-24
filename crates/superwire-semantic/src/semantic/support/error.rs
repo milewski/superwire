@@ -1,5 +1,5 @@
 use std::fmt::{self, Debug, Display, Formatter};
-use superwire_types::ast::{ModelAssetKindSupportError, Workflow};
+use superwire_types::ast::{ModelAssetKindSupportError, SourceSpan, Workflow};
 use superwire_types::diagnostic::should_render_rich_diagnostics;
 use superwire_types::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
 use thiserror::Error;
@@ -64,6 +64,12 @@ pub enum WorkflowSemanticError {
         source: serde_json::Error,
     },
 
+    #[error("{source}")]
+    Spanned {
+        source: Box<WorkflowSemanticError>,
+        span: SourceSpan,
+    },
+
     #[error("{message}")]
     Other { message: String },
 }
@@ -81,6 +87,18 @@ impl Debug for WorkflowSemanticError {
 }
 
 impl WorkflowSemanticError {
+    #[must_use]
+    pub fn with_span(self, span: SourceSpan) -> Self {
+        if matches!(self, Self::Spanned { .. }) {
+            return self;
+        }
+
+        Self::Spanned {
+            source: Box::new(self),
+            span,
+        }
+    }
+
     #[must_use]
     pub fn into_compilation_diagnostic(self, workflow: &Workflow, source_name: &str) -> Self {
         match self {
@@ -104,18 +122,30 @@ impl WorkflowSemanticError {
 
     #[must_use]
     pub fn diagnostic(&self) -> Diagnostic {
+        let (semantic_error, primary_span) = self.semantic_error_and_span();
         let mut diagnostic = Diagnostic::new(
             DiagnosticCode::WorkflowCompilationError,
             DiagnosticSeverity::Error,
-            self.compilation_message(),
-            None,
+            semantic_error.compilation_message(),
+            primary_span,
         );
 
-        if let Some(help_message) = self.compilation_help() {
+        if let Some(help_message) = semantic_error.compilation_help() {
             diagnostic = diagnostic.with_help(help_message);
         }
 
         diagnostic
+    }
+
+    fn semantic_error_and_span(&self) -> (&Self, Option<SourceSpan>) {
+        match self {
+            Self::Spanned { source, span } => {
+                let (semantic_error, nested_span) = source.semantic_error_and_span();
+
+                (semantic_error, nested_span.or(Some(*span)))
+            }
+            semantic_error => (semantic_error, None),
+        }
     }
 
     fn compilation_message(&self) -> String {
@@ -160,6 +190,7 @@ impl WorkflowSemanticError {
             Self::OutputDeserializationFailed { source } => {
                 format!("Failed to deserialize workflow output: {source}")
             }
+            Self::Spanned { source, span: _ } => source.compilation_message(),
             Self::Other { message } => message.clone(),
         }
     }
@@ -197,13 +228,15 @@ impl WorkflowSemanticError {
                 provider_name: _,
                 message: _,
             } => Some("Fix provider configuration fields so the provider can be initialized.".to_string()),
-            Self::ExpressionEvaluation { context: _, message: _ } => {
-                Some("Ensure referenced fields exist and expression types are compatible.".to_string())
-            }
+            Self::ExpressionEvaluation { context: _, message: _ } => Some(
+                "Compare the reported expected and found types, then update the expression, field path, or declaration so every branch is compatible."
+                    .to_string(),
+            ),
             Self::InputValueMismatch { message: _ } => Some("Pass input data that matches the declared workflow `input` type.".to_string()),
             Self::AgentOutputTypeMismatch { agent_name: _, message: _ } => {
                 Some("Make sure the agent response matches its declared `output` type.".to_string())
             }
+            Self::Spanned { source, span: _ } => source.compilation_help(),
             Self::SerializationFailed { context: _, source: _ }
             | Self::OutputDeserializationFailed { source: _ }
             | Self::Other { message: _ } => {

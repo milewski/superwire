@@ -1,0 +1,79 @@
+---
+title: Playground
+description: Author, validate, graph, and stream workflows in the bundled browser UI.
+---
+
+import HelloWorkflow from "/examples/wire/hello.mdx";
+
+## Start it
+
+```bash
+docker run --rm -p 13703:13703 rmilewski/superwire:latest
+```
+
+Open `http://localhost:13703/playground`.
+
+The Playground is bundled with the executor. `--disable-playground` removes the root redirect and Playground assets but leaves API routes available.
+
+## Run the checked workflow
+
+<HelloWorkflow />
+
+1. Paste the fixture into the workflow editor.
+2. Set Input JSON to `{ "name": "Ada" }`.
+3. Set Secrets JSON to `{ "api_key": "replace-at-runtime" }`.
+4. Validate the workflow.
+5. Run it and inspect Output and Events.
+
+## What the UI supports
+
+- built-in minimum, secrets, linear-chain, and parallel-agent templates;
+- multiple workflow tabs and named code fragments;
+- separate source, input JSON, and secrets JSON editors;
+- explicit validation and validation when the editor loses focus;
+- canonical workflow and JSON formatting;
+- a visual `Input -> Step -> Output` execution graph from `POST /graph`, with selected-node detail and global failures;
+- a responsive Problems/Output/Events inspector and ordered mobile execution list;
+- LSP diagnostics, completion, hover, and go-to-definition over `/lsp`;
+- closed typed HTTP/SSE diagnostics, nested provider causes/retry detail, cache-degradation warnings, and failure/cancellation state;
+- cursor-safe reconnect: only non-gap IDs are retained, and skipping expired history requires explicit confirmation;
+- transition-aware cancellation that keeps streaming after `accepted` until a terminal event;
+- in-memory or Redis-backed executor caching through per-tab keys, bypass, and key rotation.
+
+The browser cannot select MCP network access. The executor starts with `--mcp-network-policy disabled`; validation, graphing, and execution can contact declared HTTP MCP endpoints only when the operator restarts it with `public-only` or `trusted`. The embedded LSP's separate document-open discovery remains disabled unless the client explicitly establishes workspace trust; see [MCP discovery and workspace trust](/api-reference/lsp#mcp-discovery-and-workspace-trust).
+
+The Events inspector receives the same public SSE projection as every subscriber: lifecycle names, durations, diagnostics, and result-shape summaries, not agent/tool/MCP/provider payloads. Only `workflow_completed` carries the final workflow output.
+
+## Persistence, export, and secrets
+
+The Playground persists workflow source, input JSON, tab state, cache settings, and theme in browser local storage. It deliberately writes `{}` instead of the tab's Secrets JSON; output, event history, and graph data are also cleared on reload.
+
+`Copy source` writes formatted `.wire` source to the system clipboard without runtime input or secrets. `Copy with secrets` is a separate, confirmed action that writes a portable bundle containing the current input and Secrets JSON to the clipboard. Treat that bundle and clipboard history as credential-bearing data.
+
+<Warning>
+  Secrets remain in the current page's memory until reload. Do not enter production credentials on a shared or untrusted browser profile.
+</Warning>
+
+A Playground cache “purge” rotates the tab's cache key; it does not delete entries under the old key. To delete them, call `POST /cache/invalidate` directly and require a successful response. A purge-driver failure returns HTTP 503 `cache_unavailable`, not a zero-count success, so deletion remains unconfirmed.
+
+## Local source development
+
+The repository development command runs the executor and Vite separately:
+
+```bash
+just playground
+```
+
+- executor: `http://localhost:3000`
+- Vite UI: `http://localhost:3001/playground/`
+
+Vite proxies execute, validate, graph, format, cache, and LSP traffic to port `3000`.
+
+## Common failures
+
+- A provider on the Docker host is not reachable through container `localhost`; see [Docker networking](/installation#docker-networking).
+- JSON editors accept objects only; arrays or scalar top-level values are invalid.
+- A model using a `file` directive needs `wire_api: "chat/completion"`.
+- An SSE disconnect reconnects from the last non-gap event. HTTP 404/410 ends unavailable/expired runs; a 409 history gap asks before resuming with missing events. Stop requests cancellation and waits for a terminal event.
+
+See [Troubleshooting](/troubleshooting) for the full decision tree.

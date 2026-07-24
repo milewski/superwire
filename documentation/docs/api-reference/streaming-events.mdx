@@ -1,0 +1,186 @@
+---
+title: Streaming and events
+description: Consume executor SSE events, reconnect safely, detect replay gaps, and cancel intentionally.
+---
+
+## Start a stream
+
+Send the normal execution request with an `Accept` value containing `text/event-stream`:
+
+```bash
+curl --no-buffer http://localhost:13703/execute \
+  -H 'Accept: text/event-stream' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "workflow_source_base64": "...",
+    "input": {"name": "Ada"},
+    "secrets": {"api_key": "replace-at-runtime"}
+  }'
+```
+
+The response is `200 text/event-stream` and includes:
+
+```http
+x-superwire-run-id: <UUID capability>
+```
+
+Treat this unguessable run identifier as a capability: do not log it or expose it to unrelated clients. The server sends a text keep-alive every 10 seconds.
+
+An initial stream request can return HTTP 503 `stream_capacity_exceeded` before SSE begins when the process-global retained-byte budget cannot reserve terminal delivery for another active run. Retry only after capacity is released.
+
+## Frame and envelope
+
+Each event is a complete SSE frame:
+
+```text
+id: 9
+event: workflow_cancelled
+data: {"kind":"workflow_cancelled","timestamp_ms":1750000000000,"message":"workflow execution was cancelled","diagnostic":{"code":"cancelled","stage":"cancellation","severity":"error","retryability":"never","message":"workflow execution was cancelled","subject":{"type":"workflow"}},"data":{"duration_ms":7}}
+
+```
+
+| SSE field | Contract |
+| --- | --- |
+| `id` | Per-run monotonic unsigned integer, starting at 1. |
+| `event` | Snake-case `ExecutorEvent.kind`. |
+| `data` | JSON serialization of the entire event envelope. |
+
+The complete serialized frame—`event`, a worst-case 20-digit `id`, `data`, field prefixes, spaces, and line feeds—is limited to **245,760 bytes (240 KiB)**. Public projection and JSON serialization happen before an event ID is allocated, retained, or fanned out, so every emitted frame is below the Playground's 256-KiB line limit and the default Laravel parser limits.
+
+Envelope fields:
+
+| Field | Presence |
+| --- | --- |
+| `kind` | Always. |
+| `timestamp_ms` | Always; Unix epoch milliseconds. |
+| `agent_name` | Agent-scoped events only. |
+| `message` | Failure/warning/cancellation events; equals `diagnostic.message`. |
+| `diagnostic` | Typed failure/warning detail when applicable. |
+| `data` | Kind-specific object when applicable. |
+
+Only `workflow_completed`, `workflow_failed`, and `workflow_cancelled` are terminal workflow events. Exactly one terminal event is retained for a run.
+
+If a projected event would exceed 245,760 bytes, the executor does not allocate an ID for or retain that event. It emits one bounded terminal `workflow_failed` event instead, with `code: "event_too_large"`, `stage: "output"`, and `subject: {"type":"event","actual_bytes":...,"maximum_bytes":245760}`. An oversized final output is never included in that failure, replay history, or logs.
+
+## Event catalog
+
+| Events | Public projection |
+| --- | --- |
+| `workflow_started` | none |
+| `workflow_planned` | `agent_execution_order`, typed `mcp_imports` (`kind` is `prompt` or `resource`), `steps` |
+| `agent_loop_started` | `iteration_count`, sorted `binding_names` |
+| `agent_loop_completed` | `result_kind`, `item_count`, `duration_ms`, `iteration_count` |
+| `agent_loop_failed`, `agent_loop_cancelled` | `duration_ms`; envelope diagnostic |
+| `context_compaction_started` | `model`; optional `source_agent_name` |
+| `context_compaction_completed` | `result_kind`, optional `item_count`, `duration_ms` |
+| `context_compaction_failed` | `duration_ms`; envelope diagnostic |
+| `agent_file_created` | `filename`, `purpose`; optional `bytes` |
+| `agent_file_deleted` | `filename`, `purpose` |
+| `agent_started` | `model`, `tools`; optional `iteration_index` |
+| `agent_completed` | `result_kind`, optional `item_count`, `duration_ms`, `cache_hit`; optional `iteration_index` |
+| `agent_failed`, `agent_cancelled` | `duration_ms`, optional `iteration_index`; envelope diagnostic |
+| `provider_attempt_started` | `provider_name`, `model_name`, `attempt`, `total_attempts` |
+| `provider_attempt_completed` | previous fields plus `duration_ms` |
+| `provider_attempt_failed` | attempt fields; envelope provider diagnostic |
+| `tool_call_started` | `tool_name`, sorted `argument_names` |
+| `tool_call_completed` | `tool_name`, `result_kind`, optional `item_count`, `duration_ms` |
+| `tool_call_failed` | `tool_name`, `duration_ms`; envelope diagnostic |
+| `mcp_tool_schema_fetch_started` | `server_name` |
+| `mcp_tool_schema_fetch_completed` | `server_name`, `tool_count`, `duration_ms` |
+| `mcp_tool_schema_fetch_failed` | `server_name`, `duration_ms`; envelope diagnostic |
+| `mcp_tool_validation_started` | `tool_name`, sorted `argument_names` |
+| `mcp_tool_validation_completed` | `tool_name`, `duration_ms` |
+| `mcp_tool_validation_failed` | `tool_name`, `duration_ms`; envelope diagnostic |
+| `mcp_call_started` | typed `operation`, `target_name`, `server_name`, `item_name`, sorted `argument_names` |
+| `mcp_call_completed` | previous fields plus `result_kind`, optional `item_count`, `duration_ms` |
+| `mcp_call_failed` | call fields plus `duration_ms`; envelope diagnostic |
+| `cache_degraded` | no `data`; envelope cache warning diagnostic |
+| `stream_gap` | no `data`; envelope stream diagnostic |
+| `workflow_completed` | `output`, `duration_ms` |
+| `workflow_failed` | optional `duration_ms`; envelope diagnostic |
+| `workflow_cancelled` | optional `duration_ms`; envelope cancellation diagnostic |
+
+Result kinds are `null`, `boolean`, `number`, `string`, `array`, or `object`. MCP operations are `call`, `read`, or `render`.
+
+Failed/cancelled nested events make unfinished work observable. A cache read/write failure emits `cache_degraded` with warning severity while execution continues.
+
+Retained and replayed events contain public metadata only. Nested events expose names such as `binding_names` and `argument_names`, and completion events expose `result_kind` plus `item_count` when applicable. Raw agent/loop/tool/MCP/provider inputs, outputs, prompts, contexts, schemas, upstream bodies, response headers, secrets, and run capabilities are projected out before event sequencing and subscriber fanout. They cannot be recovered from retained history or replay. Only `workflow_completed` carries the final workflow output.
+
+## Reconnect
+
+Use either a query cursor or the SSE header:
+
+```bash
+curl --no-buffer \
+  'http://localhost:13703/execute/WORKFLOW_RUN_ID/events?after=12' \
+  -H 'Accept: text/event-stream'
+```
+
+```http
+Last-Event-ID: 12
+```
+
+If both are present, `after` wins. Store the last successfully processed non-gap event ID and make handlers idempotent; reconnect can replay retained events.
+
+| Response | Meaning |
+| --- | --- |
+| `200` | Cursor is available; replay then live events. |
+| `404 unknown_run` | Identifier is not retained or known as expired. |
+| `409 stream_gap` | Requested history was pruned; diagnostic subject includes `oldest_available`. |
+| `410 stream_expired` | A known completed run exceeded retention. |
+
+All non-200 bodies use the typed HTTP error envelope.
+
+## Replay bounds and gaps
+
+| Bound | Current value |
+| --- | --- |
+| Internal event channel | 64 events |
+| Retained history per run | 256 events |
+| Subscriber channel | 257 events: 256 retained events plus one terminal slot |
+| Serialized retained/live event bytes per run | 8 MiB, including subscriber/replay `Arc` lifetimes |
+| Serialized retained/live event bytes per process | 64 MiB, including active terminal reserves |
+| Terminal emergency reserve | 245,760 bytes per active run, drawn from the process budget |
+| Retained completed runs | 1,024 |
+| Remembered expired identifiers | 1,024 |
+| Completed-run retention | 20 minutes |
+
+Count and byte limits evict the oldest history first. Reconnect reports the actual oldest retained ID in `stream_gap`; an event held only by a slow subscriber still consumes both its run and process byte budgets until the subscriber releases it. Completed histories are evicted oldest-first under global churn. If active subscriber lifetimes consume normal capacity, the reserved slot and bytes still deliver one bounded terminal `workflow_failed` with `stream_capacity_exceeded`.
+
+A slow subscriber that cannot accept another event receives a synthetic `stream_gap` at the first undeliverable ID, then its channel closes. That frame is not a workflow terminal event.
+
+<Warning>
+  Do not advance the replay cursor to a synthetic `stream_gap` ID. Reconnect with the last non-gap ID or `diagnostic.subject.requested_after`. If reconnect itself returns HTTP 409, continue from `oldest_available - 1` only after the application explicitly accepts lost history.
+</Warning>
+
+## Cancellation
+
+```bash
+curl --request POST \
+  http://localhost:13703/execute/WORKFLOW_RUN_ID/cancel
+```
+
+Success is HTTP 200:
+
+```json
+{
+  "transition": "accepted"
+}
+```
+
+| Transition | Meaning |
+| --- | --- |
+| `accepted` | First request for an active run; abort requested. |
+| `already_requested` | Abort was requested; terminal event not yet retained. |
+| `already_terminal` | Run already completed, failed, or cancelled. |
+| `unknown_run` | Run is neither retained nor known as expired. |
+
+`accepted` is not terminal acknowledgment. Continue consuming/reconnecting until `workflow_cancelled`, `workflow_completed`, or `workflow_failed`. Concurrent cancellation requests yield one `accepted`; the rest become `already_requested` or `already_terminal`.
+
+Cancellation aborts provider/model and nested loop futures. It emits nested `agent_cancelled`/`agent_loop_cancelled` or failed events carrying a `cancelled` diagnostic before the single workflow terminal event when applicable.
+
+## Operational rules
+
+- Awaited delivery applies backpressure; transport send failures are logged without event payloads or secrets.
+- On `workflow_failed` or `workflow_cancelled`, use `diagnostic.code`, `retryability`, `retry_after_ms`, and `cause` instead of parsing `message`.
+- Do not expose raw workflow requests, secrets, run identifiers, or upstream bodies in logs.

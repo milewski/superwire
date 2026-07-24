@@ -13,6 +13,7 @@ use superwire_test_support::WorkflowSourceTemplate;
 pub struct CliCommand {
     arguments: Vec<String>,
     current_directory: Option<PathBuf>,
+    environment_variables: Vec<(String, String)>,
 }
 
 impl CliCommand {
@@ -20,6 +21,7 @@ impl CliCommand {
         Self {
             arguments: arguments.into_iter().map(Into::into).collect(),
             current_directory: None,
+            environment_variables: Vec::new(),
         }
     }
 
@@ -29,6 +31,10 @@ impl CliCommand {
             "check".to_owned(),
             workflow_file_path.as_ref().to_string_lossy().into_owned(),
         ])
+    }
+
+    pub fn workflow_run(arguments: impl IntoIterator<Item = impl AsRef<OsStr>>) -> Self {
+        Self::workflow_command("run", arguments)
     }
 
     pub fn workflow_lock(arguments: impl IntoIterator<Item = impl AsRef<OsStr>>) -> Self {
@@ -50,9 +56,20 @@ impl CliCommand {
     }
 
     #[must_use]
+    pub fn environment_variable(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.environment_variables.push((name.into(), value.into()));
+        self
+    }
+
+    #[must_use]
     pub fn output(&self) -> Output {
         let mut command = Command::new(Self::binary_path());
         command.args(&self.arguments);
+        command.envs(
+            self.environment_variables
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.as_str())),
+        );
 
         if let Some(current_directory) = &self.current_directory {
             command.current_dir(current_directory);
@@ -120,6 +137,7 @@ pub trait CommandOutputAssertions {
     fn assert_stderr_not_contains(&self, unexpected_text: &str, message: &str);
     fn stdout_text(&self) -> String;
     fn stderr_text(&self) -> String;
+    fn stderr_json_value(&self) -> Value;
 }
 
 impl CommandOutputAssertions for Output {
@@ -169,6 +187,10 @@ impl CommandOutputAssertions for Output {
 
     fn stderr_text(&self) -> String {
         String::from_utf8_lossy(&self.stderr).into_owned()
+    }
+
+    fn stderr_json_value(&self) -> Value {
+        serde_json::from_str(self.stderr_text().trim()).expect("CLI error output should be JSON")
     }
 }
 

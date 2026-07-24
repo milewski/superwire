@@ -1,0 +1,73 @@
+---
+title: MCP lockfiles
+description: Generate runtime values, resolve MCP schemas, and review reproducible imports.
+---
+
+MCP imports depend on metadata served by remote systems. The CLI can resolve those imports and record them in `superwire.lock`.
+
+## 1. Generate runtime values
+
+```bash
+superwire-cli workflow vars workflows --output .wire.vars
+```
+
+The generated file contains sample values for typed `input` and `secrets`. Replace only values required to reach the MCP server. Do not commit real credentials.
+
+## 2. Resolve imports
+
+```bash
+superwire-cli workflow lock workflows \
+  --vars-file .wire.vars \
+  --output superwire.lock
+```
+
+You may target one file, several files, directories, or shell-expanded `.wire` globs. The command discovers workflow files recursively, resolves MCP imports, and merges them into the project lock.
+
+Runtime values can also come from `--input-json`, `--input-file`, `--secrets-json`, `--secrets-file`, or repeated input `--set KEY=VALUE`. The same mutual-exclusion and string-type rules as `workflow run` apply.
+
+## 3. Review and commit
+
+Review:
+
+- MCP server and imported capability names;
+- input/output schemas, including nullability, formats, constraints, unions, and `additionalProperties`;
+- fixed bindings and model-visible inputs;
+- intentional changes after a server upgrade;
+- removal of stale workflow entries.
+
+Commit `superwire.lock` when reproducible MCP metadata is part of the project contract. Keep `.wire.vars` out of version control when it contains sensitive values.
+
+## Network policy is separate
+
+Lock resolution runs in `superwire-cli`, which deliberately uses `trusted`. It can therefore reach reviewed local/private endpoints from the CLI process and sends each declaration's resolved headers. Only absolute HTTP/HTTPS JSON-RPC endpoints without URL user information are supported; `stdio` and local-process transports are not.
+
+The resulting lock records capability metadata, not network authority:
+
+- Executor `/execute`, `/validate`, and `/graph` use the operator's server-wide `--mcp-network-policy`, set to `disabled`, `public-only`, or `trusted`; the server-config default is `disabled`. Requests cannot override it, and CLI lock success does not grant executor egress.
+- `superwire-lsp` is independently no-network unless initialization explicitly sets `workspaceTrust.networkMcpDiscovery` to `trusted`. With that trust, missing/new entries can trigger discovery; without it, the LSP can use reviewed lock metadata only.
+
+<Warning>
+  Inspect every endpoint and header expression before running lock resolution or supplying `.wire.vars` secrets. `trusted` permits local/private HTTP destinations; it does not make unreviewed source safe or provide a network sandbox. The HTTP client ignores environment proxies and rejects redirects, so configure the final reviewed endpoint directly.
+</Warning>
+
+## Refresh rules
+
+Regenerate after:
+
+- adding, removing, renaming, or aliasing an import;
+- changing an MCP endpoint or authentication context;
+- a remote tool, prompt, or resource schema change;
+- modifying shared batch-import bindings or `max_calls`.
+
+## Failure checklist
+
+- The endpoint must be reachable from the CLI process, not only from the executor container.
+- Required headers and secrets must resolve.
+- Input and secret values must match declared types.
+- Imported item names must exist on the server.
+- For a partial failure, inspect the command error before trusting an updated vars file or lock.
+- A local/private lock target is allowed because the CLI uses `trusted`; confirm reachability from the CLI process. Executor-container reachability and executor policy are separate.
+- If LSP discovery is expected, confirm the client explicitly initialized `workspaceTrust.networkMcpDiscovery` as `trusted`; otherwise refresh the lock with the CLI.
+- If the endpoint redirects, configure the final reviewed URL directly. Automatic redirects are disabled.
+
+See [MCP servers](/mcp/mcp-servers), [MCP tools](/mcp/tools), and [CLI](/cli).

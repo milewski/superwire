@@ -1,8 +1,6 @@
 use super::{ExecutorError, WorkflowExecutor};
 use serde_json::{Map, Value};
-use std::collections::HashSet;
-use superwire_dsl::{Expression, ReferenceKeyword};
-use superwire_semantic::support::types::{validate_value_against_type, value_kind_name, WorkflowType};
+use superwire_semantic::support::types::{validate_value_against_type, value_kind_name};
 
 #[derive(Debug, Clone, Copy)]
 pub(in crate::runtime) struct RuntimeValidationContext<'a> {
@@ -44,35 +42,17 @@ impl WorkflowExecutor {
     pub(super) fn resolve_input_values(&self, input: &Value) -> Result<Map<String, Value>, ExecutorError> {
         if let Some(input_type) = &self.execution_plan.input_type {
             if input.is_null() {
-                if let WorkflowType::Object(field_types) = input_type {
-                    let tool_consumed_fields = self.input_fields_consumed_by_bindings();
-
-                    if field_types.keys().all(|field_name| tool_consumed_fields.contains(field_name)) {
-                        let input_map = field_types
-                            .keys()
-                            .map(|field_name| (field_name.clone(), Value::Null))
-                            .collect::<Map<String, Value>>();
-
-                        return Ok(input_map);
-                    }
-
-                    let uncovered_fields = field_types
-                        .keys()
-                        .filter(|field_name| !tool_consumed_fields.contains(field_name.as_str()))
-                        .cloned()
-                        .collect::<Vec<_>>();
-
-                    return Err(ExecutorError::InputValueMismatch {
-                        message: format!(
-                            "workflow declares an `input` block, but no input object was provided; \
-                             the following fields are not covered by tool bindings and must be provided: {}",
-                            uncovered_fields.join(", ")
-                        ),
-                    });
-                }
-
                 return Err(ExecutorError::InputValueMismatch {
                     message: format!("workflow declares an `input` block, but no input object was provided; expected {input_type}"),
+                });
+            }
+
+            if !input.is_object() {
+                return Err(ExecutorError::InputValueMismatch {
+                    message: format!(
+                        "declared `input` block expects object matching {input_type}, found {}",
+                        value_kind_name(input)
+                    ),
                 });
             }
 
@@ -80,12 +60,7 @@ impl WorkflowExecutor {
                 message: format!("declared `input` block expects {input_type}: {message}"),
             })?;
 
-            return input.as_object().cloned().ok_or_else(|| ExecutorError::InputValueMismatch {
-                message: format!(
-                    "declared `input` block expects object matching {input_type}, found {}",
-                    value_kind_name(input)
-                ),
-            });
+            return Ok(input.as_object().cloned().expect("validated input object should remain an object"));
         }
 
         if input.is_null() || input.as_object().is_some_and(Map::is_empty) {
@@ -126,21 +101,5 @@ impl WorkflowExecutor {
             expected: "no secrets".to_string(),
             found: value_kind_name(secrets).to_string(),
         })
-    }
-
-    fn input_fields_consumed_by_bindings(&self) -> HashSet<String> {
-        let mut consumed_fields = HashSet::new();
-
-        for tool in self.execution_plan.tools.values() {
-            for fixed_binding in &tool.declaration.fixed_binding_fields {
-                if let Expression::Reference(reference) = &fixed_binding.value {
-                    if let Some(field_name) = reference.direct_required_name_for_keyword(ReferenceKeyword::Input) {
-                        consumed_fields.insert(field_name.to_string());
-                    }
-                }
-            }
-        }
-
-        consumed_fields
     }
 }

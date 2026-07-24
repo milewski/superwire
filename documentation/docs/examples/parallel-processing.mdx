@@ -1,50 +1,21 @@
 ---
-title: Parallel Processing
-description: Process a list with a looped agent and aggregate the result.
+title: Parallel and looped work
+description: Run independent agents concurrently and process typed arrays with loops.
 ---
 
-```wire
-input {
-    tasks: [{ id: number, title: string, description: string }]
-}
+import ParallelWorkflow from "/examples/wire/parallel.mdx";
+import LoopWorkflow from "/examples/wire/loop.mdx";
 
-secrets {
-    api_key: string
-}
+## Independent agents
 
-provider llm from openai {
-    endpoint: "https://api.openai.com/v1"
-    api_key: secrets.api_key
-}
+<ParallelWorkflow />
 
-model fast from llm {
-    id: "gpt-4.1-mini"
-}
+`risks` and `actions` have no dependency relationship and may run concurrently. `plan` waits for both because its instruction references both outputs.
 
-agent analyze_each for { id, title, description } in input.tasks {
-    model: model.fast
-    instruction: "Analyze task {{ id }}: {{ title }}. Details: {{ description }}."
+## Looped agent
 
-    output {
-        task_id: number
-        summary: string
-        risk: enum { low, medium, high }
-    }
-}
+<LoopWorkflow />
 
-agent aggregate {
-    model: model.fast
-    instruction: "Aggregate these task analyses: {{ agent.analyze_each }}."
+The loop destructures each typed input object. Its final `agent.analyze` value is an array of output objects in input order.
 
-    output {
-        overview: string
-        high_risk_task_ids: [number]
-    }
-}
-
-output {
-    analyses: agent.analyze_each
-    overview: agent.aggregate.overview
-    high_risk_task_ids: agent.aggregate.high_risk_task_ids
-}
-```
+HTTP execution defaults `options.max_concurrency` to `5`. Set it lower to limit simultaneous provider/tool work; the runtime uses an effective lower bound of one.

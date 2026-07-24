@@ -1,7 +1,8 @@
 use super::{
     AgentDeclaration, Expression, McpBatchImportDeclaration, McpPromptBatchImportDeclaration, McpPromptImportDeclaration,
     McpResourceBatchImportDeclaration, McpResourceImportDeclaration, McpToolBatchImportDeclaration, ModelAssetKind,
-    ModelDeclarationPropertyName, ModelWireApi, ObjectField, SourceSpan, ToolDeclaration, TypeExpression, TypedField, Workflow,
+    ModelDeclarationPropertyName, ModelWireApi, ObjectField, ReferenceKeyword, SourceSpan, ToolDeclaration, TypeExpression, TypedField,
+    Workflow,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -232,6 +233,13 @@ impl DynamicBlock {
     #[must_use]
     pub fn field(&self, field_name: &str) -> Option<&ObjectField> {
         self.fields.iter().find(|field| field.name == field_name)
+    }
+
+    #[must_use]
+    pub fn reserved_reference_keyword_field(&self) -> Option<&ObjectField> {
+        self.fields
+            .iter()
+            .find(|field| ReferenceKeyword::from_identifier(&field.name).is_some())
     }
 }
 

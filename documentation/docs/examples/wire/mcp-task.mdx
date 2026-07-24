@@ -1,0 +1,63 @@
+```wire mcp-task.wire
+input {
+    task_id: number
+}
+
+secrets {
+    api_key: string
+    mcp_token: string
+}
+
+provider llm from openai {
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+mcp tasks {
+    endpoint: "https://tools.example.test/mcp"
+
+    headers {
+        Authorization: "Bearer {{ secrets.mcp_token }}"
+    }
+}
+
+tool fetch_task from mcp.tasks.tool.fetch_task {
+    max_calls: 2
+
+    bindings {
+        task_id: input.task_id
+    }
+
+    output {
+        title: string
+        description: string
+        status: string
+    }
+}
+
+dynamic {
+    task: call tool.fetch_task {
+    }
+}
+
+agent writer {
+    model: model.fast
+    uses: [
+        tool.fetch_task {
+            max_calls: 1
+        },
+    ]
+    instruction: "Write a concise update for {{ dynamic.task.title }}."
+
+    output {
+        update: string
+    }
+}
+
+output {
+    update: agent.writer.update
+}
+```

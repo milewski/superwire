@@ -4,6 +4,7 @@ use serde_json::Value;
 use superwire_semantic::WorkflowExecutionGraph;
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExecutionRequest {
     #[serde(default)]
     pub workflow_source: Option<String>,
@@ -59,10 +60,8 @@ impl ExecutionRequest {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExecutionOptions {
-    #[serde(default)]
-    pub include_events: bool,
-
     #[serde(default = "default_max_concurrency")]
     pub max_concurrency: usize,
 
@@ -76,7 +75,6 @@ pub struct ExecutionOptions {
 impl Default for ExecutionOptions {
     fn default() -> Self {
         Self {
-            include_events: false,
             max_concurrency: default_max_concurrency(),
             use_cache: default_use_cache(),
             cache_key: None,
@@ -104,12 +102,27 @@ pub struct ExecutionResponse {
     pub output: Value,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CancellationTransition {
+    Accepted,
+    AlreadyRequested,
+    AlreadyTerminal,
+    UnknownRun,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CancelExecutionResponse {
+    pub transition: CancellationTransition,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CacheInvalidationResponse {
     pub purged_entries: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CacheInvalidationRequest {
     #[serde(default)]
     pub cache_key: Option<String>,
@@ -237,6 +250,7 @@ pub struct GraphResponse {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FormatRequest {
     #[serde(default)]
     pub workflow_source: Option<String>,

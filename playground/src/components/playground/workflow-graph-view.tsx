@@ -1,11 +1,11 @@
 import '@xyflow/react/dist/style.css';
 import { Background, Controls, Handle, MiniMap, Position, ReactFlow, ReactFlowProvider, useEdgesState, useNodesInitialized, useNodesState, useReactFlow, useUpdateNodeInternals, type Edge, type Node, type NodeProps, type Viewport } from '@xyflow/react';
-import { Box, CheckCircle2, ChevronDown, CircleDashed, Cloud, Cpu, DatabaseZap, Eye, GitBranch, Layers3, Loader2, PlugZap, RefreshCcw, Search, Settings2, Sparkles } from 'lucide-react';
+import { Box, CheckCircle2, CircleDashed, Cloud, Cpu, DatabaseZap, Eye, GitBranch, Layers3, Loader2, PlugZap, RefreshCcw, Search, Settings2, Sparkles } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import JsonCodeEditor from '@/components/json-code-editor';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import type { ExecutorEvent, GraphState, RunState, WorkflowExecutionGraph, WorkflowExecutionGraphNode, WorkflowExecutionGraphTool } from '@/types';
+import { ExecutorDiagnosticCode, ExecutorDiagnosticSeverity, ExecutorDiagnosticSubjectType, ExecutorEventKind, type ExecutorEvent, type GraphState, type RunState, type WorkflowExecutionGraph, type WorkflowExecutionGraphNode, type WorkflowExecutionGraphTool } from '@/types';
 
 interface WorkflowGraphViewProps {
   graph: WorkflowExecutionGraph | null;
@@ -27,6 +27,8 @@ interface WorkflowGraphNodeData extends Record<string, unknown> {
   executionSlots: GraphExecutionSlotStatus[];
   outputEntries: GraphOutputEntry[];
   failureEntry: GraphFailureEntry | null;
+  onSelectNode: (nodeIdentifier: string) => void;
+  selected: boolean;
 }
 
 interface GraphOutputEntry {
@@ -38,21 +40,28 @@ interface GraphOutputEntry {
 interface GraphFailureEntry {
   title: string;
   message: string;
+  status: 'failed' | 'cancelled';
 }
 
+interface GraphRuntimeNotice {
+  title: string;
+  message: string;
+  tone: 'error' | 'warning' | 'cancelled' | 'gap';
+}
 interface GraphRuntimeSummary {
   activeRunCounts: Map<string, number>;
   plannedRunCountsByNodeId: Record<string, number>;
   executionSlotsByNodeId: Record<string, GraphExecutionSlotStatus[]>;
   outputEntriesByNodeId: Record<string, GraphOutputEntry[]>;
   failureEntriesByNodeId: Record<string, GraphFailureEntry>;
+  globalNotices: GraphRuntimeNotice[];
 }
 
 type WorkflowGraphReactNode = Node<WorkflowGraphNodeData, 'workflowGraph'>;
 type GraphDensity = 'compact' | 'comfortable';
 type GraphEdgeType = 'smoothstep' | 'straight' | 'default' | 'simplebezier';
-type GraphNodeStatus = 'idle' | 'running' | 'completed' | 'failed';
-type GraphExecutionSlotStatus = 'completed' | 'running' | 'failed' | 'waiting' | 'idle';
+type GraphNodeStatus = 'idle' | 'running' | 'completed' | 'failed' | 'cancelled';
+type GraphExecutionSlotStatus = 'completed' | 'running' | 'failed' | 'cancelled' | 'waiting' | 'idle';
 type GraphExecutionSummary = Record<GraphExecutionSlotStatus, number>;
 
 interface GraphNodePosition {
@@ -69,10 +78,10 @@ interface GraphConfig {
 
 const graphConfigStorageKey = 'superwire.playground.graphConfig.v1';
 const graphViewportStorageKey = 'superwire.playground.graphViewport.v1';
-const defaultGraphConfig: GraphConfig = { density: 'comfortable', collapseAll: false, edgeType: 'smoothstep', showEdgeLabels: true };
-const graphLayoutColumnGap = 180;
-const graphLayoutRowGap = 80;
-const graphLayoutDefaultNodeWidth = 340;
+const defaultGraphConfig: GraphConfig = { density: 'compact', collapseAll: true, edgeType: 'smoothstep', showEdgeLabels: false };
+const graphLayoutColumnGap = 96;
+const graphLayoutRowGap = 48;
+const graphLayoutDefaultNodeWidth = 276;
 const graphLayoutDefaultNodeHeight = 260;
 const graphExecutionStripSlotRenderLimit = 240;
 const graphOutputEntryRowHeight = 74;
@@ -88,6 +97,7 @@ const graphNodeTypes = {
 export default function WorkflowGraphView({ graph, source, graphState, runState, events, outputJson, message, onRefresh }: WorkflowGraphViewProps) {
   const [config, setConfig] = useState<GraphConfig>(() => restoreGraphConfig());
   const [layoutRequestCount, setLayoutRequestCount] = useState(0);
+  const [selectedNodeIdentifier, setSelectedNodeIdentifier] = useState<string | null>(null);
   const workflowDeclarations = useMemo(() => parseWorkflowGraphDeclarations(source), [source]);
   const graphRuntimeSummary = useMemo(() => graphRuntimeSummaryFromEvents(events, outputJson, runState), [events, outputJson, runState]);
   const activeRunCounts = graphRuntimeSummary.activeRunCounts;
@@ -96,10 +106,13 @@ export default function WorkflowGraphView({ graph, source, graphState, runState,
   const plannedRunCountsByNodeId = graphRuntimeSummary.plannedRunCountsByNodeId;
   const executionSlotsByNodeId = graphRuntimeSummary.executionSlotsByNodeId;
   const activeAgentSignature = Array.from(activeRunCounts.entries()).sort().map(([agentName, activeRunCount]) => `${agentName}:${activeRunCount}`).join(':');
-  const displayGraph = useMemo(() => (graph ? graphWithProviderModelDeclarations(graph, workflowDeclarations) : null), [graph, workflowDeclarations]);
-  const nodes = useMemo(() => (displayGraph ? reactFlowNodes(displayGraph, config, runState, activeRunCounts, plannedRunCountsByNodeId, executionSlotsByNodeId, outputEntriesByNodeId, failureEntriesByNodeId) : []), [displayGraph, config, runState, activeAgentSignature, plannedRunCountsByNodeId, executionSlotsByNodeId, outputEntriesByNodeId, failureEntriesByNodeId]);
-  const edges = useMemo(() => (displayGraph ? reactFlowEdges(displayGraph, config, activeRunCounts, outputEntriesByNodeId, failureEntriesByNodeId) : []), [displayGraph, config, activeAgentSignature, outputEntriesByNodeId, failureEntriesByNodeId]);
-  const graphSignature = displayGraph ? workflowGraphSignature(displayGraph) : 'empty';
+  const enrichedGraph = useMemo(() => (graph ? graphWithProviderModelDeclarations(graph, workflowDeclarations) : null), [graph, workflowDeclarations]);
+  const executionGraph = useMemo(() => (enrichedGraph ? runtimeExecutionGraph(enrichedGraph) : null), [enrichedGraph]);
+  const canvasConfig = useMemo<GraphConfig>(() => ({ ...config, collapseAll: true }), [config]);
+  const nodes = useMemo(() => (executionGraph ? reactFlowNodes(executionGraph, canvasConfig, runState, activeRunCounts, plannedRunCountsByNodeId, executionSlotsByNodeId, outputEntriesByNodeId, failureEntriesByNodeId, selectedNodeIdentifier, setSelectedNodeIdentifier) : []), [executionGraph, canvasConfig, runState, activeAgentSignature, plannedRunCountsByNodeId, executionSlotsByNodeId, outputEntriesByNodeId, failureEntriesByNodeId, selectedNodeIdentifier]);
+  const edges = useMemo(() => (executionGraph ? reactFlowEdges(executionGraph, canvasConfig, runState, activeRunCounts, outputEntriesByNodeId, failureEntriesByNodeId) : []), [executionGraph, canvasConfig, runState, activeAgentSignature, outputEntriesByNodeId, failureEntriesByNodeId]);
+  const graphSignature = executionGraph ? workflowGraphSignature(executionGraph) : 'empty';
+  const selectedNode = executionGraph?.nodes.find((node) => node.id === selectedNodeIdentifier) ?? executionGraph?.nodes[0] ?? null;
 
   useEffect(() => {
     try {
@@ -109,26 +122,78 @@ export default function WorkflowGraphView({ graph, source, graphState, runState,
     }
   }, [config]);
 
+  useEffect(() => {
+    if (!executionGraph || executionGraph.nodes.length === 0) {
+      setSelectedNodeIdentifier(null);
+
+      return;
+    }
+
+    if (!executionGraph.nodes.some((node) => node.id === selectedNodeIdentifier)) {
+      setSelectedNodeIdentifier(executionGraph.nodes[0]?.id ?? null);
+    }
+  }, [executionGraph, selectedNodeIdentifier]);
+
   return (
     <section className="graph-view">
-      <div className="graph-view__canvas" data-empty={graph ? 'false' : 'true'}>
-        <div className="graph-view__toolbar">
-          <GraphStateBadge graphState={graphState} />
-          <button type="button" className="graph-view__toolbar-button" onClick={() => setLayoutRequestCount((currentCount) => currentCount + 1)} disabled={!graph || graphState === 'loading'}>
-            <GitBranch /> Arrange
-          </button>
-          <button type="button" className="graph-view__toolbar-button" onClick={onRefresh} disabled={graphState === 'loading'}>
-            <RefreshCcw className={graphState === 'loading' ? 'animate-spin' : ''} /> Refresh
-          </button>
-          <GraphSettingsMenu config={config} graphState={graphState} onChange={setConfig} onRefresh={onRefresh} />
+      <div className="graph-run-summary" role="status" aria-live="polite">
+        <GraphStateBadge graphState={graphState} />
+        <span><strong>{runState}</strong> run</span>
+        <span>{events.length} events</span>
+        <span>{executionGraph?.nodes.length ?? 0} execution nodes</span>
+      </div>
+
+      {graphRuntimeSummary.globalNotices.length > 0 ? (
+        <div className="graph-global-failures" aria-live="polite">
+          <strong>Runtime notices</strong>
+          {graphRuntimeSummary.globalNotices.map((notice) => (
+            <p key={`${notice.title}:${notice.message}`} data-tone={notice.tone}>
+              <b>{notice.title}</b> {notice.message}
+            </p>
+          ))}
         </div>
-        {graph ? (
-          <div className="graph-view__flow">
-            <ReactFlowProvider>
-              <GraphCanvas nodes={nodes} edges={edges} graphSignature={graphSignature} layoutRequestCount={layoutRequestCount} />
-            </ReactFlowProvider>
+      ) : null}
+
+      {executionGraph ? (
+        <div className="graph-view__workspace">
+          <div className="graph-view__canvas graph-view__canvas--desktop" data-empty="false">
+            <div className="graph-view__toolbar">
+              <button type="button" className="graph-view__toolbar-button" onClick={() => setLayoutRequestCount((currentCount) => currentCount + 1)} disabled={graphState === 'loading'}>
+                <GitBranch /> Arrange
+              </button>
+              <button type="button" className="graph-view__toolbar-button" onClick={onRefresh} disabled={graphState === 'loading'}>
+                <RefreshCcw className={graphState === 'loading' ? 'animate-spin' : ''} /> Refresh
+              </button>
+              <GraphSettingsMenu config={config} graphState={graphState} onChange={setConfig} onRefresh={onRefresh} />
+            </div>
+
+            <div className="graph-view__flow">
+              <ReactFlowProvider>
+                <GraphCanvas
+                  nodes={nodes}
+                  edges={edges}
+                  graphSignature={graphSignature}
+                  layoutRequestCount={layoutRequestCount}
+                  onSelectNode={setSelectedNodeIdentifier}
+                />
+              </ReactFlowProvider>
+            </div>
           </div>
-        ) : (
+
+          <GraphMobileExecutionList nodes={nodes} selectedNodeIdentifier={selectedNode?.id ?? null} onSelectNode={setSelectedNodeIdentifier} />
+          {selectedNode ? (
+            <GraphSelectionInspector
+              node={selectedNode}
+              config={config}
+              runState={runState}
+              activeRunCount={activeRunCounts.get(selectedNode.id) ?? 0}
+              outputEntries={outputEntriesByNodeId[selectedNode.id] ?? []}
+              failureEntry={failureEntriesByNodeId[selectedNode.id] ?? null}
+            />
+          ) : null}
+        </div>
+      ) : (
+        <div className="graph-view__canvas graph-view__canvas--empty" data-empty="true">
           <div className="graph-view__empty">
             <GitBranch />
             <strong>{graphState === 'failed' ? 'Unable to build graph' : 'Graph not generated yet'}</strong>
@@ -137,21 +202,244 @@ export default function WorkflowGraphView({ graph, source, graphState, runState,
               <RefreshCcw className={graphState === 'loading' ? 'animate-spin' : ''} /> Generate graph
             </Button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      <p className={`graph-view__message graph-view__message--${graphState}`}>{message}</p>
+      <p className={`graph-view__message graph-view__message--${graphState}`} role={graphState === 'failed' ? 'alert' : 'status'} aria-live="polite">{message}</p>
     </section>
   );
 }
 
 function GraphStateBadge({ graphState }: { graphState: GraphState }) {
+  const label = graphState === 'ready' ? 'Plan ready' : graphState === 'loading' ? 'Building plan' : graphState === 'failed' ? 'Plan failed' : 'Plan idle';
+
   return (
     <span className={`graph-view__state graph-view__state--${graphState}`}>
       {graphState === 'loading' ? <Loader2 /> : graphState === 'ready' ? <CheckCircle2 /> : <CircleDashed />}
-      {graphState}
+      {label}
     </span>
   );
+}
+
+function GraphMobileExecutionList({ nodes, selectedNodeIdentifier, onSelectNode }: { nodes: WorkflowGraphReactNode[]; selectedNodeIdentifier: string | null; onSelectNode: (nodeIdentifier: string) => void }) {
+  const orderedNodes = [...nodes].sort((leftNode, rightNode) => {
+    const leftExecutionIndex = leftNode.data.node.execution_index ?? Number.MAX_SAFE_INTEGER;
+    const rightExecutionIndex = rightNode.data.node.execution_index ?? Number.MAX_SAFE_INTEGER;
+
+    return leftExecutionIndex - rightExecutionIndex || leftNode.data.node.label.localeCompare(rightNode.data.node.label);
+  });
+
+  return (
+    <section className="graph-mobile-list" aria-label="Ordered workflow execution">
+      <header>
+        <strong>Execution order</strong>
+        <small>{orderedNodes.length} nodes</small>
+      </header>
+      <ol>
+        {orderedNodes.map((reactNode, nodeIndex) => {
+          const node = reactNode.data.node;
+          const status = nodeStatus(node, reactNode.data.runState, reactNode.data.activeRunCount, reactNode.data.outputEntries, reactNode.data.failureEntry);
+
+          return (
+            <li key={node.id}>
+              <button
+                type="button"
+                aria-pressed={selectedNodeIdentifier === node.id}
+                data-selected={selectedNodeIdentifier === node.id ? 'true' : 'false'}
+                onClick={() => onSelectNode(node.id)}
+              >
+                <span className="graph-mobile-list__index">{node.execution_index ?? nodeIndex + 1}</span>
+                <span className="graph-mobile-list__identity">
+                  <strong>{node.label}</strong>
+                  <small>{nodeSubtitle(node)}</small>
+                </span>
+                <NodeStatusBadge status={status} activeRunCount={reactNode.data.activeRunCount} outputEntries={reactNode.data.outputEntries} />
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
+function GraphSelectionInspector({ node, config, runState, activeRunCount, outputEntries, failureEntry }: { node: WorkflowExecutionGraphNode; config: GraphConfig; runState: RunState; activeRunCount: number; outputEntries: GraphOutputEntry[]; failureEntry: GraphFailureEntry | null }) {
+  const [outputOpen, setOutputOpen] = useState(false);
+  const status = nodeStatus(node, runState, activeRunCount, outputEntries, failureEntry);
+
+  return (
+    <aside className="graph-selection-inspector" aria-label={`${node.label} details`}>
+      <header className="graph-selection-inspector__header">
+        <span>
+          <small>Selected execution node</small>
+          <strong>{node.label}</strong>
+        </span>
+        <NodeStatusBadge status={status} activeRunCount={activeRunCount} outputEntries={outputEntries} />
+      </header>
+
+      <div className="graph-selection-inspector__badges">
+        <span>{node.kind}</span>
+        {node.model ? <span>model {node.model}</span> : null}
+        {node.provider_name ? <span>provider {node.provider_name}</span> : null}
+      </div>
+
+      {failureEntry ? <GraphFailureNotice failureEntry={failureEntry} /> : null}
+
+      {node.instruction ? (
+        <section>
+          <h3>Instruction</h3>
+          <pre>{node.instruction}</pre>
+        </section>
+      ) : null}
+
+      {node.loop_info ? (
+        <section>
+          <h3>Loop execution</h3>
+          <p>Runs once per <code>{node.loop_info.pattern}</code> in the configured iterable.</p>
+          <small>{outputEntries.length} completed iteration outputs</small>
+        </section>
+      ) : null}
+
+      {node.details.length > 0 ? (
+        <section>
+          <h3>Configuration</h3>
+          <dl>
+            {node.details.map((detail) => (
+              <div key={`${detail.name}:${detail.value}`}>
+                <dt>{detail.name}</dt>
+                <dd>{detail.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ) : null}
+
+      {node.bindings.length > 0 ? (
+        <section>
+          <h3>Bindings</h3>
+          <dl>
+            {node.bindings.map((binding) => (
+              <div key={`${binding.name}:${binding.expression}`}>
+                <dt>{binding.name}</dt>
+                <dd>{binding.expression}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ) : null}
+
+      {node.inputs.length > 0 ? (
+        <section>
+          <h3>Inputs</h3>
+          {node.inputs.map((port) => (
+            <div className="graph-selection-inspector__schema" key={port.name}>
+              <strong>{port.name}</strong>
+              <pre>{schemaBlock(port.schema, config)}</pre>
+            </div>
+          ))}
+        </section>
+      ) : null}
+
+      {node.outputs.length > 0 ? (
+        <section>
+          <h3>Outputs</h3>
+          {node.outputs.map((port) => (
+            <div className="graph-selection-inspector__schema" key={port.name}>
+              <strong>{port.name}</strong>
+              <pre>{schemaBlock(port.schema, config)}</pre>
+            </div>
+          ))}
+        </section>
+      ) : null}
+
+      {node.tools.length > 0 ? (
+        <section>
+          <h3>Tools and MCP access</h3>
+          <ul>
+            {node.tools.map((tool) => (
+              <li key={mcpToolKey(tool)}>
+                <details>
+                  <summary>
+                    <strong>{mcpToolDisplayName(tool)}</strong>
+                    <small>{toolKindLabel(tool.kind)}{tool.server_name ? ` · ${tool.server_name}` : ''}{tool.max_calls === null ? '' : ` · max ${tool.max_calls}`}</small>
+                  </summary>
+                  {tool.description ? <p>{tool.description}</p> : null}
+                  {(tool.bindings ?? []).length > 0 ? (
+                    <dl>
+                      {(tool.bindings ?? []).map((binding) => (
+                        <div key={`${binding.name}:${binding.expression}`}>
+                          <dt>{binding.name}</dt>
+                          <dd>{binding.expression}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  ) : null}
+                  {schemaHasDisplayContent(tool.input_schema) ? <div className="graph-selection-inspector__schema"><strong>Input schema</strong><pre>{schemaBlock(tool.input_schema, config)}</pre></div> : null}
+                  {schemaHasDisplayContent(tool.output_schema) ? <div className="graph-selection-inspector__schema"><strong>Output schema</strong><pre>{schemaBlock(tool.output_schema, config)}</pre></div> : null}
+                </details>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {outputEntries.length > 0 ? (
+        <Button variant="outline" onClick={() => setOutputOpen(true)}><Eye /> View {outputEntries.length === 1 ? 'output' : `${outputEntries.length} outputs`}</Button>
+      ) : null}
+
+      {outputEntries.length > 0 ? (
+        <GraphOutputDialog node={node} outputEntries={outputEntries} open={outputOpen} openOutputIndex={0} onOpenChange={setOutputOpen} />
+      ) : null}
+    </aside>
+  );
+}
+
+function runtimeExecutionGraph(graph: WorkflowExecutionGraph): WorkflowExecutionGraph {
+  const nodes = graph.nodes.filter((node) => {
+    switch (node.kind) {
+      case 'input':
+      case 'agent':
+      case 'dynamic':
+      case 'compact':
+      case 'output':
+        return true;
+      case 'provider':
+      case 'model':
+      case 'mcp':
+        return false;
+    }
+  });
+  const nodeIdentifiers = new Set(nodes.map((node) => node.id));
+  const edgesByEndpoints = new Map<string, { edge: WorkflowExecutionGraph['edges'][number]; labels: string[] }>();
+
+  for (const edge of graph.edges) {
+    if (!nodeIdentifiers.has(edge.source) || !nodeIdentifiers.has(edge.target)) {
+      continue;
+    }
+
+    const endpointKey = `${edge.source}\u0000${edge.target}`;
+    const existingEntry = edgesByEndpoints.get(endpointKey);
+
+    if (existingEntry) {
+      if (!existingEntry.labels.includes(edge.label)) {
+        existingEntry.labels.push(edge.label);
+      }
+
+      continue;
+    }
+
+    edgesByEndpoints.set(endpointKey, { edge, labels: [edge.label] });
+  }
+
+  return {
+    ...graph,
+    nodes,
+    edges: Array.from(edgesByEndpoints.values()).map(({ edge, labels }) => ({
+      ...edge,
+      id: `execution:${edge.source}:${edge.target}`,
+      label: labels.length === 1 ? labels[0] ?? edge.label : `${labels.length} bindings`,
+    })),
+  };
 }
 
 function workflowGraphSignature(graph: WorkflowExecutionGraph) {
@@ -164,7 +452,7 @@ function workflowGraphSignature(graph: WorkflowExecutionGraph) {
   return `${nodeSignature}|${edgeSignature}`;
 }
 
-function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignature, layoutRequestCount }: { nodes: WorkflowGraphReactNode[]; edges: Edge[]; graphSignature: string; layoutRequestCount: number }) {
+function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignature, layoutRequestCount, onSelectNode }: { nodes: WorkflowGraphReactNode[]; edges: Edge[]; graphSignature: string; layoutRequestCount: number; onSelectNode: (nodeId: string) => void }) {
   const restoredViewportRef = useRef<Viewport | null>(restoreGraphViewport());
   const initialFitViewCompleteRef = useRef(false);
   const initialMeasuredLayoutSignatureRef = useRef<string | null>(null);
@@ -244,6 +532,7 @@ function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignatur
       nodes={nodes}
       edges={edges}
       onNodesChange={onNodesChange}
+      onNodeClick={(_event, node) => onSelectNode(node.id)}
       onEdgesChange={onEdgesChange}
       nodeTypes={graphNodeTypes}
       defaultViewport={currentViewportRef.current}
@@ -312,36 +601,28 @@ function GraphSettingsMenu({ config, graphState, onChange, onRefresh }: { config
         <section className="graph-settings__section">
           <span>Density</span>
           <div className="graph-settings__segmented">
-            <button type="button" data-active={config.density === 'compact'} onClick={() => onChange({ ...config, density: 'compact' })}>Compact</button>
-            <button type="button" data-active={config.density === 'comfortable'} onClick={() => onChange({ ...config, density: 'comfortable' })}>Comfortable</button>
+            <button type="button" data-active={config.density === 'compact'} aria-pressed={config.density === 'compact'} onClick={() => onChange({ ...config, density: 'compact' })}>Compact</button>
+            <button type="button" data-active={config.density === 'comfortable'} aria-pressed={config.density === 'comfortable'} onClick={() => onChange({ ...config, density: 'comfortable' })}>Comfortable</button>
           </div>
         </section>
 
-        <label className="graph-settings__toggle">
-          <input type="checkbox" checked={config.collapseAll} onChange={(event) => onChange({ ...config, collapseAll: event.target.checked })} />
-          <span className="graph-settings__switch" aria-hidden="true" />
-          <span>
-            <strong>Collapse all nodes</strong>
-            <small>Show summary cards until disabled.</small>
-          </span>
-        </label>
 
         <label className="graph-settings__toggle">
           <input type="checkbox" checked={config.showEdgeLabels} onChange={(event) => onChange({ ...config, showEdgeLabels: event.target.checked })} />
           <span className="graph-settings__switch" aria-hidden="true" />
           <span>
             <strong>Show edge labels</strong>
-            <small>Display target node names on relationships.</small>
+            <small>Display aggregated relationship labels.</small>
           </span>
         </label>
 
         <section className="graph-settings__section">
           <span>Edge lines</span>
           <div className="graph-settings__edge-grid">
-            <button type="button" data-active={config.edgeType === 'smoothstep'} onClick={() => onChange({ ...config, edgeType: 'smoothstep' })}>Smooth step</button>
-            <button type="button" data-active={config.edgeType === 'straight'} onClick={() => onChange({ ...config, edgeType: 'straight' })}>Straight</button>
-            <button type="button" data-active={config.edgeType === 'default'} onClick={() => onChange({ ...config, edgeType: 'default' })}>Bezier</button>
-            <button type="button" data-active={config.edgeType === 'simplebezier'} onClick={() => onChange({ ...config, edgeType: 'simplebezier' })}>Curve</button>
+            <button type="button" data-active={config.edgeType === 'smoothstep'} aria-pressed={config.edgeType === 'smoothstep'} onClick={() => onChange({ ...config, edgeType: 'smoothstep' })}>Smooth step</button>
+            <button type="button" data-active={config.edgeType === 'straight'} aria-pressed={config.edgeType === 'straight'} onClick={() => onChange({ ...config, edgeType: 'straight' })}>Straight</button>
+            <button type="button" data-active={config.edgeType === 'default'} aria-pressed={config.edgeType === 'default'} onClick={() => onChange({ ...config, edgeType: 'default' })}>Bezier</button>
+            <button type="button" data-active={config.edgeType === 'simplebezier'} aria-pressed={config.edgeType === 'simplebezier'} onClick={() => onChange({ ...config, edgeType: 'simplebezier' })}>Curve</button>
           </div>
         </section>
       </div>
@@ -358,12 +639,11 @@ function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
   const executionSlots = data.executionSlots;
   const outputEntries = data.outputEntries;
   const failureEntry = data.failureEntry;
-  const [collapsed, setCollapsed] = useState(false);
+  const visiblyCollapsed = true;
   const [outputOpen, setOutputOpen] = useState(false);
   const [instructionOpen, setInstructionOpen] = useState(false);
   const [openOutputIndex, setOpenOutputIndex] = useState(0);
-  const visiblyCollapsed = config.collapseAll || collapsed;
-  const status = nodeStatus(node, activeRunCount, outputEntries, failureEntry);
+  const status = nodeStatus(node, runState, activeRunCount, outputEntries, failureEntry);
   const visibleBindings = node.bindings.filter((binding) => binding.name !== 'instruction' && binding.name !== 'model');
   const showSubtitle = config.density === 'comfortable';
   const localTools = node.tools.filter((tool) => tool.kind === 'local_tool');
@@ -384,7 +664,7 @@ function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
   return (
     <article className={`graph-node graph-node--${node.kind}`} data-collapsed={visiblyCollapsed ? 'true' : 'false'} data-density={config.density} data-status={status} data-running={activeRunCount > 0 ? 'true' : 'false'}>
       <GraphNodeHandles node={node} collapsed={visiblyCollapsed} showExpandedInstructionHandle={!node.instruction} />
-      <button type="button" className="graph-node__header nodrag" aria-expanded={!visiblyCollapsed} onClick={() => setCollapsed((open) => !open)} disabled={config.collapseAll}>
+      <button type="button" className="graph-node__header nodrag" aria-label={`Show ${node.label} details`} aria-pressed={data.selected} onClick={() => data.onSelectNode(node.id)}>
         <div className="graph-node__identity">
           <span className="graph-node__icon">{nodeIcon(node)}</span>
           <span className="graph-node__title-block">
@@ -393,7 +673,7 @@ function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
           </span>
         </div>
         <NodeStatusBadge status={status} activeRunCount={activeRunCount} outputEntries={outputEntries} />
-        <ChevronDown className="graph-node__header-chevron" />
+        <Search className="graph-node__header-chevron" aria-hidden="true" />
       </button>
 
       <GraphExecutionStrip node={node} runState={runState} activeRunCount={activeRunCount} plannedRunCount={plannedRunCount} executionSlots={executionSlots} outputEntries={outputEntries} failureEntry={failureEntry} onOpenOutput={openOutput} />
@@ -469,7 +749,7 @@ function GraphExecutionStrip({ node, runState, activeRunCount, plannedRunCount, 
 
   const completedCount = outputEntries.length;
   const fallbackSlotCount = graphExecutionSlotCount(node, completedCount, activeRunCount, plannedRunCount, failureEntry !== null);
-  const fallbackSlots = Array.from({ length: fallbackSlotCount }).map((_, slotIndex) => executionSlotStatus(slotIndex, completedCount, activeRunCount, failureEntry !== null, runState));
+  const fallbackSlots = Array.from({ length: fallbackSlotCount }).map((_, slotIndex) => executionSlotStatus(slotIndex, completedCount, activeRunCount, failureEntry?.status ?? null, runState));
   const slots = executionSlots.length > 0 ? executionSlots : fallbackSlots;
 
   if (slots.length <= 1) {
@@ -484,6 +764,8 @@ function GraphExecutionStrip({ node, runState, activeRunCount, plannedRunCount, 
         <span><strong>{executionSummary.completed}</strong> done</span>
         <span><strong>{executionSummary.running}</strong> running</span>
         <span><strong>{executionSummary.waiting}</strong> waiting</span>
+        {executionSummary.failed > 0 ? <span><strong>{executionSummary.failed}</strong> failed</span> : null}
+        {executionSummary.cancelled > 0 ? <span><strong>{executionSummary.cancelled}</strong> cancelled</span> : null}
       </div>
 
       {slots.length > graphExecutionStripSlotRenderLimit ? (
@@ -527,7 +809,7 @@ function GraphFailureNotice({ failureEntry }: { failureEntry: GraphFailureEntry 
   }
 
   return (
-    <section className="graph-node__failure" aria-label={failureEntry.title}>
+    <section className="graph-node__failure" data-status={failureEntry.status} aria-label={failureEntry.title}>
       <strong>{failureEntry.title}</strong>
       <p>{failureEntry.message}</p>
     </section>
@@ -555,7 +837,7 @@ function graphExecutionSummary(slots: GraphExecutionSlotStatus[]): GraphExecutio
     summary[slotStatus] += 1;
 
     return summary;
-  }, { completed: 0, running: 0, failed: 0, waiting: 0, idle: 0 });
+  }, { completed: 0, running: 0, failed: 0, cancelled: 0, waiting: 0, idle: 0 });
 }
 
 function outputEntryIndexForSlot(outputEntries: GraphOutputEntry[], slotIndex: number) {
@@ -773,7 +1055,7 @@ function GraphOutputDialog({ node, outputEntries, open, openOutputIndex, onOpenC
               <strong>{selectedOutputEntry.title}</strong>
               <small>{outputByteSize(jsonByteSize(selectedOutputEntry.outputJson))}</small>
             </header>
-            <JsonCodeEditor value={selectedOutputEntry.outputJson} readOnly className="graph-output-dialog__json" />
+            <JsonCodeEditor value={selectedOutputEntry.outputJson} readOnly ariaLabel={`${node.label} selected output`} className="graph-output-dialog__json" />
           </section>
         </div>
       </DialogContent>
@@ -1878,7 +2160,7 @@ function compareGraphTools(leftTool: WorkflowExecutionGraphTool, rightTool: Work
   return mcpToolDisplayName(leftTool).localeCompare(mcpToolDisplayName(rightTool));
 }
 
-function reactFlowNodes(graph: WorkflowExecutionGraph, config: GraphConfig, runState: RunState, activeRunCounts: Map<string, number>, plannedRunCountsByNodeId: Record<string, number>, executionSlotsByNodeId: Record<string, GraphExecutionSlotStatus[]>, outputEntriesByNodeId: Record<string, GraphOutputEntry[]>, failureEntriesByNodeId: Record<string, GraphFailureEntry>): WorkflowGraphReactNode[] {
+function reactFlowNodes(graph: WorkflowExecutionGraph, config: GraphConfig, runState: RunState, activeRunCounts: Map<string, number>, plannedRunCountsByNodeId: Record<string, number>, executionSlotsByNodeId: Record<string, GraphExecutionSlotStatus[]>, outputEntriesByNodeId: Record<string, GraphOutputEntry[]>, failureEntriesByNodeId: Record<string, GraphFailureEntry>, selectedNodeIdentifier: string | null, onSelectNode: (nodeIdentifier: string) => void): WorkflowGraphReactNode[] {
   const graphNodes = graph.nodes;
   const agentNodes = graphNodes.filter((node) => node.kind === 'agent');
   const lastColumn = Math.max(agentNodes.length + 1, 1);
@@ -1887,7 +2169,7 @@ function reactFlowNodes(graph: WorkflowExecutionGraph, config: GraphConfig, runS
     id: node.id,
     type: 'workflowGraph',
     position: nodePosition(node, lastColumn, graphNodes),
-    data: { node, config, runState, activeRunCount: activeRunCounts.get(node.id) ?? 0, plannedRunCount: plannedRunCountsByNodeId[node.id] ?? 0, executionSlots: executionSlotsByNodeId[node.id] ?? [], outputEntries: outputEntriesByNodeId[node.id] ?? [], failureEntry: failureEntriesByNodeId[node.id] ?? null },
+    data: { node, config, runState, activeRunCount: activeRunCounts.get(node.id) ?? 0, plannedRunCount: plannedRunCountsByNodeId[node.id] ?? 0, executionSlots: executionSlotsByNodeId[node.id] ?? [], outputEntries: outputEntriesByNodeId[node.id] ?? [], failureEntry: failureEntriesByNodeId[node.id] ?? null, selected: node.id === selectedNodeIdentifier, onSelectNode },
   }));
 }
 
@@ -1923,6 +2205,7 @@ function sameGraphNodeRuntime(currentNode: WorkflowGraphReactNode, incomingNode:
     currentNode.data.runState === incomingNode.data.runState &&
     currentNode.data.activeRunCount === incomingNode.data.activeRunCount &&
     currentNode.data.plannedRunCount === incomingNode.data.plannedRunCount &&
+    currentNode.data.selected === incomingNode.data.selected &&
     sameGraphExecutionSlots(currentNode.data.executionSlots, incomingNode.data.executionSlots) &&
     sameGraphOutputEntries(currentNode.data.outputEntries, incomingNode.data.outputEntries) &&
     sameGraphFailureEntry(currentNode.data.failureEntry, incomingNode.data.failureEntry)
@@ -1980,7 +2263,7 @@ function sameGraphEdgeRuntime(currentEdge: Edge, incomingEdge: Edge) {
   );
 }
 
-function reactFlowEdges(graph: WorkflowExecutionGraph, config: GraphConfig, activeRunCounts: Map<string, number>, outputEntriesByNodeId: Record<string, GraphOutputEntry[]>, failureEntriesByNodeId: Record<string, GraphFailureEntry>): Edge[] {
+function reactFlowEdges(graph: WorkflowExecutionGraph, config: GraphConfig, runState: RunState, activeRunCounts: Map<string, number>, outputEntriesByNodeId: Record<string, GraphOutputEntry[]>, failureEntriesByNodeId: Record<string, GraphFailureEntry>): Edge[] {
   const graphNodesById = new Map(graph.nodes.map((node) => normalizeWorkflowGraphNode(node)).map((node) => [node.id, node]));
 
   return graph.edges.map((edge) => ({
@@ -1992,7 +2275,7 @@ function reactFlowEdges(graph: WorkflowExecutionGraph, config: GraphConfig, acti
     label: config.showEdgeLabels ? edge.label : undefined,
     type: config.edgeType,
     animated: (activeRunCounts.get(edge.target) ?? 0) > 0,
-    className: graphEdgeClassName(edge.kind, graphNodesById.get(edge.target), activeRunCounts, outputEntriesByNodeId, failureEntriesByNodeId),
+    className: graphEdgeClassName(edge.kind, graphNodesById.get(edge.target), runState, activeRunCounts, outputEntriesByNodeId, failureEntriesByNodeId),
   }));
 }
 
@@ -2114,8 +2397,8 @@ function normalizeWorkflowGraphTool(tool: WorkflowExecutionGraphTool): WorkflowE
   };
 }
 
-function graphEdgeClassName(edgeKind: string, targetNode: WorkflowExecutionGraphNode | undefined, activeRunCounts: Map<string, number>, outputEntriesByNodeId: Record<string, GraphOutputEntry[]>, failureEntriesByNodeId: Record<string, GraphFailureEntry>) {
-  const targetStatus = targetNode ? nodeStatus(targetNode, activeRunCounts.get(targetNode.id) ?? 0, outputEntriesByNodeId[targetNode.id] ?? [], failureEntriesByNodeId[targetNode.id] ?? null) : 'idle';
+function graphEdgeClassName(edgeKind: string, targetNode: WorkflowExecutionGraphNode | undefined, runState: RunState, activeRunCounts: Map<string, number>, outputEntriesByNodeId: Record<string, GraphOutputEntry[]>, failureEntriesByNodeId: Record<string, GraphFailureEntry>) {
+  const targetStatus = targetNode ? nodeStatus(targetNode, runState, activeRunCounts.get(targetNode.id) ?? 0, outputEntriesByNodeId[targetNode.id] ?? [], failureEntriesByNodeId[targetNode.id] ?? null) : 'idle';
 
   return `graph-edge graph-edge--${edgeKind} graph-edge--${targetStatus}`;
 }
@@ -2346,23 +2629,23 @@ function nodeSummary(node: WorkflowExecutionGraphNode) {
   return details.join(' | ');
 }
 
-function nodeStatus(node: WorkflowExecutionGraphNode, activeRunCount: number, outputEntries: GraphOutputEntry[], failureEntry: GraphFailureEntry | null): GraphNodeStatus {
+function nodeStatus(node: WorkflowExecutionGraphNode, runState: RunState, activeRunCount: number, outputEntries: GraphOutputEntry[], failureEntry: GraphFailureEntry | null): GraphNodeStatus {
   if (failureEntry) {
-    return 'failed';
+    return failureEntry.status;
   }
 
   if (activeRunCount > 0) {
     return 'running';
   }
 
-  if (node.kind === 'provider' || node.kind === 'model' || node.kind === 'mcp' || node.kind === 'input' || node.kind === 'dynamic' || node.kind === 'compact' || outputEntries.length > 0) {
+  if (outputEntries.length > 0 || (node.kind === 'input' && runState !== 'idle')) {
     return 'completed';
   }
 
   return 'idle';
 }
 
-function executionSlotStatus(slotIndex: number, completedCount: number, activeRunCount: number, hasFailure: boolean, runState: RunState): GraphExecutionSlotStatus {
+function executionSlotStatus(slotIndex: number, completedCount: number, activeRunCount: number, terminalStatus: 'failed' | 'cancelled' | null, runState: RunState): GraphExecutionSlotStatus {
   if (slotIndex < completedCount) {
     return 'completed';
   }
@@ -2371,8 +2654,8 @@ function executionSlotStatus(slotIndex: number, completedCount: number, activeRu
     return 'running';
   }
 
-  if (hasFailure && slotIndex === completedCount + activeRunCount) {
-    return 'failed';
+  if (terminalStatus && slotIndex === completedCount + activeRunCount) {
+    return terminalStatus;
   }
 
   if (runState === 'running') {
@@ -2776,43 +3059,50 @@ function graphRuntimeSummaryFromEvents(events: ExecutorEvent[], workflowOutputJs
   const executionSlotsByNodeId: Record<string, GraphExecutionSlotStatus[]> = {};
   const outputEntriesByNodeId: Record<string, GraphOutputEntry[]> = {};
   const failureEntriesByNodeId: Record<string, GraphFailureEntry> = {};
+  const globalNotices: GraphRuntimeNotice[] = [];
 
   for (const event of events) {
-    if (event.kind === 'workflow_planned' && isRecord(event.data) && Array.isArray(event.data.steps)) {
+    if (event.kind === ExecutorEventKind.WorkflowPlanned && isRecord(event.data) && Array.isArray(event.data.steps)) {
       for (const plannedStep of event.data.steps) {
         collectPlannedRunCounts(plannedStep, plannedRunCountsByNodeId, executionSlotsByNodeId, pendingStatus);
       }
     }
 
-    if (event.kind === 'agent_loop_started' && event.agent_name && isRecord(event.data) && typeof event.data.iteration_count === 'number') {
+    if (event.kind === ExecutorEventKind.AgentLoopStarted && event.agent_name && isRecord(event.data) && typeof event.data.iteration_count === 'number') {
       plannedRunCountsByNodeId[event.agent_name] = event.data.iteration_count;
       executionSlotsByNodeId[event.agent_name] = emptyExecutionSlots(event.data.iteration_count, pendingStatus);
     }
 
-    const agentName = event.agent_name ?? (event.kind === 'workflow_failed' && event.message ? agentNameFromFailureMessage(event.message) : null);
+    const agentName = graphEventAgentName(event);
 
     if (agentName) {
       const executionSlots = executionSlotsByNodeId[agentName] ?? [];
       executionSlotsByNodeId[agentName] = executionSlots;
 
-      if (event.kind === 'agent_started') {
+      if (event.kind === ExecutorEventKind.AgentStarted) {
         activeRunCounts.set(agentName, (activeRunCounts.get(agentName) ?? 0) + 1);
         setAgentExecutionSlotStatus(executionSlots, eventIterationIndex(event), 'running', pendingStatus);
       }
 
-      if (event.kind === 'agent_completed') {
+      if (event.kind === ExecutorEventKind.AgentCompleted) {
         decrementActiveRunCount(activeRunCounts, agentName);
         setAgentExecutionSlotStatus(executionSlots, eventIterationIndex(event), 'completed', pendingStatus);
         collectGraphOutputEntry(outputEntriesByNodeId, event);
       }
 
-      if (event.kind === 'workflow_failed') {
+      const terminalStatus = graphEventTerminalStatus(event);
+
+      if (terminalStatus) {
         decrementActiveRunCount(activeRunCounts, agentName);
-        setAgentExecutionSlotStatus(executionSlots, eventIterationIndex(event), 'failed', pendingStatus);
+        setAgentExecutionSlotStatus(executionSlots, eventIterationIndex(event), terminalStatus, pendingStatus);
       }
     }
 
-    collectGraphFailureEntry(failureEntriesByNodeId, event);
+    const failureNodeIdentifier = collectGraphFailureEntry(failureEntriesByNodeId, event);
+
+    if (event.diagnostic && graphEventHasGlobalNotice(event, failureNodeIdentifier)) {
+      globalNotices.push(graphRuntimeNotice(event));
+    }
   }
 
   if (workflowOutputJson.trim()) {
@@ -2825,6 +3115,7 @@ function graphRuntimeSummaryFromEvents(events: ExecutorEvent[], workflowOutputJs
     executionSlotsByNodeId,
     outputEntriesByNodeId,
     failureEntriesByNodeId,
+    globalNotices,
   };
 }
 
@@ -2894,7 +3185,7 @@ function setAgentExecutionSlotStatus(slots: GraphExecutionSlotStatus[], iteratio
 }
 
 function eventIterationIndex(event: ExecutorEvent) {
-  if (!isRecord(event.data) || typeof event.data.iteration_index !== 'number') {
+  if (!isRecord(event.data) || !('iteration_index' in event.data) || typeof event.data.iteration_index !== 'number') {
     return null;
   }
 
@@ -2917,34 +3208,109 @@ function collectGraphOutputEntry(outputEntriesByNodeId: Record<string, GraphOutp
   outputEntriesByNodeId[event.agent_name] = outputEntries;
 }
 
-function collectGraphFailureEntry(failureEntriesByNodeId: Record<string, GraphFailureEntry>, event: ExecutorEvent) {
-  const nodeIdentifier = failureNodeIdentifier(event);
-  const failureMessage = event.message ?? failureMessageFromData(event.data);
-
-  if (!nodeIdentifier || !failureMessage) {
-    return;
-  }
-
-  failureEntriesByNodeId[nodeIdentifier] = {
-    title: event.kind === 'workflow_failed' ? 'Workflow failed here' : 'Execution failed',
-    message: failureMessage,
-  };
-}
-
-function failureNodeIdentifier(event: ExecutorEvent) {
-  if (!event.kind.endsWith('_failed')) {
-    return null;
-  }
-
+function graphEventAgentName(event: ExecutorEvent) {
   if (event.agent_name) {
     return event.agent_name;
   }
 
-  if (!event.message) {
+  const subject = event.diagnostic?.subject;
+
+  if (subject && 'agent_name' in subject && subject.agent_name) {
+    return subject.agent_name;
+  }
+
+  if (event.kind === ExecutorEventKind.WorkflowFailed && event.message) {
+    return agentNameFromFailureMessage(event.message);
+  }
+
+  return null;
+}
+
+function graphEventTerminalStatus(event: ExecutorEvent): 'failed' | 'cancelled' | null {
+  if (
+    event.kind === ExecutorEventKind.AgentFailed
+    || event.kind === ExecutorEventKind.AgentLoopFailed
+    || event.kind === ExecutorEventKind.WorkflowFailed
+  ) {
+    return event.diagnostic?.code === ExecutorDiagnosticCode.Cancelled ? 'cancelled' : 'failed';
+  }
+
+  if (event.kind === ExecutorEventKind.AgentCancelled || event.kind === ExecutorEventKind.AgentLoopCancelled) {
+    return 'cancelled';
+  }
+
+  return null;
+}
+
+function collectGraphFailureEntry(failureEntriesByNodeId: Record<string, GraphFailureEntry>, event: ExecutorEvent) {
+  const status = graphEventTerminalStatus(event);
+  const nodeIdentifier = status ? graphEventAgentName(event) : null;
+  const failureMessage = event.diagnostic?.message ?? event.message ?? failureMessageFromData(event.data);
+
+  if (!nodeIdentifier || !failureMessage || !status) {
     return null;
   }
 
-  return agentNameFromFailureMessage(event.message);
+  failureEntriesByNodeId[nodeIdentifier] = {
+    title: status === 'cancelled'
+      ? 'Execution cancelled'
+      : event.kind === ExecutorEventKind.WorkflowFailed
+        ? 'Workflow failed here'
+        : 'Execution failed',
+    message: failureMessage,
+    status,
+  };
+
+  return nodeIdentifier;
+}
+
+function graphEventHasGlobalNotice(event: ExecutorEvent, failureNodeIdentifier: string | null) {
+  return failureNodeIdentifier === null
+    || event.kind === ExecutorEventKind.ProviderAttemptFailed
+    || event.kind === ExecutorEventKind.CacheDegraded
+    || event.kind === ExecutorEventKind.StreamGap
+    || event.kind === ExecutorEventKind.WorkflowCancelled;
+}
+
+function graphRuntimeNotice(event: ExecutorEvent): GraphRuntimeNotice {
+  const diagnostic = event.diagnostic;
+  const tone = diagnostic?.code === ExecutorDiagnosticCode.Cancelled
+    ? 'cancelled'
+    : diagnostic?.code === ExecutorDiagnosticCode.StreamGap
+      ? 'gap'
+      : diagnostic?.severity === ExecutorDiagnosticSeverity.Warning
+        ? 'warning'
+        : 'error';
+
+  return {
+    title: graphRuntimeNoticeTitle(event),
+    message: diagnostic?.message ?? event.message ?? failureMessageFromData(event.data) ?? 'Execution diagnostic',
+    tone,
+  };
+}
+
+function graphRuntimeNoticeTitle(event: ExecutorEvent) {
+  if (event.kind === ExecutorEventKind.ProviderAttemptFailed && isRecord(event.data) && typeof event.data.attempt === 'number') {
+    return `Provider attempt ${event.data.attempt} failed`;
+  }
+
+  if (event.kind === ExecutorEventKind.CacheDegraded) {
+    return 'Cache degraded';
+  }
+
+  if (event.kind === ExecutorEventKind.StreamGap) {
+    return 'Event history gap';
+  }
+
+  if (event.kind === ExecutorEventKind.WorkflowCancelled) {
+    return 'Workflow cancelled';
+  }
+
+  if (event.diagnostic?.subject.type === ExecutorDiagnosticSubjectType.Provider) {
+    return 'Provider failure';
+  }
+
+  return 'Execution diagnostic';
 }
 
 function agentNameFromFailureMessage(message: string) {

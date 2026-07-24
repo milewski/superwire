@@ -18,14 +18,15 @@ pub use declaration::{
     ProviderDeclaration, SchemaDeclaration, SecretsDeclaration, ToolDeclarationIter,
 };
 pub use expression::{
-    Asset, CallArgument, Expression, FunctionCall, MatchBranch, MatchExpression, McpCall, McpCallOperation, NamedArgument,
-    NullFallbackExpression, ObjectField, StringTemplate, StringTemplatePart, ToolCall, VariantProjectionExpression,
+    Asset, CallArgument, Expression, FunctionCall, MatchBranch, MatchBranchStructureError, MatchExpression, McpCall, McpCallOperation,
+    NamedArgument, NullFallbackExpression, ObjectField, StringTemplate, StringTemplatePart, ToolCall, VariantProjectionExpression,
+    VariantProjectionOutcome,
 };
 pub use keywords::{
     AgentContextPropertyName, AgentExpressionPropertyName, AgentFilePropertyName, AssetPropertyName, BuiltinFunctionArgumentName,
     BuiltinFunctionName, DeclarationKeyword, ExpressionKeyword, ForClauseKeyword, ImportKeyword, McpImportPropertyName,
     McpServerPropertyName, McpToolBatchImportPropertyName, ModelAssetKind, ModelCallArgumentName, ModelDeclarationPropertyName,
-    ModelUsagePropertyName, ModelWireApi, ReferenceKeyword, ToolCallKeyword, ToolCallPropertyName, ToolPropertyName,
+    ModelUsagePropertyName, ModelWireApi, ReferenceKeyword, ScalarTypeKeyword, ToolCallKeyword, ToolCallPropertyName, ToolPropertyName,
 };
 pub use mcp::{
     McpBatchImportDeclaration, McpImportBindingEvaluationKind, McpImportBindings, McpImportKind, McpImportSource,
@@ -34,6 +35,6 @@ pub use mcp::{
 };
 pub use reference::{Reference, ReferenceAccess, ReferenceAccessKind, ReferenceRoot};
 pub use span::{SourcePosition, SourceSpan};
-pub use tool::{ToolDeclaration, ToolSource};
+pub use tool::{McpToolSchema, ToolDeclaration, ToolSchemaIssue, ToolSource};
 pub use types::{TypeExpression, TypeExpressionFieldCache, TypedField, VariantCase};
 pub use workflow::Workflow;

@@ -1,47 +1,64 @@
 ---
-title: Context Continuation
-description: Continue one agent from another agent's message history.
+title: Context continuation and compaction
+description: Pass full agent history or compact it before a later step.
 ---
 
-`context` is for conversation/message-history continuation.
+## Continue full history
 
 ```wire
-agent investigate_task {
+agent investigate {
     model: model.fast
-    instruction: "Investigate task {{ input.task_id }} and identify the main issue."
+    instruction: "Investigate {{ input.topic }}."
 
     output {
-        issue: string
-        evidence: [string]
+        findings: [string]
     }
 }
 
-agent propose_solution {
+agent decide {
     model: model.fast
-    context: agent.investigate_task
-    instruction: "Continue from the previous investigation and propose a solution."
+    context: agent.investigate
+    instruction: "Continue the investigation and make a decision."
 
     output {
-        solution: string
-        steps: [string]
+        decision: string
     }
 }
 ```
 
-`context: agent.investigate_task` passes the whole message history of `investigate_task` into `propose_solution`. The second agent then appends its own instruction and continues the work.
+`context` passes the earlier agent's message history. It is different from reading `agent.investigate.findings`, which passes one typed output value through instruction interpolation.
 
-## Context versus structured output
-
-Use a structured reference when you need a value:
+## Compact first
 
 ```wire
-{{ agent.investigate_task.issue }}
+agent decide {
+    model: model.fast
+    context: compact agent.investigate {
+        model: model.compactor
+        instruction: "Keep decisions, evidence, and unresolved questions."
+    }
+    instruction: "Use the compacted history to make a decision."
+
+    output {
+        decision: string
+    }
+}
 ```
 
-Use `context: agent.name` when you want the next agent to continue the prior conversation:
+The optional block selects the compaction model and instruction. Compaction is a model call, not lossless compression; its content can vary and consumes provider capacity.
 
-```wire
-context: agent.investigate_task
-```
+## Events
 
-These are different operations. Structured references read JSON-like output fields. Context continuation passes message history.
+Streaming exposes:
+
+- `context_compaction_started`;
+- `context_compaction_completed` with timing/context data;
+- `context_compaction_failed` with a message.
+
+## Guidance
+
+- Prefer structured references when the next step needs only declared values.
+- Continue full context when conversational reasoning/history matters.
+- Compact when full history is too large or contains irrelevant detail.
+- State what compaction must preserve; do not assume it retains every fact.
+- Avoid placing secrets in instructions/history because context is sent to the provider.

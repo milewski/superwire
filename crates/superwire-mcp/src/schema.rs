@@ -1,176 +1,244 @@
 use rust_mcp_schema::{ToolInputSchema, ToolOutputSchema};
 use serde::Serialize;
 use serde_json::Value;
+use superwire_semantic::support::types::{workflow_type_from_json_schema, WorkflowType};
+use superwire_semantic::WorkflowSemanticError;
 use superwire_types::ast::{SourceSpan, TypeExpression, TypedField};
 
 impl super::McpToolLock {
-    #[must_use]
-    pub fn input_fields_except(&self, excluded_field_names: &[&str]) -> Vec<TypedField> {
+    pub fn input_schema_value(&self) -> Result<Value, WorkflowSemanticError> {
+        serialize_schema(&self.input_schema, "MCP tool input schema")
+    }
+
+    pub fn output_schema_value(&self) -> Result<Option<Value>, WorkflowSemanticError> {
+        self.output_schema
+            .as_ref()
+            .map(|output_schema| serialize_schema(output_schema, "MCP tool output schema"))
+            .transpose()
+    }
+
+    pub fn input_fields_except(&self, excluded_field_names: &[&str]) -> Result<Vec<TypedField>, WorkflowSemanticError> {
         self.input_schema.typed_fields_except(excluded_field_names)
     }
 
-    #[must_use]
-    pub fn output_fields(&self) -> Vec<TypedField> {
-        self.output_schema.as_ref().map(TypedJsonSchema::typed_fields).unwrap_or_default()
+    pub fn output_fields(&self) -> Result<Vec<TypedField>, WorkflowSemanticError> {
+        self.output_schema
+            .as_ref()
+            .map(TypedJsonSchema::typed_fields)
+            .transpose()
+            .map(Option::unwrap_or_default)
     }
 }
 
-pub(super) trait TypedJsonSchema {
-    fn typed_fields(&self) -> Vec<TypedField> {
+trait TypedJsonSchema {
+    fn typed_fields(&self) -> Result<Vec<TypedField>, WorkflowSemanticError> {
         self.typed_fields_except(&[])
     }
 
-    fn typed_fields_except(&self, excluded_field_names: &[&str]) -> Vec<TypedField>;
+    fn typed_fields_except(&self, excluded_field_names: &[&str]) -> Result<Vec<TypedField>, WorkflowSemanticError>;
 
-    fn type_expression(&self) -> TypeExpression;
+    #[cfg(test)]
+    fn type_expression(&self) -> Result<TypeExpression, WorkflowSemanticError>;
 }
 
 impl TypedJsonSchema for ToolInputSchema {
-    fn typed_fields_except(&self, excluded_field_names: &[&str]) -> Vec<TypedField> {
-        let schema_value = serde_json::to_value(self).unwrap_or(Value::Null);
-
-        schema_value.typed_fields_except(excluded_field_names)
+    fn typed_fields_except(&self, excluded_field_names: &[&str]) -> Result<Vec<TypedField>, WorkflowSemanticError> {
+        serialize_schema(self, "MCP tool input schema")?.typed_fields_except(excluded_field_names)
     }
 
-    fn type_expression(&self) -> TypeExpression {
-        let schema_value = serde_json::to_value(self).unwrap_or(Value::Null);
-
-        schema_value.type_expression()
+    #[cfg(test)]
+    fn type_expression(&self) -> Result<TypeExpression, WorkflowSemanticError> {
+        serialize_schema(self, "MCP tool input schema")?.type_expression()
     }
 }
 
 impl TypedJsonSchema for ToolOutputSchema {
-    fn typed_fields_except(&self, excluded_field_names: &[&str]) -> Vec<TypedField> {
-        let schema_value = serde_json::to_value(self).unwrap_or(Value::Null);
-
-        schema_value.typed_fields_except(excluded_field_names)
+    fn typed_fields_except(&self, excluded_field_names: &[&str]) -> Result<Vec<TypedField>, WorkflowSemanticError> {
+        serialize_schema(self, "MCP tool output schema")?.typed_fields_except(excluded_field_names)
     }
 
-    fn type_expression(&self) -> TypeExpression {
-        let schema_value = serde_json::to_value(self).unwrap_or(Value::Null);
-
-        schema_value.type_expression()
+    #[cfg(test)]
+    fn type_expression(&self) -> Result<TypeExpression, WorkflowSemanticError> {
+        serialize_schema(self, "MCP tool output schema")?.type_expression()
     }
 }
 
 impl TypedJsonSchema for Value {
-    fn typed_fields_except(&self, excluded_field_names: &[&str]) -> Vec<TypedField> {
-        let Some(properties) = self.get("properties").and_then(Value::as_object) else {
-            return Vec::new();
-        };
-        let required_fields = self
-            .get("required")
-            .and_then(Value::as_array)
-            .map(|required| required.iter().filter_map(Value::as_str).collect::<Vec<_>>());
-        let include_all_fields = required_fields.is_none();
-        let required_fields = required_fields.unwrap_or_default();
-        let mut typed_fields = Vec::new();
-
-        for (field_name, field_schema) in properties {
-            if excluded_field_names.contains(&field_name.as_str()) {
-                continue;
+    fn typed_fields_except(&self, excluded_field_names: &[&str]) -> Result<Vec<TypedField>, WorkflowSemanticError> {
+        let workflow_type = workflow_type_from_json_schema(self)?;
+        let WorkflowType::Object(fields) = workflow_type else {
+            if matches!(workflow_type, WorkflowType::AnyObject | WorkflowType::Any) {
+                return Ok(Vec::new());
             }
 
-            let field_type = field_schema.type_expression();
-
-            if !include_all_fields && !required_fields.contains(&field_name.as_str()) && !field_type.can_be_null() {
-                continue;
-            }
-
-            typed_fields.push(TypedField {
-                name: field_name.clone(),
-                field_type,
-                description: field_schema.get("description").and_then(Value::as_str).map(str::to_string),
-                span: SourceSpan::generated(),
+            return Err(WorkflowSemanticError::Other {
+                message: format!("MCP tool schema root must be an object, found {workflow_type}"),
             });
-        }
+        };
+        let properties = self.get("properties").and_then(Value::as_object);
+        let typed_fields = fields
+            .into_iter()
+            .filter(|(field_name, _)| !excluded_field_names.contains(&field_name.as_str()))
+            .map(|(field_name, field_type)| {
+                let field_schema = properties.and_then(|property_schemas| property_schemas.get(&field_name));
+                let description = field_schema
+                    .and_then(|schema| schema.get("description"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
 
-        typed_fields
+                TypedField::from_type_with_description(
+                    field_name,
+                    field_type.to_mcp_type_expression(field_schema),
+                    description,
+                    SourceSpan::generated(),
+                )
+            })
+            .collect();
+
+        Ok(typed_fields)
     }
 
-    fn type_expression(&self) -> TypeExpression {
-        let type_expression_for_keyword = |type_keyword: &str| -> Option<TypeExpression> {
-            match type_keyword {
-                "string" => Some(TypeExpression::String),
-                "integer" | "number" => Some(TypeExpression::Number),
-                "boolean" => Some(TypeExpression::Boolean),
-                "null" => Some(TypeExpression::Null),
-                "array" => Some(TypeExpression::Array {
-                    item_type: Box::new(self.get("items").map_or(TypeExpression::String, TypedJsonSchema::type_expression)),
-                    fixed_length: None,
-                }),
-                "object" => Some(TypeExpression::Object(self.typed_fields())),
-                _ => None,
+    #[cfg(test)]
+    fn type_expression(&self) -> Result<TypeExpression, WorkflowSemanticError> {
+        workflow_type_from_json_schema(self).map(|workflow_type| workflow_type.to_mcp_type_expression(Some(self)))
+    }
+}
+
+trait McpWorkflowTypeExpression {
+    fn to_mcp_type_expression(&self, schema_value: Option<&Value>) -> TypeExpression;
+    fn to_mcp_object_type_expression(&self, schema_value: Option<&Value>) -> TypeExpression;
+
+    fn to_mcp_variant_type_expression(&self) -> TypeExpression;
+
+    fn to_mcp_union_type_expression(&self, schema_value: Option<&Value>) -> TypeExpression;
+}
+
+impl McpWorkflowTypeExpression for WorkflowType {
+    fn to_mcp_type_expression(&self, schema_value: Option<&Value>) -> TypeExpression {
+        match self {
+            Self::Any => TypeExpression::AnyObject,
+            Self::String => TypeExpression::String,
+            Self::Integer => TypeExpression::Number,
+            Self::Float => TypeExpression::Float,
+            Self::Boolean => TypeExpression::Boolean,
+            Self::Null => TypeExpression::Null,
+            Self::AnyObject => TypeExpression::AnyObject,
+            Self::StringEnum(enum_values) => {
+                let mut enum_type_expressions = enum_values.iter().cloned().map(TypeExpression::StringEnum).collect::<Vec<_>>();
+
+                if enum_type_expressions.len() == 1 {
+                    enum_type_expressions.pop().expect("single string enum type should exist")
+                } else {
+                    TypeExpression::Union(enum_type_expressions)
+                }
             }
+            Self::Array { item_type, fixed_length } => TypeExpression::Array {
+                item_type: Box::new(item_type.to_mcp_type_expression(schema_value.and_then(|schema| schema.get("items")))),
+                fixed_length: *fixed_length,
+            },
+            Self::Tuple(item_types) => TypeExpression::Tuple(
+                item_types
+                    .iter()
+                    .enumerate()
+                    .map(|(item_index, item_type)| {
+                        let item_schema = schema_value
+                            .and_then(|schema| schema.get("prefixItems").or_else(|| schema.get("items")))
+                            .and_then(Value::as_array)
+                            .and_then(|item_schemas| item_schemas.get(item_index));
+
+                        item_type.to_mcp_type_expression(item_schema)
+                    })
+                    .collect(),
+            ),
+            Self::Object(_) => self.to_mcp_object_type_expression(schema_value),
+            Self::Variant { .. } => self.to_mcp_variant_type_expression(),
+            Self::Union(_) => self.to_mcp_union_type_expression(schema_value),
+        }
+    }
+
+    fn to_mcp_object_type_expression(&self, schema_value: Option<&Value>) -> TypeExpression {
+        let Self::Object(fields) = self else {
+            unreachable!("object type conversion requires object fields");
+        };
+        let property_schemas = schema_value.and_then(|schema| schema.get("properties")).and_then(Value::as_object);
+        let typed_fields = fields
+            .iter()
+            .map(|(field_name, field_type)| {
+                let field_schema = property_schemas.and_then(|properties| properties.get(field_name));
+                let description = field_schema
+                    .and_then(|schema| schema.get("description"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
+
+                TypedField::from_type_with_description(
+                    field_name.clone(),
+                    field_type.to_mcp_type_expression(field_schema),
+                    description,
+                    SourceSpan::generated(),
+                )
+            })
+            .collect();
+
+        TypeExpression::Object(typed_fields)
+    }
+
+    fn to_mcp_variant_type_expression(&self) -> TypeExpression {
+        let Self::Variant { discriminator, cases } = self else {
+            unreachable!("variant type conversion requires variant cases");
         };
 
-        if let Some(enum_values) = self.get("enum").and_then(Value::as_array) {
-            let mut string_enum_values = enum_values
+        TypeExpression::Variant {
+            discriminator: discriminator.clone(),
+            cases: cases
                 .iter()
-                .filter_map(Value::as_str)
-                .map(|enum_value| TypeExpression::StringEnum(enum_value.to_string()))
-                .collect::<Vec<_>>();
-
-            if self.allows_null_type_keyword() {
-                string_enum_values.push(TypeExpression::Null);
-            }
-
-            if string_enum_values.len() == 1 {
-                return string_enum_values.remove(0);
-            }
-
-            if !string_enum_values.is_empty() {
-                return TypeExpression::Union(string_enum_values);
-            }
+                .map(|(case_name, fields)| superwire_types::ast::VariantCase {
+                    name: case_name.clone(),
+                    fields: fields
+                        .iter()
+                        .filter(|(field_name, _)| *field_name != discriminator)
+                        .map(|(field_name, field_type)| {
+                            TypedField::from_type(field_name.clone(), field_type.to_mcp_type_expression(None), SourceSpan::generated())
+                        })
+                        .collect(),
+                    span: SourceSpan::generated(),
+                })
+                .collect(),
         }
+    }
 
-        if let Some(one_of) = self.get("oneOf").and_then(Value::as_array) {
-            return TypeExpression::Union(one_of.iter().map(TypedJsonSchema::type_expression).collect());
-        }
+    fn to_mcp_union_type_expression(&self, schema_value: Option<&Value>) -> TypeExpression {
+        let Self::Union(type_expressions) = self else {
+            unreachable!("union type conversion requires union members");
+        };
+        let mut mcp_type_expressions = Vec::new();
 
-        if let Some(any_of) = self.get("anyOf").and_then(Value::as_array) {
-            return TypeExpression::Union(any_of.iter().map(TypedJsonSchema::type_expression).collect());
-        }
-
-        if let Some(type_keywords) = self.get("type").and_then(Value::as_array) {
-            let mut type_expressions = type_keywords
-                .iter()
-                .filter_map(Value::as_str)
-                .filter_map(type_expression_for_keyword)
-                .collect::<Vec<_>>();
-
-            if type_expressions.len() == 1 {
-                return type_expressions.remove(0);
-            }
-
-            if !type_expressions.is_empty() {
-                return TypeExpression::Union(type_expressions);
+        for type_expression in type_expressions
+            .iter()
+            .filter(|type_expression| !matches!(type_expression, Self::Null))
+        {
+            match type_expression.to_mcp_type_expression(schema_value) {
+                TypeExpression::Union(nested_type_expressions) => mcp_type_expressions.extend(nested_type_expressions),
+                mcp_type_expression => mcp_type_expressions.push(mcp_type_expression),
             }
         }
 
-        match self.get("type").and_then(Value::as_str) {
-            Some(type_keyword) => type_expression_for_keyword(type_keyword).unwrap_or(TypeExpression::String),
-            _ => TypeExpression::String,
+        if type_expressions.iter().any(|type_expression| matches!(type_expression, Self::Null)) {
+            mcp_type_expressions.push(TypeExpression::Null);
         }
+
+        TypeExpression::Union(mcp_type_expressions)
     }
 }
 
-trait JsonSchemaValueExt {
-    fn allows_null_type_keyword(&self) -> bool;
+fn serialize_schema(schema: &impl Serialize, context: &str) -> Result<Value, WorkflowSemanticError> {
+    serde_json::to_value(schema).map_err(|source| WorkflowSemanticError::SerializationFailed {
+        context: context.to_string(),
+        source,
+    })
 }
 
-impl JsonSchemaValueExt for Value {
-    fn allows_null_type_keyword(&self) -> bool {
-        match self.get("type") {
-            Some(Value::String(type_keyword)) => type_keyword == "null",
-            Some(Value::Array(type_keywords)) => type_keywords.iter().any(|type_keyword| type_keyword.as_str() == Some("null")),
-            _ => false,
-        }
-    }
-}
-
-pub(super) fn to_json_value(schema: &impl Serialize) -> Value {
-    serde_json::to_value(schema).unwrap_or(Value::Null)
+pub(super) fn to_json_value(schema: &impl Serialize) -> Result<Value, serde_json::Error> {
+    serde_json::to_value(schema)
 }
 
 #[cfg(test)]
@@ -188,7 +256,7 @@ mod tests {
             }
         });
 
-        let type_expression = schema.type_expression();
+        let type_expression = schema.type_expression().expect("nullable array schema should convert");
 
         assert_eq!(
             type_expression,
@@ -208,7 +276,7 @@ mod tests {
             "type": ["integer", "null"],
         });
 
-        let type_expression = schema.type_expression();
+        let type_expression = schema.type_expression().expect("nullable integer schema should convert");
 
         assert_eq!(
             type_expression,
@@ -220,10 +288,10 @@ mod tests {
     fn type_expression_supports_nullable_string_enum_type_keyword() {
         let schema = json!({
             "type": ["string", "null"],
-            "enum": ["picture", "video_recording"],
+            "enum": ["picture", "video_recording", null],
         });
 
-        let type_expression = schema.type_expression();
+        let type_expression = schema.type_expression().expect("nullable enum schema should convert");
 
         assert_eq!(
             type_expression,
@@ -253,11 +321,11 @@ mod tests {
             "required": ["project_id"]
         });
 
-        let typed_fields = schema.typed_fields();
+        let typed_fields = schema.typed_fields().expect("object schema should convert");
         let mut field_names = typed_fields.iter().map(|typed_field| typed_field.name.as_str()).collect::<Vec<_>>();
         field_names.sort_unstable();
 
-        assert_eq!(field_names, vec!["project_id", "task_group_id"]);
+        assert_eq!(field_names, vec!["comment", "project_id", "task_group_id"]);
         let task_group_field = typed_fields
             .iter()
             .find(|typed_field| typed_field.name == "task_group_id")
@@ -267,5 +335,43 @@ mod tests {
             task_group_field.field_type,
             TypeExpression::Union(vec![TypeExpression::Number, TypeExpression::Null])
         );
+        let comment_field = typed_fields
+            .iter()
+            .find(|typed_field| typed_field.name == "comment")
+            .expect("optional non-null comment field should be retained");
+
+        assert_eq!(
+            comment_field.field_type,
+            TypeExpression::Union(vec![TypeExpression::String, TypeExpression::Null])
+        );
+    }
+
+    #[test]
+    fn typed_fields_preserve_integer_and_number_distinction() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "ratio": {
+                    "type": "number"
+                }
+            },
+            "required": ["count", "ratio"]
+        });
+
+        let typed_fields = schema.typed_fields().expect("numeric object schema should convert");
+        let count_field = typed_fields
+            .iter()
+            .find(|typed_field| typed_field.name == "count")
+            .expect("integer field should exist");
+        let ratio_field = typed_fields
+            .iter()
+            .find(|typed_field| typed_field.name == "ratio")
+            .expect("number field should exist");
+
+        assert_eq!(count_field.field_type, TypeExpression::Number);
+        assert_eq!(ratio_field.field_type, TypeExpression::Float);
     }
 }

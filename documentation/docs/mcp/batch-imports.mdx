@@ -1,39 +1,44 @@
 ---
-title: Batch Imports
-description: Import many MCP tools, prompts, and resources with less repetition.
+title: Batch imports
+description: Import MCP capabilities with shared bindings, aliases, schemas, and call budgets.
 ---
 
-Batch imports reduce repetition when importing several declarations from the same MCP server namespace.
+Batch imports reduce repetition for one MCP namespace.
 
-They are most useful when a workflow uses many capabilities from one server and you want consistent naming and shared bindings.
-
-## Tool-only imports
-
-When the source path ends in `.tool`, every entry inside the block must be a `tool`.
+## Tool-only batch
 
 ```wire
 from mcp.tasks.tool {
-    tool fetch_task
+    max_calls: 6
+
+    bindings {
+        workspace_id: input.workspace_id
+    }
+
+    tool fetch_task {
+        max_calls: 2
+
+        bindings {
+            task_id: input.task_id
+        }
+    }
+
     tool update_task_status
-    tool create_comment
 }
 ```
 
-## Prompt-only imports
+The `.tool` namespace accepts only tool items. Shared bindings/budget apply to the batch; item blocks can specialize local bindings, schemas, and `max_calls`.
 
-When the source path ends in `.prompt`, every entry inside the block must be a `prompt`.
+## Prompt-only batch
 
 ```wire
 from mcp.tasks.prompt {
-    prompt task_writer_instructions
-    prompt task_review_checklist
-    prompt escalation_template
+    prompt writer_instructions
+    prompt review_checklist
 }
 ```
 
-## Resource-only imports
-
-When the source path ends in `.resource`, every entry inside the block must be a `resource`.
+## Resource-only batch
 
 ```wire
 from mcp.tasks.resource {
@@ -42,40 +47,35 @@ from mcp.tasks.resource {
 }
 ```
 
-## Mixed imports
-
-When importing from the broader MCP server namespace, the block may contain tools, prompts, and resources.
+## Mixed batch
 
 ```wire
 from mcp.tasks {
-    prompt task_writer_instructions
+    prompt writer_instructions
     tool update_task_status
     resource project_readme
 }
 ```
 
-## Shared bindings
+The broader server namespace accepts all three capability kinds.
 
-A batch import can apply the same bindings to multiple imported tools when those tools need the same trusted runtime values.
+## Naming
+
+Remote names that contain hyphens are normalized for local references. Use `as` for an explicit local name:
 
 ```wire
 from mcp.tasks.tool {
-    bindings {
-        workspace_id: input.workspace_id
-        project_id: input.project_id
-    }
-
-    tool fetch_task
-    tool update_task_status
-    tool create_comment
+    tool fetch-task as fetch_task
 }
 ```
 
-`bindings {}` assigns runtime values. It is not a schema declaration.
+## Binding merge
 
-## Recommended usage
+Shared bindings are merged with item-local bindings. A local value replaces a shared value with the same name and preserves other shared values. `bindings` are runtime expressions, not type declarations.
 
-- Keep import blocks close to related `mcp` declarations.
-- Use clear local names for imported capabilities.
-- Apply shared `bindings {}` only when all imported tools truly need the same trusted values.
-- Prefer explicit individual imports when one tool needs different bindings or contract overrides.
+## Guidance
+
+- Use a batch only when capabilities genuinely share server/scope configuration.
+- Prefer individual imports when contracts or authorization scopes differ materially.
+- Narrow `max_calls` at the batch, item, deterministic call, and agent usage layers as appropriate.
+- Regenerate [MCP lockfiles](/mcp/lockfiles) after changing a batch.

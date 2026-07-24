@@ -25,7 +25,25 @@ impl AstVisitor {
             Rule::array_expression => Ok(Expression::ArrayLiteral(self.visit_array_expression(expression_pair)?)),
             Rule::boolean_literal => Ok(Expression::BooleanLiteral(expression_pair.as_str() == "true")),
             Rule::null_literal => Ok(Expression::NullLiteral),
-            Rule::number_literal => Ok(Expression::NumberLiteral(expression_pair.as_str().to_owned())),
+            Rule::number_literal => {
+                let number_literal = expression_pair.as_str();
+
+                if !number_literal.contains('.') {
+                    let normalized_number_literal = number_literal.replace('_', "");
+                    let is_supported_integer =
+                        normalized_number_literal.parse::<i64>().is_ok() || normalized_number_literal.parse::<u64>().is_ok();
+
+                    if !is_supported_integer {
+                        return Err(DslParseError::invalid_integer_literal_with_span(
+                            number_literal,
+                            "number expression",
+                            source_span_from_pair(&expression_pair),
+                        ));
+                    }
+                }
+
+                Ok(Expression::NumberLiteral(number_literal.to_owned()))
+            }
             Rule::string_expression | Rule::quoted_string_expression | Rule::multiline_string_expression => {
                 self.visit_string_expression(expression_pair)
             }
@@ -65,12 +83,7 @@ impl AstVisitor {
         let case_name = self.next_identifier(&mut inner_pairs, "variant projection case", "variant projection")?;
         let field_path = inner_pairs.map(|field_pair| field_pair.as_str().to_owned()).collect();
 
-        Ok(VariantProjectionExpression {
-            value,
-            case_name,
-            field_path,
-            span,
-        })
+        Ok(VariantProjectionExpression::new(value, case_name, field_path, span))
     }
 
     pub(super) fn visit_asset_expression(&self, asset_pair: Pair<'_, Rule>) -> Result<Asset, DslParseError> {
@@ -112,11 +125,10 @@ impl AstVisitor {
             branches.push(self.visit_match_branch(branch_pair)?);
         }
 
-        Ok(MatchExpression {
-            value: Box::new(value),
-            branches,
-            span,
-        })
+        let match_expression = MatchExpression::new(value, branches, span);
+        match_expression.validate_branch_structure()?;
+
+        Ok(match_expression)
     }
 
     pub(super) fn visit_match_branch(&self, branch_pair: Pair<'_, Rule>) -> Result<MatchBranch, DslParseError> {
@@ -388,7 +400,16 @@ impl AstVisitor {
                 string_template_parts.push(StringTemplatePart::Text(string_part_pair.as_str().to_owned()));
             }
             Rule::escaped_character => {
-                string_template_parts.push(StringTemplatePart::Text(self.unescape_character(string_part_pair.as_str())));
+                let sequence = string_part_pair.as_str();
+                let escape_span = source_span_from_pair(&string_part_pair);
+                let Some(unescaped_character) = self.unescape_character(sequence) else {
+                    return Err(DslParseError::UnsupportedEscapeSequence {
+                        sequence: sequence.to_owned(),
+                        span: escape_span,
+                    });
+                };
+
+                string_template_parts.push(StringTemplatePart::Text(unescaped_character.to_string()));
             }
             Rule::interpolation => {
                 let interpolation_expression_pair = self.first_inner_pair(string_part_pair, "interpolation")?;

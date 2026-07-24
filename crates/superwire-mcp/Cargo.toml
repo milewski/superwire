@@ -12,7 +12,10 @@ rust-mcp-schema = { version = "0.10.0", default-features = false, features = ["2
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = "0.10"
+std-uritemplate = "2.0.12"
 superwire-semantic = { path = "../superwire-semantic" }
 superwire-types = { path = "../superwire-types" }
 thiserror = { workspace = true }
+tokio = { workspace = true }
+url = "2.5.8"
 ureq = { version = "3.3.0", default-features = false, features = ["json", "rustls"] }

@@ -17,7 +17,6 @@ pub use cache::{
 };
 pub(in crate::runtime) use configuration::RuntimeValidationContext;
 pub use error::ExecutorError;
-pub(in crate::runtime) use schema::value_object;
 
 use crate::model::{ModelProvider, ToolCallTracker};
 use crate::runtime::mcp::normalize_prompt;
@@ -50,7 +49,7 @@ impl CompletedAgentExecution {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct WorkflowExecutor {
     workflow: Workflow,
     execution_plan: ExecutionPlan,
@@ -148,8 +147,8 @@ impl RuntimeConcurrencyLimiter {
     where
         ExecutionFuture: Future<Output = Result<Output, ExecutorError>>,
     {
-        let _permit = self.semaphore.clone().acquire_owned().await.map_err(|error| ExecutorError::Other {
-            message: format!("failed to acquire runtime concurrency permit: {error}"),
+        let _permit = self.semaphore.clone().acquire_owned().await.map_err(|error| {
+            ExecutorError::internal_with_source(format!("failed to acquire runtime concurrency permit: {error}"), error)
         })?;
 
         execution_future.await

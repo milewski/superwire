@@ -6,16 +6,16 @@ This directory contains a TextMate grammar bundle for syntax highlighting of Sup
 
 The grammar provides syntax highlighting for:
 
-- **Keywords**: `provider`, `schema`, `agent`, `input`, `output`, `secrets`, `for`, `in`
-- **Assignments**: `:` in config, schema, and output blocks
-- **Data types**: `string`, `number`, `float`, `boolean`, `null`, arrays, tuples, unions
+- **Keywords**: declarations, imports, agent directives, calls, loops, match expressions, and context/asset expressions
+- **Assignments**: `:` in configuration, typed-field, object, and agent-property blocks
+- **Data types**: `string`, `number`, `float`, `boolean`, `object`, `maybe`, arrays, tuples, enums, variants, and unions
+- **Literals**: strings, numbers, `true`, `false`, and `null`
 - **String interpolation**: `{{ ... }}` syntax in single-line and multiline strings
 - **Multiline strings**: `"""..."""` syntax
-- **References**: `agent.name.field`, `input.field`, `schema.Name`, `secrets.key`, `tool.name`
-- **Function calls and operators**: `template(...)`, context operators like `context agent.name` and `compact agent.name`, provider model calls like `openai(...)`
-- **Comments**: `//` line comments
-- **Provider properties**: `driver`, `endpoint`, `api_key`, `models`
-- **Agent properties**: `model`, `tools`, `context`, `output`, `prompt`, `inference`
+- **References**: `agent.name.field`, `input.field`, `schema.Name`, `secrets.key`, `tool.name`, `resource.name`, and `prompt.name`
+- **Expressions**: function calls, `asset`, `context`, `compact`, variant projections, and fallback operators
+- **Comments**: `//` line comments and `///` documentation comments
+- **Agent properties**: `model`, `instruction`, `context`, `uses`, `file`, and `output`
 
 ## Installation
 
@@ -59,53 +59,36 @@ The grammar uses standard TextMate scope names, so it will work with any color t
 ## Example
 
 ```wire
-provider ollama from ollama {
-endpoint: "http://127.0.0.1:11434"
+provider openai from openai {
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
 }
 
-model ollama_model from ollama {
-    id: "qwen3:8b"
+model openai_model from openai {
+    id: "model-a"
 }
 
-schema Brief {
-    summary: string "Short release summary"
-    highlights: [string; 3] "Exactly three highlights"
-}
-
-input {
-    product_name: string
-    audience: string
-    release_highlights: [string]
-}
-
-agent release_summary {
-    model: model.ollama_model
-
-    prompt: "Write a short release summary for {{ input.product_name }} using {{ input.release_highlights }}"
-
-    output: schema.Brief
-}
-
-agent audience_message {
-    model: model.ollama_model
-    context: agent.release_summary
-
-    inference: {
-        temperature: 0.2
+agent research {
+    model: model.openai_model
+    instruction: "Research the migration plan."
+    output {
+        value: string
     }
+}
 
-    prompt: """
-        Write a launch message for {{ input.audience }}.
-        Summary: {{ agent.release_summary.summary }}
-        Highlights: {{ agent.release_summary.highlights }}
-    """
-
-    output: string
+agent summarize {
+    model: model.openai_model
+    context: compact agent.research {
+        instruction: "Compact this prior context for a short summary."
+    }
+    instruction: "Summarize the compacted context."
+    output {
+        value: string
+    }
 }
 
 output {
-    brief: agent.release_summary
-    message: agent.audience_message
+    result: agent.summarize.value
 }
 ```
 

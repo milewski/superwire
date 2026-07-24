@@ -16,12 +16,12 @@ pub use ast::{
     ForClauseKeyword, FunctionCall, ImportKeyword, InputDeclaration, MatchBranch, MatchExpression, McpCall, McpCallOperation,
     McpImportBindingEvaluationKind, McpImportBindings, McpImportKind, McpImportPropertyName, McpImportSource, McpPromptImportDeclaration,
     McpResourceImportDeclaration, McpServerDeclaration, McpServerPropertyName, McpToolBatchImportDeclaration, McpToolBatchImportItem,
-    McpToolSource, ModelAssetKind, ModelAssetKindSupportError, ModelCallArgumentName, ModelDeclaration, ModelDeclarationPropertyName,
-    ModelUsage, ModelUsagePropertyName, ModelWireApi, NamedArgument, NullFallbackExpression, ObjectField, OutputDeclaration,
-    ProviderDeclaration, Reference, ReferenceAccess, ReferenceAccessKind, ReferenceKeyword, ReferenceRoot, SchemaDeclaration,
-    SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall, ToolCallKeyword, ToolDeclaration,
-    ToolDeclarationIter, ToolPropertyName, ToolSource, TypeExpression, TypeExpressionFieldCache, TypedField, VariantCase,
-    VariantProjectionExpression, Workflow,
+    McpToolSchema, McpToolSource, ModelAssetKind, ModelAssetKindSupportError, ModelCallArgumentName, ModelDeclaration,
+    ModelDeclarationPropertyName, ModelUsage, ModelUsagePropertyName, ModelWireApi, NamedArgument, NullFallbackExpression, ObjectField,
+    OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, ReferenceAccessKind, ReferenceKeyword, ReferenceRoot,
+    ScalarTypeKeyword, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall,
+    ToolCallKeyword, ToolDeclaration, ToolDeclarationIter, ToolPropertyName, ToolSchemaIssue, ToolSource, TypeExpression,
+    TypeExpressionFieldCache, TypedField, VariantCase, VariantProjectionExpression, VariantProjectionOutcome, Workflow,
 };
 pub use formatter::{format_workflow_source, DslFormatError};
 pub use parser::{parse_workflow, DslParseError};

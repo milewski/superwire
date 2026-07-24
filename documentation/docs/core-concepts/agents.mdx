@@ -1,190 +1,144 @@
 ---
 title: Agents
-description: Define model steps, dependencies, loops, context continuation, and structured outputs.
+description: Define model steps, local dynamic values, capabilities, files, loops, context, and typed output.
 ---
 
-An agent is one LLM step in the workflow graph.
+An agent is one model-backed node in the workflow graph.
 
 ```wire
-agent summarize_task {
+agent summarize {
     model: model.fast
-    instruction: "Summarize task {{ input.task_id }}."
+    instruction: "Summarize {{ input.topic }}."
 
     output {
         summary: string
-        next_action: string
     }
 }
 ```
 
-## Agent properties
+## Properties and directives
 
-| Property | Purpose |
+| Syntax | Purpose |
 | --- | --- |
-| `model` | Selects a named model profile, such as `model.fast`. |
-| `uses` | Makes tools, prompts, and resources available to the agent. |
-| `context` | Continues from another agent's message history. |
-| `instruction` | The instruction appended for this agent step. |
-| `file` | Uploads content before the agent call and injects it as a file attachment. |
-| `output` | The required structured output contract. |
+| `model:` | Select a named model profile and optional inference override. |
+| `dynamic {}` | Compute values scoped to this agent execution. |
+| `uses:` | Expose selected tools, prompts, and resources to the model. |
+| `context:` | Continue or compact another agent's message history. |
+| `instruction:` | Required instruction expression for the model step. |
+| `file <expression>` | Render and upload a temporary file attachment. |
+| `output {}` | Required object-shaped model output contract. |
 
-## Uses
-
-`uses` declares external capabilities and context available to the agent. It can include tools, prompts, and resources.
+## Agent-local dynamic values
 
 ```wire
 agent writer {
     model: model.fast
 
-    uses: [
-        prompt.writer_instructions,
-        resource.project_readme,
-        tool.create_draft,
-    ]
+    dynamic {
+        prefix: "Write for maintainers"
+        request: input.message
+    }
 
-    instruction: "Create a draft for {{ input.topic }}."
+    instruction: "{{ dynamic.prefix }}: {{ dynamic.request }}"
 
     output {
-        draft: string
+        message: string
     }
 }
 ```
 
-## File directive
+Agent-local fields share the `dynamic` namespace with global dynamic fields, but are evaluated in the agent's local loop/tool scope. Later agents cannot treat a local dynamic field as a global workflow output; return needed values through the agent `output`.
 
-`file` uploads content before the agent executes and injects the resulting file attachment into the agent's chat history. The content expression is positional and required; an optional block sets `name` and `purpose`.
+## Object-shaped output and schema reuse
+
+An agent output is always an object block. Reuse a schema as a field type:
 
 ```wire
-agent reviewer {
+schema classification {
+    category: enum { bug, feature, question }
+    confidence: number
+}
+
+agent classify {
     model: model.fast
-    instruction: "Review the uploaded file."
-
-    file agent.summarizer {
-        name: "report.json"
-    }
+    instruction: "Classify {{ input.message }}."
 
     output {
-        feedback: string
+        result: schema.classification
     }
 }
 ```
 
-### File syntax
+Read `agent.classify.result`. A scalar `output: string` or direct `output: schema.classification` is not current agent syntax.
+
+## Scoped capabilities
 
 ```wire
-file <content> {
-    name: "filename.ext"
+agent researcher {
+    model: model.fast
+    uses: [
+        resource.project_readme,
+        prompt.research_rules,
+        tool.search {
+            max_calls: 3
+        },
+    ]
+    instruction: "Research {{ input.topic }}."
+
+    output {
+        findings: [string]
+    }
+}
+```
+
+Only listed capabilities are exposed. `max_calls` further bounds a model-owned tool within this agent.
+
+## Context continuation and compaction
+
+Continue full history:
+
+```wire
+context: agent.research
+```
+
+Compact it through another model step before continuation:
+
+```wire
+context: compact agent.research {
+    instruction: "Keep decisions, evidence, and unresolved questions."
+    model: model.compactor
+}
+```
+
+The compaction block accepts optional `instruction` and `model`; omitted values use runtime defaults. See [Context continuation](/advanced/context-sharing).
+
+## File attachment
+
+```wire
+file agent.draft {
+    name: "draft.json"
     purpose: "file-extract"
 }
 ```
 
-The block `{ ... }` is optional. When omitted, defaults apply.
+The content expression is required; the option block is optional. Defaults are `file.txt` and `file-extract`. String, number, object, array, and reference results are rendered to file content. Multiple directives are allowed.
 
-### File properties
+<Warning>
+  The selected model must use `wire_api: "chat/completion"`; Responses mode is rejected for agent files.
+</Warning>
 
-| Property | Required | Default | Purpose |
-| --- | --- | --- | --- |
-| `content` (positional) | Yes | — | An expression whose rendered value becomes the file body. |
-| `name` | No | `"file.txt"` | The filename exposed to the model. |
-| `purpose` | No | `"file-extract"` | A label describing the file's role in the workflow. |
-
-The content expression accepts references (`agent.summarizer`, `dynamic.data`), string literals (`"manual content"`), and number literals (`132`).
-
-### Content from an agent
+## Loops
 
 ```wire
-file agent.summarizer {
-    name: "report.json"
-}
-```
-
-### Inline content
-
-```wire
-file "manual content" {
-    name: "notes.txt"
-}
-```
-
-### Multiple files
-
-Multiple `file` directives are allowed on a single agent:
-
-```wire
-agent compare {
+agent analyze for { id, title } in input.tasks {
     model: model.fast
-    instruction: "Compare the two files."
-
-    file agent.step_one {
-        name: "before.json"
-    }
-
-    file agent.step_two {
-        name: "after.json"
-    }
+    instruction: "Analyze {{ id }}: {{ title }}."
 
     output {
-        differences: string
-    }
-}
-```
-
-## Agent loops
-
-Use `for ... in` when each item in a collection should be processed with the same agent.
-
-```wire
-agent summarize_each for task in input.tasks {
-    model: model.fast
-    instruction: "Summarize {{ task.title }}."
-
-    output {
-        title: string
+        task_id: number
         summary: string
     }
 }
 ```
 
-Loop headers may destructure object-shaped items:
-
-```wire
-agent summarize_each for { a, b } in input.something {
-    model: model.fast
-    instruction: "Summarize A={{ a }} and B={{ b }}."
-
-    output {
-        summary: string
-    }
-}
-```
-
-The output of a looped agent is an array of that agent's output objects.
-
-## Context continuation
-
-Use `context: agent.some_agent` when a later agent should continue from an earlier agent's message history.
-
-```wire
-agent investigate_task {
-    model: model.fast
-    instruction: "Investigate task {{ input.task_id }} and identify the main issue."
-
-    output {
-        issue: string
-        evidence: [string]
-    }
-}
-
-agent propose_solution {
-    model: model.fast
-    context: agent.investigate_task
-    instruction: "Continue from the investigation and propose a concrete solution."
-
-    output {
-        solution: string
-        steps: [string]
-    }
-}
-```
-
-A structured reference such as `agent.investigate_task.issue` reads an output value. `context: agent.investigate_task` passes the prior conversation/message history so the next agent can append a new instruction and continue the work.
+The final `agent.analyze` value is an array of output objects. Iterations may run concurrently up to the execution limit and are returned in input order.

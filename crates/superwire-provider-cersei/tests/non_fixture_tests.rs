@@ -12,3 +12,6 @@ mod provider_retry;
 
 #[path = "non_fixture_tests/file_upload.rs"]
 mod file_upload;
+
+#[path = "non_fixture_tests/live_openai_compatible.rs"]
+mod live_openai_compatible;

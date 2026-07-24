@@ -15,6 +15,7 @@ type JsonCodeEditorProps = {
   uncappedHeight?: boolean;
   wrap?: boolean;
   className?: string;
+  ariaLabel: string;
   onChange?: (value: string) => void;
 };
 
@@ -121,7 +122,7 @@ const jsonHighlightStyle = HighlightStyle.define([
   { tag: tags.punctuation, color: 'var(--json-punctuation-color)' },
 ]);
 
-export default function JsonCodeEditor({ value, readOnly = false, fullEditor = false, uncappedHeight = false, wrap = true, className, onChange }: JsonCodeEditorProps) {
+export default function JsonCodeEditor({ value, readOnly = false, fullEditor = false, uncappedHeight = false, wrap = true, className, ariaLabel, onChange }: JsonCodeEditorProps) {
   const editorContainerElementRef = useRef<HTMLDivElement | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
@@ -139,8 +140,8 @@ export default function JsonCodeEditor({ value, readOnly = false, fullEditor = f
     }
 
     const extensions = fullEditor
-      ? fullJsonEditorExtensions(readOnly, uncappedHeight, wrap)
-      : compactJsonEditorExtensions(readOnly, wrap);
+      ? fullJsonEditorExtensions(readOnly, uncappedHeight, wrap, ariaLabel)
+      : compactJsonEditorExtensions(readOnly, wrap, ariaLabel);
 
     extensions.push(
       EditorView.updateListener.of((update) => {
@@ -168,7 +169,7 @@ export default function JsonCodeEditor({ value, readOnly = false, fullEditor = f
       editorView.destroy();
       editorViewRef.current = null;
     };
-  }, [readOnly, fullEditor, uncappedHeight, wrap]);
+  }, [readOnly, fullEditor, uncappedHeight, wrap, ariaLabel]);
 
   useEffect(() => {
     const editorView = editorViewRef.current;
@@ -209,13 +210,14 @@ export default function JsonCodeEditor({ value, readOnly = false, fullEditor = f
   );
 }
 
-function compactJsonEditorExtensions(readOnly: boolean, wrap: boolean) {
+function compactJsonEditorExtensions(readOnly: boolean, wrap: boolean, ariaLabel: string) {
   const extensions = [
     json(),
     syntaxHighlighting(jsonHighlightStyle),
     jsonEditorTheme,
     EditorState.readOnly.of(readOnly),
     EditorView.editable.of(!readOnly),
+    EditorView.contentAttributes.of({ 'aria-label': ariaLabel }),
   ];
 
   if (wrap) {
@@ -225,7 +227,7 @@ function compactJsonEditorExtensions(readOnly: boolean, wrap: boolean) {
   return extensions;
 }
 
-function fullJsonEditorExtensions(readOnly: boolean, uncappedHeight: boolean, wrap: boolean) {
+function fullJsonEditorExtensions(readOnly: boolean, uncappedHeight: boolean, wrap: boolean, ariaLabel: string) {
   const extensions = [
     lineNumbers(),
     foldGutter(),
@@ -241,6 +243,7 @@ function fullJsonEditorExtensions(readOnly: boolean, uncappedHeight: boolean, wr
     fullJsonEditorTheme,
     EditorState.readOnly.of(readOnly),
     EditorView.editable.of(!readOnly),
+    EditorView.contentAttributes.of({ 'aria-label': ariaLabel }),
   ];
 
   if (uncappedHeight) {

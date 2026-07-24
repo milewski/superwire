@@ -1,29 +1,65 @@
 ---
-title: Language Server
-description: Editor-oriented diagnostics and language features for .wire files.
+title: Language server
+description: Protocol surfaces and capabilities of superwire-lsp.
 ---
 
-The language server should help authors catch workflow issues before execution.
+`superwire-lsp` is the language server for `.wire` source.
 
-## Core features
+## Transports
 
-- parse diagnostics with source spans
-- validation diagnostics for references and schemas
-- completion for declaration names and root namespaces
-- hover information for schema fields and agent outputs
-- go-to-definition for references
+| Surface | Transport | Client |
+| --- | --- | --- |
+| `superwire-lsp` binary | standard input/output | IntelliJ plugin or another configured LSP client |
+| executor `/lsp` | WebSocket JSON-RPC | bundled Playground |
 
-## Useful completions
+No standalone TCP language-server mode is implemented. The `/lsp` route is a WebSocket upgrade, not an HTTP diagnostics endpoint.
 
-```wire
-input.
-secrets.
-agent.
-schema.
-tool.
-resource.
-prompt.
-dynamic.
+## Protocol negotiation
+
+The server negotiates UTF-8, UTF-16, or UTF-32 position encoding from client capabilities and defaults to UTF-16. All diagnostics, edits, symbols, tokens, hovers, and definitions use the selected encoding. Published diagnostics include the current document version, allowing clients to discard stale results.
+
+## Advertised capabilities
+
+- full-document synchronization;
+- versioned published diagnostics with stable codes and related ranges;
+- context-aware completion with `.`, `:`, `"`, `{`, `(`, `,`, and `?` triggers;
+- semantic hover and go-to-definition;
+- hierarchical document symbols when the client supports them, plus workspace symbols;
+- folding ranges;
+- document formatting;
+- quick-fix code actions;
+- full-document semantic tokens for keywords, types, classes, properties, functions, variables, literals, comments, operators, enum members, and namespaces;
+- code lenses;
+- the `superwire.generated.output` execute command.
+
+The server preserves a semantic index while a document is incomplete, so completion, hover, and diagnostics can remain useful during editing. It uses the same parser and semantic model as executor preflight validation. Provider calls require execution. Network MCP discovery is fail-closed and disabled unless the client explicitly marks the workspace trusted.
+
+## Runtime values in the Playground
+
+The Playground sends its current input and secrets JSON to the WebSocket client as runtime context so diagnostics and generated output can reflect the active editors. Generic stdio clients do not automatically know application runtime values unless their client implements the relevant notification contract.
+
+## MCP discovery and workspace trust
+
+By default, opening/changing a document never performs MCP network discovery. The server still reads reviewed `superwire.lock` metadata for covered servers. To opt a trusted workspace into outbound discovery, the LSP client must send this initialization option:
+
+```json
+{
+  "initializationOptions": {
+    "workspaceTrust": {
+      "networkMcpDiscovery": "trusted"
+    }
+  }
+}
 ```
 
-The LSP should follow the same semantics as executor validation so editor feedback matches runtime behavior.
+Supported values are `disabled` (the default) and `trusted`; omission or an invalid initialization-options object remains disabled. This LSP workspace-trust setting is independent of the executor's `--mcp-network-policy` and has no `public-only` mode. In trusted mode, opening/changing a document schedules discovery for servers missing from the project lock. These are outbound HTTP JSON-RPC requests to workflow-declared endpoints; local-process/stdio MCP transport is not implemented. Literal headers are sent as written; if the client also supplies `superwire/runtimeValues`, endpoint/header expressions are resolved from its current input and secrets and those resolved headers are sent too.
+
+Enable trusted mode only after the host application has made an explicit workspace-trust decision. Inspect endpoint/header expressions before supplying runtime secrets and restrict the editor process to approved outbound destinations. A complete reviewed lock minimizes discovery by covering known servers; it records schemas but is not a network sandbox.
+
+## Install
+
+```bash
+cargo build --release -p superwire-lsp
+```
+
+Launch `target/release/superwire-lsp` over stdio. See [Editor setup](/editor-setup) for the IntelliJ, TextMate-only, generic client, and Playground support matrix.

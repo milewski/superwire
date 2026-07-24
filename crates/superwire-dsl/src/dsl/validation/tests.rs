@@ -1838,3 +1838,40 @@ fn reports_missing_dynamic_declaration_for_dynamic_reference() {
             if *context == ValidationContext::Agent("researcher".to_owned())
     );
 }
+
+#[test]
+fn rejects_required_field_access_missing_from_a_union_member() {
+    let workflow = parse_inline_workflow! {
+        input {
+            payload: { shared: string } | { other: string }
+        }
+
+        output {
+            value: input.payload.shared
+        }
+    };
+
+    assert_workflow_issues_contain!(
+        workflow,
+        ValidationIssue::InvalidReferencePath {
+            invalid_field,
+            context: ValidationContext::Output,
+            ..
+        } if invalid_field == "shared"
+    );
+}
+
+#[test]
+fn allows_optional_field_access_missing_from_a_union_member() {
+    let workflow = parse_inline_workflow! {
+        input {
+            payload: { shared: string } | { other: string }
+        }
+
+        output {
+            value: input.payload?.shared
+        }
+    };
+
+    assert_workflow_issues_do_not_contain!(workflow, ValidationIssue::InvalidReferencePath { .. });
+}

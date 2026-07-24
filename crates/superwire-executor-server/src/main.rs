@@ -1,7 +1,9 @@
 use clap::Parser;
 use std::net::SocketAddr;
 use superwire_executor::{AgentCacheConfig, AgentCacheDriver, AgentCacheTimeToLive, RedisAgentCacheConfig};
-use superwire_executor_server::serve_executor_with_agent_cache;
+use superwire_executor_server::{serve_executor_with_agent_cache_and_config, ExecutorServerConfig};
+use superwire_mcp::McpNetworkPolicy;
+use superwire_provider_cersei::ProviderNetworkPolicy;
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -25,6 +27,14 @@ struct Cli {
 
     #[arg(long, default_value_t = 0)]
     redis_database: u8,
+
+    /// Outbound MCP policy: disabled, public-only, or trusted. Trusted permits private and local HTTP endpoints.
+    #[arg(long, default_value_t = McpNetworkPolicy::Disabled)]
+    mcp_network_policy: McpNetworkPolicy,
+
+    /// Outbound provider policy: built-in-only, public-only, or trusted. Trusted permits private and local HTTP endpoints.
+    #[arg(long, default_value_t = ProviderNetworkPolicy::BuiltInOnly)]
+    provider_network_policy: ProviderNetworkPolicy,
 }
 
 #[tokio::main]
@@ -44,11 +54,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     log::info!("starting executor server on {}", command.address);
 
-    serve_executor_with_agent_cache(
+    serve_executor_with_agent_cache_and_config(
         command.address,
         command.disable_playground,
         cache_config,
         command.cache_time_to_live.0,
+        ExecutorServerConfig::new(command.mcp_network_policy).with_provider_network_policy(command.provider_network_policy),
     )
     .await?;
 

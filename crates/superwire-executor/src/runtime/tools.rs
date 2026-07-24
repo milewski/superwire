@@ -1,12 +1,12 @@
 use super::{ExecutorError, ToolCallExecutionContext, WorkflowExecutor};
-use crate::model::{ModelSchema, ModelToolDefinition, ModelToolSource, ToolCallLimitScope};
+use crate::model::{ExecutorEventSenderExt, ModelSchema, ModelToolDefinition, ModelToolSource, ToolCallLimitScope};
 use serde_json::{Map, Value};
 use std::time::Instant;
 use superwire_dsl::{AgentExpressionPropertyName, Declaration, Expression, ObjectField, ReferenceKeyword, ToolCall, ToolSource, Workflow};
 use superwire_mcp::{normalize_mcp_tool_result, McpServerConfig};
-use superwire_protocol::event::{ExecutorEvent, McpCallEventDetails};
+use superwire_protocol::event::{ExecutorEvent, McpCallEventDetails, McpOperation};
 use superwire_semantic::support::expression::{evaluate_expression, EvaluationContext};
-use superwire_semantic::support::types::WorkflowType;
+use superwire_semantic::support::types::{validate_value_against_json_schema, WorkflowType};
 use superwire_semantic::{PlannedAgent, TypedToolIr};
 use tokio::sync::mpsc;
 
@@ -149,19 +149,24 @@ impl WorkflowExecutor {
             return Ok(());
         };
         let validation_started_at = Instant::now();
-        let input_schema = ModelSchema::model_tool_input(typed_tool.input_type.clone(), bindings.clone());
+        let arguments = Value::Object(arguments);
+
+        typed_tool
+            .validate_discovered_mcp_input(&arguments)
+            .map_err(|message| ExecutorError::Other {
+                message: format!("deterministic tool call `{tool_name}` merged input is invalid: {message}"),
+            })?;
 
         if let Some(sender) = startup_validation_context.event_sender {
-            let _ = sender.try_send(ExecutorEvent::mcp_tool_validation_started(
+            sender.try_send_observed(ExecutorEvent::mcp_tool_validation_started(
                 String::new(),
                 tool_name.to_string(),
-                Value::Object(arguments.clone()),
-                input_schema.json_value(),
+                &arguments,
             ));
         }
 
         if let Some(sender) = startup_validation_context.event_sender {
-            let _ = sender.try_send(ExecutorEvent::mcp_tool_validation_completed(
+            sender.try_send_observed(ExecutorEvent::mcp_tool_validation_completed(
                 String::new(),
                 tool_name.to_string(),
                 validation_started_at.elapsed(),
@@ -268,58 +273,67 @@ impl WorkflowExecutor {
                 endpoint,
                 headers,
             } => {
-                let input_schema = ModelSchema::model_tool_input(typed_tool.input_type.clone(), bindings.clone());
+                let arguments = Value::Object(arguments);
+
+                typed_tool
+                    .validate_discovered_mcp_input(&arguments)
+                    .map_err(|message| ExecutorError::Other {
+                        message: format!("deterministic tool call `{tool_name}` merged input is invalid: {message}"),
+                    })?;
 
                 let server_config = McpServerConfig {
                     name: server_name.unwrap_or_else(|| "default".to_string()),
                     endpoint,
                     headers,
                 };
-                let call_details = McpCallEventDetails::new(
-                    "call".to_string(),
+                let call_details = McpCallEventDetails::from_arguments(
+                    McpOperation::Call,
                     tool_name.to_string(),
                     server_config.name.clone(),
                     mcp_tool_name.clone(),
-                    Value::Object(arguments.clone()),
-                    Some(input_schema.json_value()),
+                    &arguments,
                 );
 
                 if let Some(sender) = tool_call_execution_context.event_sender {
-                    let _ = sender.try_send(ExecutorEvent::mcp_call_started(call_details.clone()));
+                    sender.try_send_observed(ExecutorEvent::mcp_call_started(call_details.clone()));
                 }
 
                 let started_at = Instant::now();
                 log::info!("calling MCP tool `{mcp_tool_name}` for deterministic tool `{tool_name}`");
-                let result = match self
-                    .mcp_pool
-                    .get(&server_config)?
-                    .call_tool(&mcp_tool_name, Value::Object(arguments))
-                {
+                let result = match self.mcp_pool.get(&server_config)?.call_tool(&mcp_tool_name, arguments) {
                     Ok(result) => result,
                     Err(error) => {
                         if let Some(sender) = tool_call_execution_context.event_sender {
-                            let _ = sender.try_send(ExecutorEvent::mcp_call_failed(
-                                call_details,
-                                Value::String(error.to_string()),
-                                started_at.elapsed(),
-                            ));
+                            sender.try_send_observed(ExecutorEvent::mcp_call_failed(call_details, started_at.elapsed()));
                         }
 
-                        return Err(ExecutorError::Other {
-                            message: format!("deterministic tool call `{tool_name}` failed: {error}"),
-                        });
+                        return Err(ExecutorError::mcp_with_source(
+                            None,
+                            Some(server_config.name),
+                            Some(tool_name.to_string()),
+                            format!("deterministic tool call `{tool_name}` request failed"),
+                            error,
+                        ));
                     }
                 };
-                let normalized_result = normalize_mcp_tool_result(result.clone());
+                let normalized_result = normalize_mcp_tool_result(result);
+                if let Err(message) = typed_tool.validate_discovered_mcp_output(&normalized_result) {
+                    if let Some(sender) = tool_call_execution_context.event_sender {
+                        sender.try_send_observed(ExecutorEvent::mcp_call_failed(call_details, started_at.elapsed()));
+                    }
+
+                    return Err(ExecutorError::Other {
+                        message: format!("deterministic tool call `{tool_name}` output is invalid: {message}"),
+                    });
+                }
                 let projected_result = typed_tool.output_type.project_json_value(&normalized_result);
 
                 log::debug!("completed deterministic MCP tool `{tool_name}`");
 
                 if let Some(sender) = tool_call_execution_context.event_sender {
-                    let _ = sender.try_send(ExecutorEvent::mcp_call_completed(
+                    sender.try_send_observed(ExecutorEvent::mcp_call_completed(
                         call_details,
-                        projected_result.clone(),
-                        result,
+                        &projected_result,
                         started_at.elapsed(),
                     ));
                 }
@@ -427,8 +441,9 @@ impl WorkflowExecutor {
             name: typed_tool.name.clone(),
             description: typed_tool.declaration.description.clone(),
             source: self.model_tool_source(&typed_tool.declaration, evaluation_context)?,
-            input_schema: ModelSchema::model_tool_input(typed_tool.input_type.clone(), bindings.clone()),
-            output_schema: ModelSchema::workflow(typed_tool.output_type.clone()),
+            input_schema: typed_tool.runtime_model_input_schema(bindings.clone()),
+            output_schema: typed_tool.runtime_model_output_schema(),
+            invocation_schema: typed_tool.runtime_invocation_schema(),
             bindings,
             max_calls: override_max_calls.or(typed_tool.declaration.max_calls),
             max_calls_scope: if override_max_calls.is_some() {
@@ -552,6 +567,7 @@ impl WorkflowExecutor {
             source,
             input_schema: ModelSchema::OpenObject,
             output_schema: ModelSchema::workflow(WorkflowType::String),
+            invocation_schema: None,
             bindings,
             max_calls: override_max_calls,
             max_calls_scope: ToolCallLimitScope::Agent {
@@ -583,10 +599,19 @@ impl WorkflowExecutor {
                 message: format!("tool `{}` uses MCP but no `mcp` server is declared", tool_declaration.name),
             })?
         };
-        let mcp_server_config = McpServerConfig::resolve_from_declaration(mcp_server_declaration, evaluation_context).map_err(|error| {
-            ExecutorError::Other {
-                message: error.to_string(),
-            }
+        let mcp_server_config = McpServerConfig::resolve_from_declaration_with_endpoint_validator(
+            mcp_server_declaration,
+            evaluation_context,
+            |server_name, endpoint| self.mcp_pool.validate_endpoint(server_name, endpoint),
+        )
+        .map_err(|error| {
+            ExecutorError::mcp_with_source(
+                None,
+                Some(mcp_server_declaration.name.clone()),
+                Some(tool_declaration.name.clone()),
+                error.public_message(),
+                error,
+            )
         })?;
 
         Ok(ModelToolSource::Mcp {
@@ -762,6 +787,16 @@ impl ExpressionMcpExecutionPlanCollectorExt for Expression {
 }
 
 trait TypedToolRuntimeExt {
+    fn runtime_model_input_schema(&self, bindings: Value) -> ModelSchema;
+
+    fn runtime_model_output_schema(&self) -> ModelSchema;
+
+    fn runtime_invocation_schema(&self) -> Option<ModelSchema>;
+
+    fn validate_discovered_mcp_input(&self, value: &Value) -> Result<(), String>;
+
+    fn validate_discovered_mcp_output(&self, value: &Value) -> Result<(), String>;
+
     fn resolve_bindings(
         &self,
         override_binding_fields: &[ObjectField],
@@ -770,6 +805,68 @@ trait TypedToolRuntimeExt {
 }
 
 impl TypedToolRuntimeExt for TypedToolIr {
+    fn runtime_model_input_schema(&self, bindings: Value) -> ModelSchema {
+        if let Some(mcp_schema) = self
+            .declaration
+            .mcp_schema
+            .as_ref()
+            .filter(|mcp_schema| mcp_schema.uses_discovered_input)
+        {
+            return ModelSchema::model_tool_json_input(mcp_schema.input.clone(), bindings);
+        }
+
+        ModelSchema::model_tool_input(self.input_type.clone(), bindings)
+    }
+
+    fn runtime_model_output_schema(&self) -> ModelSchema {
+        if let Some(output_schema) = self
+            .declaration
+            .mcp_schema
+            .as_ref()
+            .filter(|mcp_schema| mcp_schema.uses_discovered_output)
+            .and_then(|mcp_schema| mcp_schema.output.clone())
+        {
+            return ModelSchema::json(output_schema);
+        }
+
+        ModelSchema::workflow(self.output_type.clone())
+    }
+
+    fn runtime_invocation_schema(&self) -> Option<ModelSchema> {
+        self.declaration
+            .mcp_schema
+            .as_ref()
+            .filter(|mcp_schema| mcp_schema.uses_discovered_input)
+            .map(|mcp_schema| ModelSchema::json(mcp_schema.input.clone()))
+    }
+
+    fn validate_discovered_mcp_input(&self, value: &Value) -> Result<(), String> {
+        let Some(mcp_schema) = self
+            .declaration
+            .mcp_schema
+            .as_ref()
+            .filter(|mcp_schema| mcp_schema.uses_discovered_input)
+        else {
+            return Ok(());
+        };
+
+        validate_value_against_json_schema(value, &mcp_schema.input)
+    }
+
+    fn validate_discovered_mcp_output(&self, value: &Value) -> Result<(), String> {
+        let Some(output_schema) = self
+            .declaration
+            .mcp_schema
+            .as_ref()
+            .filter(|mcp_schema| mcp_schema.uses_discovered_output)
+            .and_then(|mcp_schema| mcp_schema.output.as_ref())
+        else {
+            return Ok(());
+        };
+
+        validate_value_against_json_schema(value, output_schema)
+    }
+
     fn resolve_bindings(
         &self,
         override_binding_fields: &[ObjectField],

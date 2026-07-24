@@ -1,57 +1,96 @@
 ---
-title: Variables and References
-description: Reference input, secrets, agents, tools, resources, prompts, dynamic values, and loop variables.
+title: Variables and references
+description: Understand runtime roots, type roots, loop bindings, and agent-local dynamic scope.
 ---
 
-References use dot paths.
-
-```wire
-input.project_id
-secrets.api_key
-agent.summarize.summary
-dynamic.context
-schema.shared.status
-```
-
-## Root namespaces
+## Runtime roots
 
 | Root | Meaning |
 | --- | --- |
-| `input` | Values from the request body. |
-| `secrets` | Sensitive values from the request body. |
-| `agent` | Structured outputs from agents. |
-| `dynamic` | Values computed by dynamic blocks. |
-| `tool` | Imported MCP tools. |
-| `resource` | Imported MCP resources. |
-| `prompt` | Imported MCP prompts. |
-| `schema` | Schema declarations and nested reusable fields. |
-| `model` | Named model profiles. |
+| `input` | Caller-supplied public values. |
+| `secrets` | Caller-supplied sensitive values. |
+| `agent` | Completed agent output objects. |
+| `dynamic` | Global fields and the current agent's local dynamic fields. |
+| `tool` | Imported tool references. |
+| `resource` | Imported resource references. |
+| `prompt` | Imported prompt references. |
+| `model` | Named model profiles in model/context usage. |
 
-## Loop variables
-
-Loop variables are available only inside the looped agent.
+`schema` is a type namespace, not a runtime value root:
 
 ```wire
-agent summarize_each for task in input.tasks {
+schema task {
+    id: number
+}
+
+input {
+    task: schema.task
+}
+```
+
+## Nested access
+
+```wire
+input.project.id
+agent.research.result.items
+```
+
+Each path is checked against its known type. Array fields require pluck or a loop before item fields can be accessed.
+
+For a union, required field access is valid only when every reachable non-null member provides that field with a compatible type. Optional access (`?.`) does not make an invalid field path valid; it adds `null` only after the field access is valid across the union.
+
+## Loop bindings
+
+```wire
+agent analyze for { id, title } in input.tasks {
     model: model.fast
-    instruction: "Summarize task {{ task.title }}."
+    instruction: "Analyze {{ id }}: {{ title }}."
 
     output {
-        title: string
+        task_id: number
         summary: string
     }
 }
 ```
 
-Object-shaped items may be destructured in the loop header.
+`id` and `title` exist only inside that agent iteration.
+
+## Agent-local dynamic scope
 
 ```wire
-agent summarize_each for { a, b } in input.something {
+agent analyze for task in input.tasks {
     model: model.fast
-    instruction: "Summarize A={{ a }} and B={{ b }}."
+
+    dynamic {
+        label: task.title ?? "untitled"
+    }
+
+    instruction: "Analyze {{ dynamic.label }}."
 
     output {
         summary: string
     }
 }
 ```
+
+The local field can use loop bindings and scoped tool calls. Return any value needed by later workflow nodes through the agent output.
+
+## Reserved binding names
+
+The runtime reference namespaces `agent`, `dynamic`, `input`, `model`, `secrets`, `tool`, `resource`, and `prompt` cannot be rebound. Each is rejected as:
+
+- a direct `for` loop binding;
+- any name inside a destructuring loop binding;
+- a field name in a global or agent-local `dynamic` block.
+
+The parse diagnostic points at the local name and explains that it would resolve to the built-in namespace. Rename the binding/field instead of trying to shadow a reference root.
+
+## Interpolation
+
+References inside strings use double braces:
+
+```wire
+instruction: "Summarize {{ input.topic }} from {{ agent.research.findings }}."
+```
+
+A bare identifier is valid only when introduced by local syntax such as a loop binding. Dynamic fields always use `dynamic.name`; `task_list.items` is not shorthand for `dynamic.task_list.items`.

@@ -9,7 +9,7 @@
   },
   "favicon": "/favicon.svg",
   "colors": {
-    "primary": "#FF7F00",
+    "primary": "#8A3E00",
     "light": "#FF9A33",
     "dark": "#E06600"
   },
@@ -42,6 +42,105 @@
   "navigation": {
     "tabs": [
       {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "index",
+              "introduction",
+              "installation",
+              "quickstart",
+              "cli",
+              "playground",
+              "editor-setup",
+              "troubleshooting"
+            ]
+          },
+          {
+            "group": "Build Workflows",
+            "pages": [
+              "core-concepts/overview",
+              "core-concepts/workflows",
+              "core-concepts/providers",
+              "core-concepts/agents",
+              "core-concepts/schemas",
+              "core-concepts/dependencies",
+              "guides/building-workflows",
+              "guides/best-practices",
+              "guides/authoring-conventions"
+            ]
+          },
+          {
+            "group": "DSL Reference",
+            "pages": [
+              "syntax/overview",
+              "syntax/data-types",
+              "syntax/type-annotations",
+              "syntax/variables",
+              "syntax/expressions",
+              "syntax/operators",
+              "syntax/control-flow",
+              "syntax/string-interpolation",
+              "syntax/comments"
+            ]
+          },
+          {
+            "group": "MCP and Tools",
+            "pages": [
+              "mcp/overview",
+              "mcp/mcp-servers",
+              "mcp/tools",
+              "mcp/resources",
+              "mcp/prompts",
+              "mcp/batch-imports",
+              "mcp/lockfiles"
+            ]
+          },
+          {
+            "group": "Runtime and API",
+            "pages": [
+              "api-reference/executor-api",
+              "api-reference/streaming-events",
+              "api-reference/diagnostics",
+              "api-reference/lsp",
+              "api-reference/rust-api",
+              "advanced/parallel-execution",
+              "advanced/context-sharing",
+              "advanced/caching",
+              "advanced/tool-calling",
+              "advanced/error-handling"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/providers",
+              "integrations/openai",
+              "integrations/laravel"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Examples",
+        "groups": [
+          {
+            "group": "Progressive Examples",
+            "pages": [
+              "examples/basic-agent",
+              "examples/structured-output",
+              "examples/multi-agent",
+              "examples/parallel-processing",
+              "examples/context-management",
+              "examples/file-directive",
+              "examples/mcp-tools",
+              "examples/nested-output"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "Why Superwire",
         "groups": [
           {
@@ -65,101 +164,6 @@
               "why-superwire/use-cases",
               "why-superwire/comparison",
               "why-superwire/adoption-checklist"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "Documentation",
-        "groups": [
-          {
-            "group": "Get Started",
-            "pages": [
-              "introduction",
-              "quickstart",
-              "installation"
-            ]
-          },
-          {
-            "group": "Core Concepts",
-            "pages": [
-              "core-concepts/overview",
-              "core-concepts/workflows",
-              "core-concepts/providers",
-              "core-concepts/agents",
-              "core-concepts/schemas",
-              "core-concepts/dependencies"
-            ]
-          },
-          {
-            "group": "DSL Reference",
-            "pages": [
-              "syntax/overview",
-              "syntax/data-types",
-              "syntax/type-annotations",
-              "syntax/variables",
-              "syntax/expressions",
-              "syntax/operators",
-              "syntax/control-flow",
-              "syntax/string-interpolation",
-              "syntax/comments"
-            ]
-          },
-          {
-            "group": "MCP & Tools",
-            "pages": [
-              "mcp/overview",
-              "mcp/mcp-servers",
-              "mcp/tools",
-              "mcp/resources",
-              "mcp/prompts",
-              "mcp/batch-imports"
-            ]
-          },
-          {
-            "group": "Guides",
-            "pages": [
-              "guides/building-workflows",
-              "guides/best-practices",
-              "guides/authoring-conventions"
-            ]
-          },
-          {
-            "group": "Runtime",
-            "pages": [
-              "api-reference/executor-api",
-              "api-reference/lsp",
-              "api-reference/diagnostics",
-              "advanced/parallel-execution",
-              "advanced/context-sharing",
-              "advanced/caching",
-              "advanced/tool-calling",
-              "advanced/error-handling"
-            ]
-          },
-          {
-            "group": "Integrations",
-            "pages": [
-              "integrations/openai",
-              "integrations/laravel"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "Examples",
-        "groups": [
-          {
-            "group": "Examples",
-            "pages": [
-              "examples/basic-agent",
-              "examples/structured-output",
-              "examples/multi-agent",
-              "examples/parallel-processing",
-              "examples/context-management",
-              "examples/file-directive",
-              "examples/mcp-tools",
-              "examples/nested-output"
             ]
           }
         ]

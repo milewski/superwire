@@ -1,46 +1,16 @@
 ---
-title: Multi-Agent Workflow
-description: Chain agents through structured references.
+title: Multi-agent workflow
+description: Chain typed agents through an explicit structured reference.
 ---
 
-```wire
-input {
-    topic: string
-}
+import ChainWorkflow from "/examples/wire/chain.mdx";
 
-secrets {
-    api_key: string
-}
+<ChainWorkflow />
 
-provider llm from openai {
-    endpoint: "https://api.openai.com/v1"
-    api_key: secrets.api_key
-}
+`agent.summarize` references `agent.research.facts`, so the execution graph waits for research before summary. The final object deliberately returns both the intermediate facts and the derived summary.
 
-model fast from llm {
-    id: "gpt-4.1-mini"
-}
-
-agent research {
-    model: model.fast
-    instruction: "List important facts about {{ input.topic }}."
-
-    output {
-        facts: [string]
-    }
-}
-
-agent write_summary {
-    model: model.fast
-    instruction: "Write a summary using these facts: {{ agent.research.facts }}."
-
-    output {
-        summary: string
-    }
-}
-
-output {
-    facts: agent.research.facts
-    summary: agent.write_summary.summary
-}
+```text
+research -> summarize -> output
 ```
+
+Use structured references when a later step needs values. Use [context continuation](/examples/context-management) only when it needs the earlier conversation history.

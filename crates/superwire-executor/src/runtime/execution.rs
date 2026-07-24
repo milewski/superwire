@@ -50,16 +50,28 @@ impl WorkflowExecutor {
             input: &input,
             secrets: &secrets,
         })?;
-        let mut runtime_state = RuntimeState::new(runtime_configuration.input_values, runtime_configuration.secret_values);
+        let runtime_state = RuntimeState::new(runtime_configuration.input_values, runtime_configuration.secret_values);
         let tool_call_tracker = ToolCallTracker::default();
         let runtime_concurrency_limiter = RuntimeConcurrencyLimiter::new(max_concurrency);
 
         log::info!("executing workflow runtime");
 
-        self.execute_workflow_dynamic_blocks(&mut runtime_state, event_sender.as_ref(), &tool_call_tracker)?;
+        let blocking_executor = self.clone();
+        let blocking_event_sender = event_sender.clone();
+        let blocking_tool_call_tracker = tool_call_tracker.clone();
+        let (mut runtime_state, import_context) = tokio::task::spawn_blocking(move || {
+            let mut runtime_state = runtime_state;
+            blocking_executor.execute_workflow_dynamic_blocks(
+                &mut runtime_state,
+                blocking_event_sender.as_ref(),
+                &blocking_tool_call_tracker,
+            )?;
+            let import_context = blocking_executor.resolve_mcp_import_context(&runtime_state.evaluation_context())?;
 
-        let import_context = self.resolve_mcp_import_context(&runtime_state.evaluation_context())?;
-
+            Ok::<_, ExecutorError>((runtime_state, import_context))
+        })
+        .await
+        .map_err(|join_error| ExecutorError::internal_panic(format!("MCP runtime preparation task failed: {join_error}")))??;
         log::debug!(
             "workflow-level import context resolved: {}",
             if import_context.is_empty() { "empty" } else { "populated" }

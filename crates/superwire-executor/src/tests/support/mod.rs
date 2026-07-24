@@ -9,6 +9,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use superwire_mcp::{HttpMcpClientFactory, McpNetworkPolicy};
 use superwire_protocol::api::{ExecutionOptions, ExecutionRequest};
 
 // ---------------------------------------------------------------------------
@@ -42,6 +43,16 @@ impl ModelProvider for TestModelProvider {
             output,
             context: serde_json::json!({ "agent": request.agent_name }),
         })
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PanickingModelProvider;
+
+#[async_trait]
+impl ModelProvider for PanickingModelProvider {
+    async fn generate(&self, _model_request: ModelRequest) -> Result<ModelResponse, ModelProviderError> {
+        panic!("scripted model provider panic");
     }
 }
 
@@ -165,10 +176,7 @@ impl FailingModelProvider {
 #[async_trait]
 impl ModelProvider for FailingModelProvider {
     async fn generate(&self, _request: ModelRequest) -> Result<ModelResponse, ModelProviderError> {
-        Err(ModelProviderError::Model {
-            agent_name: "failing-provider".to_string(),
-            message: self.message.clone(),
-        })
+        Err(ModelProviderError::model("failing-provider".to_string(), self.message.clone()))
     }
 }
 
@@ -199,10 +207,10 @@ impl ModelProvider for RetryModelProvider {
         let attempt = self.call_count.fetch_add(1, Ordering::SeqCst);
 
         if attempt < self.failures_before_success {
-            return Err(ModelProviderError::Model {
-                agent_name: request.agent_name,
-                message: format!("{} (attempt {})", self.failure_message, attempt + 1),
-            });
+            return Err(ModelProviderError::model(
+                request.agent_name,
+                format!("{} (attempt {})", self.failure_message, attempt + 1),
+            ));
         }
 
         Ok(ModelResponse {
@@ -285,6 +293,11 @@ impl Drop for ActiveRequestGuard {
 
 pub fn service(outputs: Vec<Value>) -> ExecutorService<TestModelProvider> {
     ExecutorService::new(TestModelProvider::new(outputs))
+}
+
+pub fn service_with_trusted_mcp<ModelProviderType>(model_provider: ModelProviderType) -> ExecutorService<ModelProviderType> {
+    ExecutorService::new(model_provider)
+        .with_mcp_client_factory(Arc::new(HttpMcpClientFactory::for_network_policy(McpNetworkPolicy::Trusted)))
 }
 
 pub fn request(fixture: &str) -> ExecutionRequest {

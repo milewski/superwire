@@ -6,6 +6,7 @@ edition = "2021"
 [[bin]]
 name = "superwire-executor"
 path = "src/main.rs"
+doc = false
 
 [lints]
 workspace = true
@@ -20,6 +21,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 superwire-executor = { path = "../superwire-executor" }
 superwire-lsp = { path = "../superwire-lsp" }
+superwire-mcp = { path = "../superwire-mcp" }
 superwire-provider-cersei = { path = "../superwire-provider-cersei" }
 superwire-protocol = { path = "../superwire-protocol" }
 tokio = { workspace = true }

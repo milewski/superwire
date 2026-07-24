@@ -8,7 +8,7 @@ use std::time::Duration;
 use superwire_mcp::McpClientPool;
 use superwire_model::{ModelFileAttachment, ModelProvider, ModelRequest, ModelSchema, ModelToolDefinition, ToolCallTracker};
 use superwire_protocol::event::{ExecutorEvent, ExecutorEventKind};
-use superwire_provider_cersei::CerseiModelProvider;
+use superwire_provider_cersei::{CerseiModelProvider, ProviderNetworkPolicy};
 use superwire_semantic::support::provider::{ProviderConfig, ProviderDriver};
 use superwire_types::ModelWireApi;
 use tokio::sync::mpsc;
@@ -19,7 +19,8 @@ async fn uploads_file_injects_file_id_message_and_deletes_file() {
     let (event_sender, mut event_receiver) = mpsc::channel(8);
     let request = model_request(server.endpoint.clone(), Some(event_sender));
 
-    let response = CerseiModelProvider.generate(request).await.expect("provider should complete");
+    let model_provider = CerseiModelProvider::for_network_policy(ProviderNetworkPolicy::Trusted);
+    let response = model_provider.generate(request).await.expect("provider should complete");
 
     assert_eq!(response.output, json!({ "value": "done" }));
 
@@ -46,15 +47,24 @@ async fn uploads_file_injects_file_id_message_and_deletes_file() {
         "file-only chat completion should not force tool calling"
     );
 
-    let created_event = event_receiver.recv().await.expect("file created event should be sent");
-    let deleted_event = event_receiver.recv().await.expect("file deleted event should be sent");
+    let mut events = Vec::new();
+
+    while let Some(event) = event_receiver.recv().await {
+        events.push(event);
+    }
+
+    let created_event = events
+        .iter()
+        .find(|event| event.kind == ExecutorEventKind::AgentFileCreated)
+        .expect("file created event should be sent");
+    let deleted_event = events
+        .iter()
+        .find(|event| event.kind == ExecutorEventKind::AgentFileDeleted)
+        .expect("file deleted event should be sent");
 
     assert_eq!(created_event.kind, ExecutorEventKind::AgentFileCreated);
     assert_eq!(created_event.agent_name.as_deref(), Some("reviewer"));
-    assert_eq!(
-        created_event.data.as_ref().and_then(|data| data["file_id"].as_str()),
-        Some("file-fe-test")
-    );
+    assert!(created_event.data.as_ref().is_some_and(|data| data.get("file_id").is_none()));
     assert_eq!(
         created_event.data.as_ref().and_then(|data| data["filename"].as_str()),
         Some("example.json")
@@ -67,9 +77,14 @@ async fn uploads_file_injects_file_id_message_and_deletes_file() {
 
     assert_eq!(deleted_event.kind, ExecutorEventKind::AgentFileDeleted);
     assert_eq!(deleted_event.agent_name.as_deref(), Some("reviewer"));
+    assert!(deleted_event.data.as_ref().is_some_and(|data| data.get("file_id").is_none()));
     assert_eq!(
-        deleted_event.data.as_ref().and_then(|data| data["file_id"].as_str()),
-        Some("file-fe-test")
+        deleted_event.data.as_ref().and_then(|data| data["filename"].as_str()),
+        Some("example.json")
+    );
+    assert_eq!(
+        deleted_event.data.as_ref().and_then(|data| data["purpose"].as_str()),
+        Some("file-extract")
     );
 }
 
@@ -91,7 +106,8 @@ async fn bundles_multiple_file_attachments_into_one_uploaded_file() {
         },
     ];
 
-    let response = CerseiModelProvider.generate(request).await.expect("provider should complete");
+    let model_provider = CerseiModelProvider::for_network_policy(ProviderNetworkPolicy::Trusted);
+    let response = model_provider.generate(request).await.expect("provider should complete");
 
     assert_eq!(response.output, json!({ "value": "done" }));
 
@@ -126,7 +142,8 @@ async fn deletes_file_when_chat_completion_fails() {
     let mut request = model_request(server.endpoint.clone(), None);
     request.inference.insert("provider_max_retries".to_string(), json!(0));
 
-    let response = CerseiModelProvider.generate(request).await;
+    let model_provider = CerseiModelProvider::for_network_policy(ProviderNetworkPolicy::Trusted);
+    let response = model_provider.generate(request).await;
 
     assert!(response.is_err());
 
@@ -146,7 +163,8 @@ async fn deletes_file_when_chat_completion_fails() {
 async fn deletes_file_when_generation_is_cancelled() {
     let server = FileProviderServer::spawn(ChatResponseMode::Slow);
     let request = model_request(server.endpoint.clone(), None);
-    let generation_task = tokio::spawn(async move { CerseiModelProvider.generate(request).await });
+    let model_provider = CerseiModelProvider::for_network_policy(ProviderNetworkPolicy::Trusted);
+    let generation_task = tokio::spawn(async move { model_provider.generate(request).await });
 
     tokio::time::timeout(Duration::from_secs(1), async {
         while !server
@@ -158,7 +176,12 @@ async fn deletes_file_when_generation_is_cancelled() {
         }
     })
     .await
-    .expect("chat completion request should start before cancellation");
+    .unwrap_or_else(|error| {
+        panic!(
+            "chat completion request should start before cancellation: {error}; requests={:?}",
+            server.requests()
+        )
+    });
 
     generation_task.abort();
     let _ = generation_task.await;
@@ -225,7 +248,7 @@ impl ChatResponseMode {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct RecordedRequest {
     method: String,
     path: String,
@@ -331,7 +354,7 @@ fn http_error_response() -> String {
     let body_text = json!({ "error": { "message": "chat failed" } }).to_string();
 
     format!(
-        "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+        "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{}",
         body_text.len(),
         body_text
     )
@@ -341,7 +364,7 @@ fn http_json_response(body: Value) -> String {
     let body_text = body.to_string();
 
     format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{}",
         body_text.len(),
         body_text
     )
@@ -360,7 +383,7 @@ fn http_sse_response() -> String {
     let body_text = format!("data: {event}\n\ndata: [DONE]\n\n");
 
     format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{}",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{}",
         body_text.len(),
         body_text
     )

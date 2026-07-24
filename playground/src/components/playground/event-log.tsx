@@ -77,12 +77,13 @@ export default function EventLog({ events, eventGroupingMode, onEventGroupingMod
     <div className="events-log">
       <div className="events-log__toolbar">
         <span className="events-log__toolbar-label">Group by</span>
-        <div className="events-log__toolbar-toggle" role="tablist" aria-label="Event grouping mode">
+        <div className="events-log__toolbar-toggle" role="group" aria-label="Event grouping mode">
           <Button
             type="button"
             size="sm"
             variant={eventGroupingMode === EventGroupingMode.Chronological ? 'secondary' : 'ghost'}
             className="events-log__toolbar-toggle-button"
+            aria-pressed={eventGroupingMode === EventGroupingMode.Chronological}
             onClick={() => onEventGroupingModeChange(EventGroupingMode.Chronological)}
           >
             Chronological
@@ -92,6 +93,7 @@ export default function EventLog({ events, eventGroupingMode, onEventGroupingMod
             size="sm"
             variant={eventGroupingMode === EventGroupingMode.Agent ? 'secondary' : 'ghost'}
             className="events-log__toolbar-toggle-button"
+            aria-pressed={eventGroupingMode === EventGroupingMode.Agent}
             onClick={() => onEventGroupingModeChange(EventGroupingMode.Agent)}
           >
             By agent
@@ -107,8 +109,15 @@ export default function EventLog({ events, eventGroupingMode, onEventGroupingMod
             <span className="events-log__details-title">#{selectedEventRow.eventIndex + 1}</span>
             <Badge variant="outline" className={eventTone(selectedEventRow.event.kind)}>{selectedEventRow.event.kind}</Badge>
             {selectedEventRow.event.agent_name ? <Badge variant="secondary">{selectedEventRow.event.agent_name}</Badge> : null}
+            {selectedEventRow.event.diagnostic ? (
+              <>
+                <Badge variant="outline">{selectedEventRow.event.diagnostic.code}</Badge>
+                <Badge variant="outline">{selectedEventRow.event.diagnostic.stage}</Badge>
+                <Badge variant="outline">{selectedEventRow.event.diagnostic.retryability}</Badge>
+              </>
+            ) : null}
           </div>
-          <JsonCodeEditor value={formatEventData(selectedEventRow.event)} readOnly className="events-log__item-data" />
+          <JsonCodeEditor value={formatEventData(selectedEventRow.event)} readOnly ariaLabel="Selected server event payload" className="events-log__item-data" />
         </section>
       ) : null}
     </div>
@@ -189,7 +198,13 @@ function EventLogEvent({ row, selected, onSelect }: { row: EventLogEventRow; sel
   const eventDuration = formatEventDuration(row.event);
 
   return (
-    <button type="button" className="events-log__item events-log__item-trigger" data-selected={selected ? 'true' : 'false'} onClick={onSelect}>
+    <button
+      type="button"
+      className="events-log__item events-log__item-trigger"
+      data-selected={selected ? 'true' : 'false'}
+      aria-pressed={selected}
+      onClick={onSelect}
+    >
       <span className="events-log__item-meta">
         <span className="events-log__item-index">#{row.eventIndex + 1}</span>
         <Badge variant="outline" className={eventTone(row.event.kind)}>{row.event.kind}</Badge>

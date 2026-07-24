@@ -1,6 +1,5 @@
 use lsp_types::{Position, Range};
 
-use super::position::source_span_to_range;
 use super::DocumentState;
 
 impl DocumentState {
@@ -10,9 +9,9 @@ impl DocumentState {
         let definition_span = self.semantic_snapshot.semantic_index.definition_span_for_symbol_at_cursor(
             symbol_token_at_position.symbol_token.as_str(),
             symbol_token_at_position.cursor_character_offset,
-            position,
+            self.position_context(position)?,
         )?;
 
-        Some(source_span_to_range(&self.text, definition_span))
+        Some(self.range_for_source_span(definition_span))
     }
 }

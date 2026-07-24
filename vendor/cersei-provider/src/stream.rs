@@ -35,7 +35,9 @@ impl StreamAccumulator {
         }
     }
 
-    pub fn process_event(&mut self, event: StreamEvent) {
+    pub fn process_event(&mut self, event: StreamEvent) -> super::Result<()> {
+        self.validate_event_index(&event)?;
+
         match event {
             StreamEvent::MessageStart { id, model } => {
                 self.message_id = Some(id);
@@ -56,13 +58,21 @@ impl StreamAccumulator {
                 }
             }
             StreamEvent::TextDelta { index, text } => {
-                self.partial_text.entry(index).or_default().push_str(&text);
+                Self::append_bounded(self.partial_text.entry(index).or_default(), &text, "provider text output")?;
             }
             StreamEvent::InputJsonDelta { index, partial_json } => {
-                self.partial_json.entry(index).or_default().push_str(&partial_json);
+                Self::append_bounded(
+                    self.partial_json.entry(index).or_default(),
+                    &partial_json,
+                    "provider tool arguments",
+                )?;
             }
             StreamEvent::ThinkingDelta { index, thinking } => {
-                self.partial_thinking.entry(index).or_default().push_str(&thinking);
+                Self::append_bounded(
+                    self.partial_thinking.entry(index).or_default(),
+                    &thinking,
+                    "provider thinking output",
+                )?;
             }
             StreamEvent::ContentBlockStop { index } => {
                 let block_type = self.block_types.get(&index).cloned().unwrap_or_default();
@@ -105,6 +115,41 @@ impl StreamAccumulator {
             StreamEvent::Ping => {}
             StreamEvent::Error { .. } => {}
         }
+        Ok(())
+    }
+
+    fn validate_event_index(&self, event: &StreamEvent) -> super::Result<()> {
+        let event_index = match event {
+            StreamEvent::ContentBlockStart { index, .. }
+            | StreamEvent::TextDelta { index, .. }
+            | StreamEvent::InputJsonDelta { index, .. }
+            | StreamEvent::ThinkingDelta { index, .. }
+            | StreamEvent::ContentBlockStop { index } => Some(*index),
+            _ => None,
+        };
+
+        if event_index.is_some_and(|index| index >= super::MAX_PROVIDER_CONTENT_BLOCKS) {
+            return Err(CerseiError::Provider(
+                "provider content block index exceeded the configured limit".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn append_bounded(target: &mut String, value: &str, field_name: &str) -> super::Result<()> {
+        let resulting_length = target
+            .len()
+            .checked_add(value.len())
+            .ok_or_else(|| CerseiError::Provider(format!("{field_name} exceeded the configured limit")))?;
+
+        if resulting_length > super::MAX_PROVIDER_TOOL_ARGUMENT_BYTES {
+            return Err(CerseiError::Provider(format!("{field_name} exceeded the configured limit")));
+        }
+
+        target.push_str(value);
+
+        Ok(())
     }
 
     pub fn into_response(self) -> Result<super::CompletionResponse> {

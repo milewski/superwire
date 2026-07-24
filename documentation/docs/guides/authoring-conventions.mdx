@@ -1,41 +1,70 @@
 ---
-title: Authoring Conventions
-description: Style conventions for readable .wire files.
+title: Authoring conventions
+description: Format readable workflow names, declarations, comments, and examples.
 ---
 
-## Use snake_case names
+## Use lowercase snake_case
 
 ```wire
-schema task_summary { ... }
-agent summarize_task { ... }
-model fast from llm { ... }
-```
+schema task_summary {
+    summary: string
+}
 
-## Prefer intent-based model names
-
-```wire
 model fast from llm {
-    id: "gpt-4.1-mini"
+    id: "model-id"
 }
 
-model smart from llm {
-    id: "gpt-4.1"
+agent summarize_task {
+    model: model.fast
+    instruction: "Summarize {{ input.task_id }}."
+
+    output {
+        summary: string
+    }
 }
 ```
 
-The workflow can express why an agent uses a model without repeating provider-specific IDs everywhere.
+Providers, models, schemas, agents, capabilities, and fields use descriptive lowercase snake_case names. Avoid names that only encode a vendor/model version when the profile's role is clearer.
 
-## Keep examples minimal
+## Order declarations for readers
 
-Do not introduce multiple models, tools, prompts, resources, or MCP servers until the page is specifically explaining those features.
+A practical order is:
 
-## Use regular comments and doc comments
+1. `input` and `secrets`;
+2. providers and models;
+3. schemas;
+4. MCP servers/imports;
+5. global dynamic values;
+6. agents;
+7. final output.
+
+The executor derives dependency order from references; source order is for maintainers.
+
+## Format with the CLI
+
+```bash
+superwire-cli fmt workflow.wire
+superwire-cli workflow check workflow.wire
+```
+
+Do not hand-align blocks against the canonical formatter.
+
+## Use comments intentionally
 
 ```wire
-// This is a regular comment.
+// Runtime credentials are supplied by the caller.
+secrets {
+    api_key: string
+}
 
 schema release_note {
-    /// Field description preserved for schema-aware tooling.
+    /// Short title displayed to the user.
     title: string
 }
 ```
+
+`//` explains source. `///` describes a typed field for schema-aware tooling/model output.
+
+## Keep complete examples checked
+
+Documentation pages import complete workflows from `examples/wire` snippets. Small syntax-reference blocks may show a fragment, but they should contain real syntax and never placeholder ellipses inside a `wire` fence.

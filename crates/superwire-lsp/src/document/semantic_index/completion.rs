@@ -1,13 +1,13 @@
-use lsp_types::{CompletionItemKind, Position};
+use lsp_types::CompletionItemKind;
 use superwire_dsl::{
-    BuiltinFunctionName, DeclarationKeyword, ExpressionKeyword, ImportKeyword, McpCallOperation, ReferenceKeyword,
-    SingletonDeclarationKind, ToolCallKeyword, ToolPropertyName,
+    BuiltinFunctionName, DeclarationKeyword, ExpressionKeyword, ImportKeyword, McpCallOperation, ReferenceKeyword, ToolCallKeyword,
+    ToolPropertyName,
 };
 use superwire_semantic::ProviderDriver;
 
 use super::super::completion_context::{ModelCallCompletionContext, ValueCompletionContext};
 use super::super::hover::builtin_symbol_suggestions;
-use super::super::position::source_span_contains_position;
+use super::super::position::DocumentPosition;
 use super::super::text_utils::trailing_identifier;
 use super::super::{all_provider_property_names, CompletionSuggestion, RenderTypeExpression};
 use super::types::SemanticIndex;
@@ -264,7 +264,7 @@ impl SemanticIndex {
             .collect()
     }
 
-    pub fn prompt_interpolation_root_suggestions(&self, root_prefix: &str, position: Position) -> Vec<CompletionSuggestion> {
+    pub fn prompt_interpolation_root_suggestions(&self, root_prefix: &str, position: DocumentPosition<'_>) -> Vec<CompletionSuggestion> {
         let mut completion_suggestions = self.prompt_value_root_suggestions(root_prefix);
         completion_suggestions.extend(self.context_expression_suggestions(root_prefix));
 
@@ -371,7 +371,7 @@ impl SemanticIndex {
         &line_prefix[..indentation_length]
     }
 
-    pub fn interpolation_root_suggestions(&self, root_prefix: &str, position: Position) -> Vec<CompletionSuggestion> {
+    pub fn interpolation_root_suggestions(&self, root_prefix: &str, position: DocumentPosition<'_>) -> Vec<CompletionSuggestion> {
         let mut completion_suggestions = [
             ReferenceKeyword::Agent,
             ReferenceKeyword::Dynamic,
@@ -491,6 +491,22 @@ impl SemanticIndex {
         completion_suggestions
     }
 
+    pub fn agent_uses_root_suggestions(&self, value_prefix: &str) -> Vec<CompletionSuggestion> {
+        let tool_keyword = ReferenceKeyword::Tool.as_str();
+
+        if !tool_keyword.starts_with(value_prefix) {
+            return Vec::new();
+        }
+
+        vec![CompletionSuggestion {
+            label: tool_keyword.to_string(),
+            kind: CompletionItemKind::MODULE,
+            detail: "Tool reference root".to_string(),
+            documentation: "Reference a declared tool from the agent uses list.".to_string(),
+            insert_text: format!("{tool_keyword}."),
+        }]
+    }
+
     pub fn tool_reference_suggestions(&self, tool_prefix: &str, existing_tool_binding_block: bool) -> Vec<CompletionSuggestion> {
         self.tool_names
             .iter()
@@ -575,7 +591,11 @@ impl SemanticIndex {
         completion_suggestions
     }
 
-    pub fn provider_driver_value_suggestions(&self, position: Position, line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
+    pub fn provider_driver_value_suggestions(
+        &self,
+        position: DocumentPosition<'_>,
+        line_prefix: &str,
+    ) -> Option<Vec<CompletionSuggestion>> {
         self.provider_name_at_position(position)?;
 
         let trimmed_line_prefix = line_prefix.trim_start();
@@ -673,7 +693,7 @@ impl SemanticIndex {
         Some(completion_suggestions)
     }
 
-    pub fn provider_property_suggestions(&self, position: Position, line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
+    pub fn provider_property_suggestions(&self, position: DocumentPosition<'_>, line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
         let provider_name = self.provider_name_at_position(position)?;
 
         if line_prefix.trim_start().contains(':') {
@@ -715,7 +735,7 @@ impl SemanticIndex {
         all_provider_property_names()
     }
 
-    pub fn is_type_position(&self, position: Position, line_prefix: &str) -> bool {
+    pub fn is_type_position(&self, position: DocumentPosition<'_>, line_prefix: &str) -> bool {
         let trimmed_line_prefix = line_prefix.trim_end();
         let schema_namespace = format!("{}.", DeclarationKeyword::Schema.as_str());
 
@@ -737,7 +757,7 @@ impl SemanticIndex {
             .output_locations
             .iter()
             .copied()
-            .any(|output_span| source_span_contains_position(output_span, position));
+            .any(|output_span| position.contains(output_span));
 
         if inside_output {
             return false;
@@ -747,7 +767,7 @@ impl SemanticIndex {
             .typed_declaration_locations
             .iter()
             .copied()
-            .any(|typed_declaration_span| source_span_contains_position(typed_declaration_span, position));
+            .any(|typed_declaration_span| position.contains(typed_declaration_span));
 
         if inside_typed_declaration {
             return true;
@@ -756,11 +776,11 @@ impl SemanticIndex {
         false
     }
 
-    pub fn is_inside_agent_output_declaration(&self, position: Position) -> bool {
+    pub fn is_inside_agent_output_declaration(&self, position: DocumentPosition<'_>) -> bool {
         self.agent_output_locations
             .iter()
             .copied()
-            .any(|typed_declaration_span| source_span_contains_position(typed_declaration_span, position))
+            .any(|typed_declaration_span| position.contains(typed_declaration_span))
     }
 
     pub fn root_declaration_suggestions(&self, line_prefix: &str) -> Vec<CompletionSuggestion> {
@@ -786,7 +806,7 @@ impl SemanticIndex {
                 detail: "MCP tool batch import".to_string(),
                 documentation: "Batch imports MCP tools from a server and applies shared bindings.".to_string(),
                 insert_text: format!(
-                    "{import_keyword} {mcp_keyword}.$1.{tool_keyword} {{\n    {bindings_keyword} {{\n        $2\n    }}\n\n    {tool_keyword} $3\n}}"
+                    "{import_keyword} {mcp_keyword}.${{1:server}}.{tool_keyword} {{\n    {bindings_keyword} {{\n        ${{2:binding: \"value\"}}\n    }}\n\n    {tool_keyword} ${{3:tool_name}}\n}}"
                 ),
             });
 
@@ -796,7 +816,7 @@ impl SemanticIndex {
                 detail: "MCP resource batch import".to_string(),
                 documentation: "Batch imports MCP resources from a server and applies shared bindings.".to_string(),
                 insert_text: format!(
-                    "{import_keyword} {mcp_keyword}.$1.{resource_keyword} {{\n    {bindings_keyword} {{\n        $2\n    }}\n\n    {resource_keyword} $3\n}}"
+                    "{import_keyword} {mcp_keyword}.${{1:server}}.{resource_keyword} {{\n    {bindings_keyword} {{\n        ${{2:binding: \"value\"}}\n    }}\n\n    {resource_keyword} ${{3:resource_name}}\n}}"
                 ),
             });
 
@@ -806,7 +826,7 @@ impl SemanticIndex {
                 detail: "MCP prompt batch import".to_string(),
                 documentation: "Batch imports MCP prompts from a server and applies shared bindings.".to_string(),
                 insert_text: format!(
-                    "{import_keyword} {mcp_keyword}.$1.{prompt_keyword} {{\n    {bindings_keyword} {{\n        $2\n    }}\n\n    {prompt_keyword} $3\n}}"
+                    "{import_keyword} {mcp_keyword}.${{1:server}}.{prompt_keyword} {{\n    {bindings_keyword} {{\n        ${{2:binding: \"value\"}}\n    }}\n\n    {prompt_keyword} ${{3:prompt_name}}\n}}"
                 ),
             });
 
@@ -816,7 +836,7 @@ impl SemanticIndex {
                 detail: "MCP batch import".to_string(),
                 documentation: "Batch imports MCP tools, resources, and prompts from a server with shared bindings.".to_string(),
                 insert_text: format!(
-                    "{import_keyword} {mcp_keyword}.$1 {{\n    {bindings_keyword} {{\n        $2\n    }}\n\n    {resource_keyword} $3\n    {prompt_keyword} $4\n    {tool_keyword} $5\n}}"
+                    "{import_keyword} {mcp_keyword}.${{1:server}} {{\n    {bindings_keyword} {{\n        ${{2:binding: \"value\"}}\n    }}\n\n    {resource_keyword} ${{3:resource_name}}\n    {prompt_keyword} ${{4:prompt_name}}\n    {tool_keyword} ${{5:tool_name}}\n}}"
                 ),
             });
         }
@@ -826,79 +846,38 @@ impl SemanticIndex {
         completion_suggestions
     }
 
-    pub fn is_output_position(&self, position: Position) -> bool {
+    pub fn is_output_position(&self, position: DocumentPosition<'_>) -> bool {
         self.output_locations
             .iter()
             .copied()
-            .any(|output_span| source_span_contains_position(output_span, position))
+            .any(|output_span| position.contains(output_span))
     }
 
     fn should_suggest_root_declaration_label(&self, declaration_label: &str) -> bool {
-        if declaration_label == DeclarationKeyword::Provider.as_str() {
-            return true;
+        match DeclarationKeyword::from_identifier(declaration_label) {
+            Some(
+                DeclarationKeyword::Provider
+                | DeclarationKeyword::Model
+                | DeclarationKeyword::Mcp
+                | DeclarationKeyword::Schema
+                | DeclarationKeyword::Tool
+                | DeclarationKeyword::Resource
+                | DeclarationKeyword::Prompt
+                | DeclarationKeyword::Dynamic
+                | DeclarationKeyword::Agent,
+            ) => true,
+            Some(DeclarationKeyword::Input) => !self.has_input_declaration,
+            Some(DeclarationKeyword::Secrets) => !self.has_secrets_declaration,
+            Some(DeclarationKeyword::Output) => !self.has_output_declaration,
+            None => false,
         }
-
-        if declaration_label == DeclarationKeyword::Agent.as_str() {
-            return true;
-        }
-
-        if declaration_label == DeclarationKeyword::Schema.as_str() {
-            return true;
-        }
-
-        if declaration_label == DeclarationKeyword::Tool.as_str() {
-            return true;
-        }
-
-        if declaration_label == DeclarationKeyword::Resource.as_str() {
-            return true;
-        }
-
-        if declaration_label == DeclarationKeyword::Prompt.as_str() {
-            return true;
-        }
-
-        if declaration_label == DeclarationKeyword::Dynamic.as_str() {
-            return true;
-        }
-
-        if declaration_label == SingletonDeclarationKind::Input.as_str() {
-            return !self.has_input_declaration;
-        }
-
-        if declaration_label == SingletonDeclarationKind::Secrets.as_str() {
-            return !self.has_secrets_declaration;
-        }
-
-        if declaration_label == SingletonDeclarationKind::Output.as_str() {
-            return !self.has_output_declaration;
-        }
-
-        false
     }
 
-    pub fn default_suggestions(&self, include_builtin_function_suggestions: bool) -> Vec<CompletionSuggestion> {
-        let mut completion_suggestions = builtin_symbol_suggestions(include_builtin_function_suggestions);
-
-        completion_suggestions.extend(self.providers.keys().map(|provider_name| CompletionSuggestion {
-            label: provider_name.clone(),
-            kind: CompletionItemKind::FUNCTION,
-            detail: "Declared provider".to_string(),
-            documentation: "Provider call used in `model` properties.".to_string(),
-            insert_text: provider_name.clone(),
-        }));
-
-        completion_suggestions.extend(self.agent_names.iter().map(|agent_name| CompletionSuggestion {
-            label: agent_name.clone(),
-            kind: CompletionItemKind::VARIABLE,
-            detail: "Declared agent".to_string(),
-            documentation: "Agent declared in this document.".to_string(),
-            insert_text: agent_name.clone(),
-        }));
-
-        completion_suggestions.sort_by(|left_suggestion, right_suggestion| left_suggestion.label.cmp(&right_suggestion.label));
-
-        completion_suggestions
+    pub fn expression_builtin_suggestions(&self) -> Vec<CompletionSuggestion> {
+        builtin_symbol_suggestions(true)
+            .into_iter()
+            .filter(|completion_suggestion| completion_suggestion.kind == CompletionItemKind::FUNCTION)
+            .collect()
     }
 
     pub fn provider_reference_suggestions(&self, provider_prefix: &str) -> Vec<CompletionSuggestion> {
@@ -920,11 +899,11 @@ impl SemanticIndex {
         completion_suggestions
     }
 
-    pub fn is_root_declaration_position(&self, position: Position) -> bool {
+    pub fn is_root_declaration_position(&self, position: DocumentPosition<'_>) -> bool {
         if self
             .provider_locations
             .iter()
-            .any(|provider_location| source_span_contains_position(provider_location.span, position))
+            .any(|provider_location| position.contains(provider_location.span))
         {
             return false;
         }
@@ -932,7 +911,7 @@ impl SemanticIndex {
         if self
             .schema_locations
             .iter()
-            .any(|schema_location| source_span_contains_position(schema_location.span, position))
+            .any(|schema_location| position.contains(schema_location.span))
         {
             return false;
         }
@@ -940,7 +919,7 @@ impl SemanticIndex {
         if self
             .agent_locations
             .iter()
-            .any(|agent_location| source_span_contains_position(agent_location.span, position))
+            .any(|agent_location| position.contains(agent_location.span))
         {
             return false;
         }
@@ -948,7 +927,7 @@ impl SemanticIndex {
         if self
             .tool_locations
             .iter()
-            .any(|tool_location| source_span_contains_position(tool_location.span, position))
+            .any(|tool_location| position.contains(tool_location.span))
         {
             return false;
         }
@@ -957,7 +936,7 @@ impl SemanticIndex {
             .typed_declaration_locations
             .iter()
             .copied()
-            .any(|typed_declaration_span| source_span_contains_position(typed_declaration_span, position))
+            .any(|typed_declaration_span| position.contains(typed_declaration_span))
         {
             return false;
         }
@@ -966,7 +945,7 @@ impl SemanticIndex {
             .output_locations
             .iter()
             .copied()
-            .any(|output_span| source_span_contains_position(output_span, position))
+            .any(|output_span| position.contains(output_span))
         {
             return false;
         }
@@ -976,7 +955,7 @@ impl SemanticIndex {
 
     pub fn for_loop_destructuring_binding_suggestions(
         &self,
-        position: Position,
+        position: DocumentPosition<'_>,
         field_prefix: &str,
         existing_field_names: &[String],
     ) -> Vec<CompletionSuggestion> {

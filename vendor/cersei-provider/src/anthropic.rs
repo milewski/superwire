@@ -1,9 +1,12 @@
 //! Anthropic provider: Claude API client with streaming SSE support.
 
+use crate::openai::{
+    owned_completion_stream, send_stream_event, ProviderResponseExt, StreamEventSenderExt, MAX_PROVIDER_PARTIAL_LINE_BYTES,
+    MAX_PROVIDER_SSE_LINE_BYTES,
+};
 use crate::*;
 use cersei_types::*;
 use futures::StreamExt;
-use tokio::sync::mpsc;
 
 const ANTHROPIC_API_BASE: &str = "https://api.anthropic.com";
 const ANTHROPIC_API_VERSION: &str = "2023-06-01";
@@ -163,59 +166,223 @@ impl Provider for Anthropic {
             req_builder = req_builder.header(&name, &value);
         }
 
-        let (tx, rx) = mpsc::channel(256);
-
         let request = req_builder.json(&body).build().map_err(CerseiError::Http)?;
         let client = self.client.clone();
+        let completion_stream = owned_completion_stream(move |tx| async move {
+            let response_result = tokio::select! {
+                () = tx.closed() => return,
+                response_result = client.execute(request) => response_result,
+            };
 
-        // Spawn SSE consumer
-        tokio::spawn(async move {
-            match client.execute(request).await {
+            match response_result {
                 Ok(response) => {
                     if !response.status().is_success() {
-                        let status = response.status().as_u16();
-                        let body = response.text().await.unwrap_or_default();
-                        let _ = tx
-                            .send(StreamEvent::Error {
-                                message: format!("HTTP {}: {}", status, body),
-                            })
-                            .await;
+                        let Some(message) = response.bounded_error_message(&tx).await else {
+                            return;
+                        };
+
+                        send_stream_event!(tx, StreamEvent::Error { message });
+
                         return;
                     }
 
                     let mut stream = response.bytes_stream();
-                    let mut buffer = String::new();
+                    let mut buffer = Vec::new();
+                    let mut stream_bytes = 0_usize;
+                    let mut tool_argument_bytes = std::collections::HashMap::<usize, usize>::new();
+                    let mut saw_message_stop = false;
 
-                    while let Some(chunk) = stream.next().await {
-                        match chunk {
+                    loop {
+                        let chunk_result = tokio::select! {
+                            () = tx.closed() => return,
+                            chunk_result = stream.next() => chunk_result,
+                        };
+                        let Some(chunk_result) = chunk_result else {
+                            break;
+                        };
+
+                        match chunk_result {
                             Ok(bytes) => {
-                                buffer.push_str(&String::from_utf8_lossy(&bytes));
-                                // Process complete SSE events
-                                while let Some(pos) = buffer.find("\n\n") {
-                                    let event_str = buffer[..pos].to_string();
-                                    buffer = buffer[pos + 2..].to_string();
+                                let Some(resulting_stream_bytes) = stream_bytes.checked_add(bytes.len()) else {
+                                    send_stream_event!(
+                                        tx,
+                                        StreamEvent::Error {
+                                            message: "provider stream exceeded the configured limit".to_string(),
+                                        }
+                                    );
 
-                                    if let Some(event) = parse_sse_event(&event_str) {
-                                        if tx.send(event).await.is_err() {
+                                    return;
+                                };
+                                stream_bytes = resulting_stream_bytes;
+
+                                if stream_bytes > crate::MAX_PROVIDER_STREAM_BYTES {
+                                    send_stream_event!(
+                                        tx,
+                                        StreamEvent::Error {
+                                            message: "provider stream exceeded the configured limit".to_string(),
+                                        }
+                                    );
+
+                                    return;
+                                }
+
+                                buffer.extend_from_slice(&bytes);
+
+                                let partial_line_bytes = buffer
+                                    .iter()
+                                    .rposition(|byte| *byte == b'\n')
+                                    .map_or(buffer.len(), |line_end| buffer.len().saturating_sub(line_end + 1));
+
+                                if partial_line_bytes > MAX_PROVIDER_PARTIAL_LINE_BYTES {
+                                    send_stream_event!(
+                                        tx,
+                                        StreamEvent::Error {
+                                            message: "provider SSE partial line exceeded the configured limit".to_string(),
+                                        }
+                                    );
+
+                                    return;
+                                }
+
+                                while let Some(frame_end) = buffer.windows(2).position(|window| window == b"\n\n") {
+                                    if frame_end > crate::MAX_PROVIDER_SSE_FRAME_BYTES {
+                                        send_stream_event!(
+                                            tx,
+                                            StreamEvent::Error {
+                                                message: "provider SSE frame exceeded the configured limit".to_string(),
+                                            }
+                                        );
+
+                                        return;
+                                    }
+
+                                    let event_string = String::from_utf8_lossy(&buffer[..frame_end]).into_owned();
+                                    buffer.drain(..frame_end + 2);
+
+                                    if event_string.lines().any(|line| line.len() > MAX_PROVIDER_SSE_LINE_BYTES) {
+                                        send_stream_event!(
+                                            tx,
+                                            StreamEvent::Error {
+                                                message: "provider SSE line exceeded the configured limit".to_string(),
+                                            }
+                                        );
+
+                                        return;
+                                    }
+
+                                    let Some(event) = parse_sse_event(&event_string) else {
+                                        continue;
+                                    };
+                                    let event_index = match &event {
+                                        StreamEvent::ContentBlockStart { index, .. }
+                                        | StreamEvent::TextDelta { index, .. }
+                                        | StreamEvent::InputJsonDelta { index, .. }
+                                        | StreamEvent::ThinkingDelta { index, .. }
+                                        | StreamEvent::ContentBlockStop { index } => Some(*index),
+                                        _ => None,
+                                    };
+
+                                    if event_index.is_some_and(|index| index >= crate::MAX_PROVIDER_CONTENT_BLOCKS) {
+                                        send_stream_event!(
+                                            tx,
+                                            StreamEvent::Error {
+                                                message: "provider content block index exceeded the configured limit".to_string(),
+                                            }
+                                        );
+
+                                        return;
+                                    }
+
+                                    if let StreamEvent::InputJsonDelta { index, partial_json } = &event {
+                                        let accumulated_bytes = tool_argument_bytes.entry(*index).or_default();
+                                        let Some(resulting_bytes) = accumulated_bytes.checked_add(partial_json.len()) else {
+                                            send_stream_event!(
+                                                tx,
+                                                StreamEvent::Error {
+                                                    message: "provider tool arguments exceeded the configured limit".to_string(),
+                                                }
+                                            );
+
+                                            return;
+                                        };
+
+                                        if resulting_bytes > crate::MAX_PROVIDER_TOOL_ARGUMENT_BYTES {
+                                            send_stream_event!(
+                                                tx,
+                                                StreamEvent::Error {
+                                                    message: "provider tool arguments exceeded the configured limit".to_string(),
+                                                }
+                                            );
+
                                             return;
                                         }
+
+                                        *accumulated_bytes = resulting_bytes;
                                     }
+
+                                    if matches!(event, StreamEvent::MessageStop) {
+                                        saw_message_stop = true;
+                                    }
+
+                                    send_stream_event!(tx, event);
+                                }
+
+                                if buffer.len() > crate::MAX_PROVIDER_SSE_FRAME_BYTES {
+                                    send_stream_event!(
+                                        tx,
+                                        StreamEvent::Error {
+                                            message: "provider SSE frame exceeded the configured limit".to_string(),
+                                        }
+                                    );
+
+                                    return;
                                 }
                             }
-                            Err(e) => {
-                                let _ = tx.send(StreamEvent::Error { message: e.to_string() }).await;
+                            Err(error) => {
+                                send_stream_event!(
+                                    tx,
+                                    StreamEvent::Error {
+                                        message: error.to_string(),
+                                    }
+                                );
+
                                 return;
                             }
                         }
                     }
+
+                    if !String::from_utf8_lossy(&buffer).trim().is_empty() {
+                        send_stream_event!(
+                            tx,
+                            StreamEvent::Error {
+                                message: "provider SSE stream ended with an incomplete frame".to_string(),
+                            }
+                        );
+
+                        return;
+                    }
+
+                    if !saw_message_stop {
+                        send_stream_event!(
+                            tx,
+                            StreamEvent::Error {
+                                message: "provider SSE stream ended before the completion delimiter".to_string(),
+                            }
+                        );
+                    }
                 }
-                Err(e) => {
-                    let _ = tx.send(StreamEvent::Error { message: e.to_string() }).await;
+                Err(error) => {
+                    send_stream_event!(
+                        tx,
+                        StreamEvent::Error {
+                            message: error.to_string(),
+                        }
+                    );
                 }
             }
         });
 
-        Ok(CompletionStream::new(rx))
+        Ok(completion_stream)
     }
 }
 
@@ -311,6 +478,7 @@ pub struct AnthropicBuilder {
     thinking_budget: Option<u32>,
     oauth_token: Option<OAuthToken>,
     max_retries: Option<u32>,
+    client: Option<reqwest::Client>,
 }
 
 impl AnthropicBuilder {
@@ -344,6 +512,11 @@ impl AnthropicBuilder {
         self
     }
 
+    pub fn client(mut self, client: reqwest::Client) -> Self {
+        self.client = Some(client);
+        self
+    }
+
     pub fn build(self) -> Result<Anthropic> {
         let auth = if let Some(token) = self.oauth_token {
             Auth::OAuth {
@@ -364,7 +537,140 @@ impl AnthropicBuilder {
             default_model: self.model.unwrap_or_else(|| "claude-sonnet-4-6".to_string()),
             thinking_budget: self.thinking_budget,
             max_retries: self.max_retries.unwrap_or(5),
-            client: reqwest::Client::new(),
+            client: self.client.unwrap_or_default(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::openai::test_support::MockProviderServer;
+    use crate::openai::{MAX_PROVIDER_ERROR_BODY_BYTES, MAX_PROVIDER_PARTIAL_LINE_BYTES};
+    use std::time::Duration;
+
+    fn provider(base_url: &str) -> Anthropic {
+        Anthropic::builder()
+            .api_key("test-api-key")
+            .base_url(base_url)
+            .client(reqwest::Client::new())
+            .build()
+            .expect("Anthropic provider should build")
+    }
+
+    #[tokio::test]
+    async fn stream_recovers_after_unknown_event_and_preserves_completion_semantics() {
+        let response_body = concat!(
+            "event: message_start\n",
+            "data: {\"message\":{\"id\":\"message-1\",\"model\":\"test-model\"}}\n\n",
+            "event: ignored\n",
+            "data: {}\n\n",
+            "event: content_block_start\n",
+            "data: {\"index\":0,\"content_block\":{\"type\":\"text\"}}\n\n",
+            "event: content_block_delta\n",
+            "data: {\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hello\"}}\n\n",
+            "event: content_block_stop\n",
+            "data: {\"index\":0}\n\n",
+            "event: message_delta\n",
+            "data: {\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}\n\n",
+            "event: message_stop\n",
+            "data: {}\n\n"
+        );
+        let mock_server = MockProviderServer::fixed(200, response_body.as_bytes().to_vec()).await;
+        let response = provider(mock_server.endpoint())
+            .complete_blocking(CompletionRequest::new("test-model"))
+            .await
+            .expect("valid Anthropic stream should complete");
+
+        assert_eq!(response.message.get_all_text(), "hello");
+        assert_eq!(response.stop_reason, StopReason::EndTurn);
+    }
+
+    #[tokio::test]
+    async fn stream_rejects_never_delimited_partial_line() {
+        let response_body = vec![b'x'; MAX_PROVIDER_PARTIAL_LINE_BYTES + 1];
+        let mock_server = MockProviderServer::fixed(200, response_body).await;
+        let error = provider(mock_server.endpoint())
+            .complete_blocking(CompletionRequest::new("test-model"))
+            .await
+            .expect_err("unterminated Anthropic stream should fail");
+
+        assert!(error.to_string().contains("partial line exceeded"));
+    }
+
+    #[tokio::test]
+    async fn stream_rejects_oversized_frame_composed_of_bounded_lines() {
+        let bounded_line = format!("data: {}\n", "x".repeat(200 * 1024));
+        let line_count = crate::MAX_PROVIDER_SSE_FRAME_BYTES / bounded_line.len() + 1;
+        let response_body = bounded_line.repeat(line_count).into_bytes();
+        let mock_server = MockProviderServer::fixed(200, response_body).await;
+        let error = provider(mock_server.endpoint())
+            .complete_blocking(CompletionRequest::new("test-model"))
+            .await
+            .expect_err("oversized Anthropic frame should fail");
+
+        assert!(error.to_string().contains("SSE frame exceeded"));
+    }
+
+    #[tokio::test]
+    async fn stream_rejects_accumulated_tool_arguments_over_limit() {
+        const ARGUMENT_FRAGMENT_BYTES: usize = 200 * 1024;
+
+        let argument_fragment = "a".repeat(ARGUMENT_FRAGMENT_BYTES);
+        let fragment_count = crate::MAX_PROVIDER_TOOL_ARGUMENT_BYTES / ARGUMENT_FRAGMENT_BYTES + 1;
+        let mut response_body = String::new();
+
+        for _fragment_index in 0..fragment_count {
+            let event_data = serde_json::json!({
+                "index": 0,
+                "delta": {
+                    "type": "input_json_delta",
+                    "partial_json": argument_fragment.as_str(),
+                }
+            });
+
+            response_body.push_str("event: content_block_delta\n");
+            response_body.push_str("data: ");
+            response_body.push_str(&event_data.to_string());
+            response_body.push_str("\n\n");
+        }
+
+        let mock_server = MockProviderServer::fixed(200, response_body.into_bytes()).await;
+        let error = provider(mock_server.endpoint())
+            .complete_blocking(CompletionRequest::new("test-model"))
+            .await
+            .expect_err("oversized Anthropic tool arguments should fail");
+
+        assert!(error.to_string().contains("tool arguments exceeded"));
+    }
+
+    #[tokio::test]
+    async fn error_response_body_is_streamed_and_bounded() {
+        let response_body = vec![b'e'; MAX_PROVIDER_ERROR_BODY_BYTES + 1];
+        let mock_server = MockProviderServer::fixed(500, response_body).await;
+        let error = provider(mock_server.endpoint())
+            .complete_blocking(CompletionRequest::new("test-model"))
+            .await
+            .expect_err("oversized Anthropic error response should fail");
+
+        assert!(error.to_string().contains("error response body exceeded"));
+    }
+
+    #[tokio::test]
+    async fn dropping_receiver_aborts_stream_task_and_connection() {
+        let mut mock_server = MockProviderServer::endless(200, b"event: ping\ndata: {}\n\n".to_vec()).await;
+        let completion_stream = provider(mock_server.endpoint())
+            .complete(CompletionRequest::new("test-model"))
+            .await
+            .expect("Anthropic stream should start");
+        let mut event_receiver = completion_stream.into_receiver();
+
+        tokio::time::timeout(Duration::from_secs(1), event_receiver.recv())
+            .await
+            .expect("Anthropic response should start")
+            .expect("Anthropic stream should emit an event only after response data");
+        drop(event_receiver);
+
+        mock_server.wait_for_disconnect().await;
     }
 }

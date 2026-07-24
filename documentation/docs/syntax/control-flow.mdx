@@ -1,40 +1,20 @@
 ---
-title: Control Flow
-description: Use looped agents and dynamic match expressions.
+title: Control flow
+description: Run typed agent loops and select fields from tagged variants.
 ---
 
-## Agent loops
+import VariantMatchWorkflow from "/examples/wire/variant-match.mdx";
 
-Use `for ... in` when each item in a collection should be processed with the same agent.
+## Agent loops
 
 ```wire
 input {
     tasks: [{ id: number, title: string }]
 }
 
-agent summarize_each for task in input.tasks {
+agent summarize for task in input.tasks {
     model: model.fast
-    instruction: "Summarize task {{ task.title }}."
-
-    output {
-        task_id: number
-        summary: string
-    }
-}
-
-output {
-    summaries: agent.summarize_each
-}
-```
-
-## Destructuring loop bindings
-
-Loop headers may destructure object-shaped items.
-
-```wire
-agent summarize_each for { id, title } in input.tasks {
-    model: model.fast
-    instruction: "Summarize task {{ id }}: {{ title }}."
+    instruction: "Summarize {{ task.id }}: {{ task.title }}."
 
     output {
         task_id: number
@@ -43,18 +23,58 @@ agent summarize_each for { id, title } in input.tasks {
 }
 ```
 
-## Dynamic match
+The loop binding exists only inside that agent. The final `agent.summarize` value is an array of output objects.
 
-Use `match` when a dynamic value depends on a variant result. Branches must return the same type. For variant declarations, see [Data Types](/syntax/data-types#variants).
+## Destructuring
 
 ```wire
-dynamic {
-    selected_message: match agent.event.kind {
-        user_created: agent.event.created_message
-        user_deleted: agent.event.deleted_message
-        _: agent.event.default_message
+agent summarize for { id, title } in input.tasks {
+    model: model.fast
+    instruction: "Summarize {{ id }}: {{ title }}."
+
+    output {
+        task_id: number
+        summary: string
     }
 }
 ```
 
-Use `_` as the catch-all branch.
+Every named field must exist on each iterable object according to its type.
+
+Loop and destructuring names cannot shadow a built-in reference namespace. See [Reserved binding names](/syntax/variables#reserved-binding-names) for the complete list.
+
+When the iterable is a union, every reachable member must be iterable. The loop binding receives the merged item type from all branches, so destructured fields must remain valid across that merged type.
+
+## Concurrency and ordering
+
+Loop iterations may execute concurrently under the request's `options.max_concurrency` limit. Results remain ordered by the input sequence. Use `1` when provider or tool behavior must be serialized.
+
+## Tagged variants, match, and projection
+
+<VariantMatchWorkflow />
+
+The discriminator is `action`. Named match branches select a case and may continue with a field path; `_` is the optional fallback expression.
+
+Match structure is strict:
+
+- each named case may appear at most once;
+- at most one `_` fallback is allowed;
+- a fallback must be the final branch.
+
+Violations fail parsing. Duplicate-case/fallback diagnostics point at the duplicate and retain the first branch as a related span; help text says whether to remove the duplicate or move/keep one fallback last. Unknown case diagnostics list the valid cases, and invalid case field paths report the expected case object shape.
+
+`input.route#answer` has no field path, so a matching value returns the complete case object, including `"action": "answer"`. Another case or a nullable `route` value produces `null`. For `match`, a nullable input reaches the final fallback; a selected branch whose field value is `null` returns that value and does not fall through.
+
+For example, an answer input produces:
+
+```json
+{
+  "projected_answer": {
+    "action": "answer",
+    "text": "Ready"
+  },
+  "selected_text": "Ready"
+}
+```
+
+With `{ "route": null }`, `projected_answer` is `null` and `selected_text` is `"unavailable"`.

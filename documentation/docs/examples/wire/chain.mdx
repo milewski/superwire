@@ -1,0 +1,40 @@
+```wire chain.wire
+input {
+    topic: string
+}
+
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+agent research {
+    model: model.fast
+    instruction: "List verified facts about {{ input.topic }}."
+
+    output {
+        facts: [string]
+    }
+}
+
+agent summarize {
+    model: model.fast
+    instruction: "Summarize these facts: {{ agent.research.facts }}"
+
+    output {
+        summary: string
+    }
+}
+
+output {
+    facts: agent.research.facts
+    summary: agent.summarize.summary
+}
+```
