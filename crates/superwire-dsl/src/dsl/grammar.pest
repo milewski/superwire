@@ -217,7 +217,7 @@ null_literal = { "null" }
 number_literal = @{ "-"? ~ ASCII_DIGIT ~ (ASCII_DIGIT | "_")* ~ ("." ~ ASCII_DIGIT ~ (ASCII_DIGIT | "_")*)? }
 unsigned_integer_literal = @{ ASCII_DIGIT ~ (ASCII_DIGIT | "_")* }
 
-escaped_character = { "\\\\" | "\\\"" | "\\n" | "\\r" | "\\t" | "\\{" | "\\}" }
+escaped_character = @{ "\\" ~ !NEWLINE ~ ANY }
 
 string_expression = { multiline_string_expression | quoted_string_expression }
 

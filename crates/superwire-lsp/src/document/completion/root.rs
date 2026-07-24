@@ -3,11 +3,10 @@ use superwire_dsl::{AgentExpressionPropertyName, DeclarationKeyword, ImportKeywo
 use lsp_types::{Position, Range};
 
 use super::super::completion_context::{
-    AgentPropertyValueCompletionContext, DeclarationHeaderCompletionContext, ForLoopDestructuringBindingCompletionContext,
+    AgentPropertyValueCompletionContext, CompletionSite, DeclarationHeaderCompletionContext, ForLoopDestructuringBindingCompletionContext,
     ForLoopIterableValueCompletionContext, InferenceSettingValueCompletionContext, ModelCallCompletionContext,
     OutputValueCompletionContext, ToolCallCompletionContext, ValueCompletionContext,
 };
-use super::super::position::byte_offset_for_position;
 use super::super::reference::ReferenceCompletionPath;
 use super::super::scope::{
     agent_file_property_scope_suggestions, agent_property_scope_suggestions, asset_option_scope_suggestions, completion_scope_at_offset,
@@ -15,9 +14,8 @@ use super::super::scope::{
     mcp_tool_batch_import_scope_suggestions, model_property_scope_suggestions, model_usage_property_scope_suggestions, CompletionScope,
 };
 use super::super::semantic_index::SemanticIndex;
-use super::super::text_utils::{
-    is_inside_interpolation_expression, is_inside_multiline_string_literal, trailing_identifier, trailing_reference_token,
-};
+use super::super::syntax::LexicalCompletionSite;
+use super::super::text_utils::{trailing_identifier, trailing_reference_token};
 use super::super::workflow_document::WorkflowDocument;
 use super::super::{CompletionSuggestion, DocumentState};
 use super::ReferenceCompletionInputs;
@@ -34,66 +32,49 @@ impl DocumentState {
     }
 
     fn completion_suggestions_inner(&self, position: Position) -> Vec<CompletionSuggestion> {
-        let Some(line_prefix) = self.line_prefix(position) else {
+        let Some(line_prefix) = self.completion_line_prefix(position) else {
+            return Vec::new();
+        };
+        let Some(position_context) = self.position_context(position) else {
             return Vec::new();
         };
         let line_suffix = self.line_suffix(position).unwrap_or_default();
+        let lexical_completion_site = self.syntax_snapshot.completion_site_at_offset(position_context.byte_offset());
+        let inside_interpolation_expression = lexical_completion_site == LexicalCompletionSite::Interpolation;
 
-        let inside_interpolation_expression = is_inside_interpolation_expression(&line_prefix);
-
-        if self.is_inside_multiline_string_literal(position) && !inside_interpolation_expression {
+        if matches!(
+            lexical_completion_site,
+            LexicalCompletionSite::Comment | LexicalCompletionSite::MultilineStringLiteral
+        ) {
             return Vec::new();
         }
 
         let semantic_index = self.semantic_index_for_completion(position);
-        let completion_scope = self.completion_scope(position, &line_prefix, &semantic_index);
+        let completion_scope = self.completion_scope(position, line_prefix, &semantic_index);
+        let inside_bindings_value = self.tool_schema_property_name_at_position(position) == Some(ToolPropertyName::Bindings);
+        let is_type_position = !inside_bindings_value && semantic_index.is_type_position(position_context, line_prefix);
+        let completion_site = CompletionSite::from_context(line_prefix, completion_scope, lexical_completion_site, is_type_position);
 
-        if Self::is_typed_description_string_literal_context(&line_prefix, completion_scope, &semantic_index, position) {
+        if Self::is_typed_description_string_literal_context(line_prefix, completion_scope, &semantic_index, position) {
             return Vec::new();
         }
 
         if !inside_interpolation_expression {
-            if let Some(tool_call_binding_completion_context) = self.tool_call_binding_completion_context(position, &line_prefix) {
-                return semantic_index.tool_bounded_argument_suggestions(
-                    &tool_call_binding_completion_context.tool_name,
-                    &tool_call_binding_completion_context.binding_prefix,
-                    &tool_call_binding_completion_context.existing_binding_names,
-                );
-            }
-
-            if let Some(prompt_import_binding_completion_context) = self.prompt_import_binding_completion_context(position, &line_prefix) {
-                return semantic_index.mcp_prompt_binding_suggestions(
-                    &prompt_import_binding_completion_context.server_name,
-                    &prompt_import_binding_completion_context.prompt_name,
-                    &prompt_import_binding_completion_context.binding_prefix,
-                    &prompt_import_binding_completion_context.existing_binding_names,
-                );
-            }
-        }
-
-        if !inside_interpolation_expression && !line_prefix.contains(':') {
-            if let Some(mcp_tool_schema_field_suggestions) = self.mcp_tool_schema_field_suggestions(position, &line_prefix, &semantic_index)
+            if let Some(specialized_suggestions) =
+                self.specialized_non_interpolation_suggestions(&semantic_index, completion_scope, line_prefix, position)
             {
-                return mcp_tool_schema_field_suggestions;
-            }
-        }
-
-        if !inside_interpolation_expression {
-            if let Some(typed_declaration_suggestions) =
-                self.typed_declaration_scope_suggestions(completion_scope, &line_prefix, position, &semantic_index)
-            {
-                return typed_declaration_suggestions;
+                return specialized_suggestions;
             }
         }
 
         let line_has_property_separator = line_prefix.trim_start().contains(':');
         let should_include_builtin_function_suggestions = line_has_property_separator || inside_interpolation_expression;
         let inference_setting_value_completion_context =
-            self.inference_setting_value_completion_context(line_has_property_separator, &line_prefix);
+            self.inference_setting_value_completion_context(line_has_property_separator, line_prefix);
 
         if let Some(non_reference_suggestions) = self.non_reference_suggestions(
             &semantic_index,
-            &line_prefix,
+            line_prefix,
             position,
             completion_scope,
             line_has_property_separator,
@@ -105,8 +86,8 @@ impl DocumentState {
         if let Some(reference_suggestions) = self.reference_completion_suggestions(
             &semantic_index,
             ReferenceCompletionInputs {
-                line_prefix: &line_prefix,
-                line_suffix: &line_suffix,
+                line_prefix,
+                line_suffix,
                 position,
                 completion_scope,
                 inside_interpolation_expression,
@@ -117,40 +98,84 @@ impl DocumentState {
         }
 
         if inside_interpolation_expression {
-            return Self::interpolation_root_suggestions_for_context(
+            return self.interpolation_root_suggestions_for_context(
                 &semantic_index,
-                &line_prefix,
+                line_prefix,
                 position,
                 "",
                 inside_interpolation_expression,
             );
         }
 
-        let inside_bindings_value = self.tool_schema_property_name_at_position(position) == Some(ToolPropertyName::Bindings);
-
-        if !inside_bindings_value && semantic_index.is_type_position(position, &line_prefix) {
-            let current_schema_name = semantic_index.schema_name_at_position(position);
-            let type_suggestions = semantic_index.type_suggestions(&line_prefix, current_schema_name);
+        if completion_site == CompletionSite::TypeExpression {
+            let current_schema_name = semantic_index.schema_name_at_position(position_context);
+            let type_suggestions = semantic_index.type_suggestions(line_prefix, current_schema_name);
 
             if !type_suggestions.is_empty() {
                 return type_suggestions;
             }
         }
 
-        if semantic_index.is_inside_agent_output_declaration(position) {
+        if semantic_index.is_inside_agent_output_declaration(position_context) {
             return Vec::new();
         }
 
         if inside_bindings_value {
             let value_prefix = line_prefix
                 .split_once(':')
-                .map_or(line_prefix.as_str(), |(_, value_prefix)| value_prefix)
+                .map_or(line_prefix, |(_, value_prefix)| value_prefix)
                 .trim_start();
 
             return semantic_index.output_value_suggestions(value_prefix);
         }
+        match completion_site {
+            CompletionSite::Root => semantic_index.root_declaration_suggestions(line_prefix),
+            CompletionSite::PropertyValue(_) if should_include_builtin_function_suggestions => {
+                semantic_index.expression_builtin_suggestions()
+            }
+            CompletionSite::Comment
+            | CompletionSite::MultilineStringLiteral
+            | CompletionSite::Interpolation
+            | CompletionSite::StringLiteral
+            | CompletionSite::TypeExpression
+            | CompletionSite::Reference
+            | CompletionSite::DeclarationHeader
+            | CompletionSite::PropertyName(_)
+            | CompletionSite::PropertyValue(_)
+            | CompletionSite::Unknown => Vec::new(),
+        }
+    }
+    fn specialized_non_interpolation_suggestions(
+        &self,
+        semantic_index: &SemanticIndex,
+        completion_scope: CompletionScope,
+        line_prefix: &str,
+        position: Position,
+    ) -> Option<Vec<CompletionSuggestion>> {
+        if let Some(tool_call_binding_completion_context) = self.tool_call_binding_completion_context(position, line_prefix) {
+            return Some(semantic_index.tool_bounded_argument_suggestions(
+                &tool_call_binding_completion_context.tool_name,
+                &tool_call_binding_completion_context.binding_prefix,
+                &tool_call_binding_completion_context.existing_binding_names,
+            ));
+        }
 
-        semantic_index.default_suggestions(should_include_builtin_function_suggestions)
+        if let Some(prompt_import_binding_completion_context) = self.prompt_import_binding_completion_context(position, line_prefix) {
+            return Some(semantic_index.mcp_prompt_binding_suggestions(
+                &prompt_import_binding_completion_context.server_name,
+                &prompt_import_binding_completion_context.prompt_name,
+                &prompt_import_binding_completion_context.binding_prefix,
+                &prompt_import_binding_completion_context.existing_binding_names,
+            ));
+        }
+
+        if !line_prefix.contains(':') {
+            if let Some(mcp_tool_schema_field_suggestions) = self.mcp_tool_schema_field_suggestions(position, line_prefix, semantic_index) {
+                return Some(mcp_tool_schema_field_suggestions);
+            }
+        }
+
+        self.typed_declaration_scope_suggestions(completion_scope, line_prefix, position, semantic_index)
     }
 
     fn completion_suggestion_contains_recovery_placeholder(completion_suggestion: &CompletionSuggestion) -> bool {
@@ -165,7 +190,7 @@ impl DocumentState {
         let line_prefix = self.line_prefix(position)?;
         let line_suffix = self.line_suffix(position).unwrap_or_default();
 
-        if let Some(model_call_completion_context) = ModelCallCompletionContext::from_line_prefix(&line_prefix) {
+        if let Some(model_call_completion_context) = ModelCallCompletionContext::from_line_prefix(line_prefix) {
             if model_call_completion_context.replaces_empty_string_literal && line_suffix.starts_with('"') {
                 return Some(Range {
                     start: Position {
@@ -195,8 +220,8 @@ impl DocumentState {
                 return Some(Self::text_edit_range_for_prefix(position, ""));
             }
 
-            if let Some(reference_completion_path) = ReferenceCompletionPath::from_line_prefix(&line_prefix) {
-                let reference_token = trailing_reference_token(&line_prefix).unwrap_or_default();
+            if let Some(reference_completion_path) = ReferenceCompletionPath::from_line_prefix(line_prefix) {
+                let reference_token = trailing_reference_token(line_prefix).unwrap_or_default();
 
                 if reference_token.ends_with('.') {
                     return Some(Self::text_edit_range_for_prefix(
@@ -218,7 +243,7 @@ impl DocumentState {
                 ));
             }
 
-            if semantic_index.is_type_position(position, &line_prefix) {
+            if semantic_index.is_type_position(self.position_context(position)?, line_prefix) {
                 let type_prefix = trailing_reference_token(&value_completion_context.value_prefix).unwrap_or_default();
 
                 return Some(Self::text_edit_range_for_prefix(position, type_prefix));
@@ -227,7 +252,7 @@ impl DocumentState {
             return Some(Self::text_edit_range_for_prefix(position, &value_completion_context.value_prefix));
         }
 
-        let identifier_prefix = trailing_identifier(&line_prefix).unwrap_or_default();
+        let identifier_prefix = trailing_identifier(line_prefix).unwrap_or_default();
 
         Some(Self::text_edit_range_for_prefix(position, identifier_prefix))
     }
@@ -255,12 +280,13 @@ impl DocumentState {
         line_has_property_separator: bool,
         inside_interpolation_expression: bool,
     ) -> Option<Vec<CompletionSuggestion>> {
+        let position_context = self.position_context(position)?;
         if !inside_interpolation_expression {
             if let Some(for_loop_destructuring_binding_completion_context) =
                 ForLoopDestructuringBindingCompletionContext::from_line_prefix(line_prefix)
             {
                 return Some(semantic_index.for_loop_destructuring_binding_suggestions(
-                    position,
+                    position_context,
                     &for_loop_destructuring_binding_completion_context.field_prefix,
                     &for_loop_destructuring_binding_completion_context.existing_field_names,
                 ));
@@ -274,7 +300,7 @@ impl DocumentState {
         if completion_scope == CompletionScope::General
             && !line_has_property_separator
             && !inside_interpolation_expression
-            && semantic_index.is_output_position(position)
+            && semantic_index.is_output_position(position_context)
         {
             return Some(Vec::new());
         }
@@ -305,7 +331,7 @@ impl DocumentState {
                 return Some(Vec::new());
             }
 
-            if semantic_index.is_output_position(position) && !inside_interpolation_expression {
+            if semantic_index.is_output_position(position_context) && !inside_interpolation_expression {
                 if let Some(output_value_completion_context) = OutputValueCompletionContext::from_line_prefix(line_prefix) {
                     if ReferenceCompletionPath::from_line_prefix(line_prefix).is_none() {
                         return Some(semantic_index.output_value_suggestions(&output_value_completion_context.value_prefix));
@@ -345,7 +371,10 @@ impl DocumentState {
             }
         }
 
-        if semantic_index.agent_name_at_position(position).is_some() && line_has_property_separator && !inside_interpolation_expression {
+        if semantic_index.agent_name_at_position(position_context).is_some()
+            && line_has_property_separator
+            && !inside_interpolation_expression
+        {
             if let Some(agent_property_suggestions) =
                 self.agent_property_value_suggestions(semantic_index, line_prefix, inside_interpolation_expression)
             {
@@ -382,7 +411,7 @@ impl DocumentState {
                 return Some(declaration_header_completion_context.completion_suggestions());
             }
 
-            if let Some(model_property_suggestions) = Self::model_property_suggestions_at_position(
+            if let Some(model_property_suggestions) = self.model_property_suggestions_at_position(
                 semantic_index,
                 line_prefix,
                 position,
@@ -401,7 +430,7 @@ impl DocumentState {
                 return Some(scope_suggestions);
             }
 
-            if completion_scope == CompletionScope::General && semantic_index.is_root_declaration_position(position) {
+            if completion_scope == CompletionScope::General && semantic_index.is_root_declaration_position(position_context) {
                 return Some(semantic_index.root_declaration_suggestions(line_prefix));
             }
         }
@@ -512,7 +541,7 @@ impl DocumentState {
 
     pub(super) fn existing_typed_field_names(&self, position: Position) -> Vec<String> {
         let source_text = &self.text;
-        let Some(cursor_offset) = byte_offset_for_position(source_text, position) else {
+        let Some(cursor_offset) = self.byte_offset(position) else {
             return Vec::new();
         };
 
@@ -566,10 +595,11 @@ impl DocumentState {
         line_prefix: &str,
         position: Position,
     ) -> Option<Vec<CompletionSuggestion>> {
+        let position_context = self.position_context(position)?;
         match completion_scope {
             CompletionScope::ProviderProperties => Some(
                 semantic_index
-                    .provider_property_suggestions(position, line_prefix)
+                    .provider_property_suggestions(position_context, line_prefix)
                     .unwrap_or_default(),
             ),
             CompletionScope::ModelProperties => Some(model_property_scope_suggestions(line_prefix)),
@@ -607,7 +637,8 @@ impl DocumentState {
         line_prefix: &str,
         position: Position,
     ) -> Option<Vec<CompletionSuggestion>> {
-        if let Some(provider_driver_suggestions) = semantic_index.provider_driver_value_suggestions(position, line_prefix) {
+        let position_context = self.position_context(position)?;
+        if let Some(provider_driver_suggestions) = semantic_index.provider_driver_value_suggestions(position_context, line_prefix) {
             return Some(provider_driver_suggestions);
         }
 
@@ -615,7 +646,7 @@ impl DocumentState {
             return Some(provider_models_suggestions);
         }
 
-        semantic_index.provider_property_suggestions(position, line_prefix)
+        semantic_index.provider_property_suggestions(position_context, line_prefix)
     }
 
     fn agent_property_value_suggestions(
@@ -650,7 +681,13 @@ impl DocumentState {
 
                 Some(semantic_index.prompt_value_suggestions(&agent_property_value_completion_context.value_prefix, line_prefix))
             }
-            AgentExpressionPropertyName::Uses => None,
+            AgentExpressionPropertyName::Uses => {
+                if ReferenceCompletionPath::from_line_prefix(line_prefix).is_some() {
+                    return None;
+                }
+
+                Some(semantic_index.agent_uses_root_suggestions(&agent_property_value_completion_context.value_prefix))
+            }
         }
     }
 
@@ -691,38 +728,114 @@ impl DocumentState {
             return self.semantic_snapshot.semantic_index.clone();
         }
 
-        self.recovered_semantic_index(position)
-            .unwrap_or_else(|| self.semantic_snapshot.semantic_index.clone())
-    }
+        let Some(cursor_byte_offset) = self.byte_offset(position) else {
+            return self.semantic_snapshot.semantic_index.clone();
+        };
 
-    fn recovered_semantic_index(&self, position: Position) -> Option<SemanticIndex> {
-        let cursor_offset = byte_offset_for_position(&self.text, position)?;
+        if let Some(cached_semantic_index) = self.completion_semantic_indexes.borrow().get(&cursor_byte_offset) {
+            return cached_semantic_index.clone();
+        }
 
         let mut recovered_source = String::with_capacity(self.text.len() + COMPLETION_RECOVERY_PLACEHOLDER.len());
-        recovered_source.push_str(&self.text[..cursor_offset]);
+        recovered_source.push_str(&self.text[..cursor_byte_offset]);
         recovered_source.push_str(COMPLETION_RECOVERY_PLACEHOLDER);
-        recovered_source.push_str(&self.text[cursor_offset..]);
+        recovered_source.push_str(&self.text[cursor_byte_offset..]);
 
         let workflow_document =
             WorkflowDocument::from_source_with_mcp_lock(recovered_source, self.semantic_snapshot.semantic_index.mcp_lock.clone());
+        let recovered_semantic_index = workflow_document.workflow().map_or_else(
+            || self.semantic_snapshot.semantic_index.clone(),
+            |_| SemanticIndex::from_workflow_document(&workflow_document),
+        );
 
-        workflow_document.workflow()?;
+        self.completion_semantic_indexes
+            .borrow_mut()
+            .insert(cursor_byte_offset, recovered_semantic_index.clone());
 
-        Some(SemanticIndex::from_workflow_document(&workflow_document))
+        recovered_semantic_index
+    }
+
+    fn completion_line_prefix(&self, position: Position) -> Option<&str> {
+        let cursor_byte_offset = self.byte_offset(position)?;
+        let line_index = usize::try_from(position.line).ok()?;
+        let line_byte_range = self.line_index.line_content_byte_range(&self.text, line_index)?;
+        let logical_start_byte_offset = self
+            .syntax_snapshot
+            .tokens()
+            .iter()
+            .rev()
+            .find(|syntax_token| {
+                syntax_token.byte_range.start >= line_byte_range.start
+                    && syntax_token.byte_range.end <= cursor_byte_offset
+                    && syntax_token.kind
+                        == super::super::syntax::SyntaxTokenKind::Punctuation(super::super::syntax::SyntaxPunctuation::CloseBrace)
+            })
+            .map_or(line_byte_range.start, |syntax_token| syntax_token.byte_range.end);
+        let logical_line_prefix = self.text.get(logical_start_byte_offset..cursor_byte_offset)?;
+
+        if logical_line_prefix.trim().is_empty() {
+            let declaration_keyword_token = self
+                .syntax_snapshot
+                .tokens()
+                .iter()
+                .rev()
+                .filter(|syntax_token| syntax_token.byte_range.end <= cursor_byte_offset)
+                .find(|syntax_token| {
+                    syntax_token.kind == super::super::syntax::SyntaxTokenKind::Identifier
+                        && DeclarationKeyword::from_identifier(syntax_token.text(&self.text)).is_some()
+                });
+
+            if let Some(declaration_keyword_token) = declaration_keyword_token {
+                let declaration_header_prefix = self.text.get(declaration_keyword_token.byte_range.start..cursor_byte_offset)?;
+                let unclosed_brace_count = self
+                    .syntax_snapshot
+                    .tokens()
+                    .iter()
+                    .filter(|syntax_token| {
+                        syntax_token.byte_range.start >= declaration_keyword_token.byte_range.start
+                            && syntax_token.byte_range.end <= cursor_byte_offset
+                    })
+                    .fold(0_usize, |brace_depth, syntax_token| match syntax_token.kind {
+                        super::super::syntax::SyntaxTokenKind::Punctuation(super::super::syntax::SyntaxPunctuation::OpenBrace) => {
+                            brace_depth.saturating_add(1)
+                        }
+                        super::super::syntax::SyntaxTokenKind::Punctuation(super::super::syntax::SyntaxPunctuation::CloseBrace) => {
+                            brace_depth.saturating_sub(1)
+                        }
+                        _ => brace_depth,
+                    });
+
+                if unclosed_brace_count > 0 {
+                    return Some(logical_line_prefix);
+                }
+
+                if DeclarationHeaderCompletionContext::from_line_prefix(declaration_header_prefix).is_some() {
+                    return Some(declaration_header_prefix);
+                }
+            }
+        }
+
+        Some(logical_line_prefix)
     }
 
     fn completion_scope(&self, position: Position, line_prefix: &str, semantic_index: &SemanticIndex) -> CompletionScope {
-        let Some(cursor_offset) = byte_offset_for_position(&self.text, position) else {
+        let Some(cursor_offset) = self.byte_offset(position) else {
             return CompletionScope::General;
         };
 
-        let line_prefix_scope = completion_scope_at_offset(&self.text, cursor_offset);
+        let line_prefix_scope = completion_scope_at_offset(&self.text, cursor_offset, &self.syntax_snapshot);
 
         if line_prefix_scope != CompletionScope::General || !Self::can_refine_general_completion_scope(line_prefix) {
             return line_prefix_scope;
         }
 
-        semantic_index.completion_scope_at_position(position).unwrap_or(line_prefix_scope)
+        let Some(position_context) = self.position_context(position) else {
+            return line_prefix_scope;
+        };
+
+        semantic_index
+            .completion_scope_at_position(position_context)
+            .unwrap_or(line_prefix_scope)
     }
 
     fn can_refine_general_completion_scope(line_prefix: &str) -> bool {
@@ -737,13 +850,5 @@ impl DocumentState {
         }
 
         trimmed_line_prefix.is_empty() || trailing_identifier(line_prefix).is_some()
-    }
-
-    fn is_inside_multiline_string_literal(&self, position: Position) -> bool {
-        let Some(cursor_offset) = byte_offset_for_position(&self.text, position) else {
-            return false;
-        };
-
-        is_inside_multiline_string_literal(&self.text, cursor_offset)
     }
 }

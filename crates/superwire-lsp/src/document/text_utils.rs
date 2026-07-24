@@ -76,20 +76,6 @@ pub fn is_identifier(identifier: &str) -> bool {
     characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
 }
 
-pub fn is_inside_interpolation_expression(line_prefix: &str) -> bool {
-    let open_count = line_prefix.match_indices("{{").count();
-    let close_count = line_prefix.match_indices("}}").count();
-
-    open_count > close_count
-}
-
-pub fn is_inside_multiline_string_literal(source_text: &str, cursor_offset: usize) -> bool {
-    let source_prefix = &source_text[..cursor_offset];
-    let triple_quote_count = source_prefix.match_indices("\"\"\"").count();
-
-    triple_quote_count % 2 == 1
-}
-
 pub fn is_symbol_character(character: char) -> bool {
     character.is_ascii_alphanumeric() || character == '_' || character == '.' || character == '?' || character == '*'
 }

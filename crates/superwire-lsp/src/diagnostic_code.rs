@@ -102,6 +102,8 @@ pub enum DiagnosticCode {
     UnknownResourceReference,
     #[serde(rename = "unknown_prompt_reference")]
     UnknownPromptReference,
+    #[serde(rename = "invalid_mcp_tool_schema")]
+    InvalidMcpToolSchema,
     #[serde(rename = "invalid_tool_binding")]
     InvalidToolBinding,
     #[serde(rename = "invalid_type_expression_reference")]

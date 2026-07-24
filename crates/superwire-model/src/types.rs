@@ -201,6 +201,7 @@ pub struct ModelToolDefinition {
     pub source: ModelToolSource,
     pub input_schema: ModelSchema,
     pub output_schema: ModelSchema,
+    pub invocation_schema: Option<ModelSchema>,
     pub bindings: Value,
     pub max_calls: Option<u64>,
     pub max_calls_scope: ToolCallLimitScope,
@@ -234,6 +235,13 @@ impl ModelSchema {
     #[must_use]
     pub fn model_tool_input(input_type: WorkflowType, bindings: Value) -> Self {
         Self::ModelToolInput { input_type, bindings }
+    }
+
+    #[must_use]
+    pub fn model_tool_json_input(mut input_schema: Value, bindings: Value) -> Self {
+        Self::remove_binding_fields(&mut input_schema, &bindings);
+
+        Self::Json(input_schema)
     }
 
     #[must_use]
@@ -341,35 +349,110 @@ impl ModelSchema {
     fn model_tool_input_json_value(input_type: &WorkflowType, bindings: &Value, schema_cache: &mut ModelSchemaCache) -> Value {
         let mut input_schema =
             input_type.json_schema_value_with_nullable_fields_optional_with_cache(&mut schema_cache.workflow_schema_cache);
+        Self::remove_binding_fields(&mut input_schema, bindings);
+
+        input_schema
+    }
+
+    fn remove_binding_fields(input_schema: &mut Value, bindings: &Value) {
         let Some(binding_object) = bindings.as_object() else {
-            return input_schema;
+            return;
         };
         let binding_names = binding_object.keys().cloned().collect::<HashSet<_>>();
+        let schema_document = input_schema.clone();
+        let mut resolving_references = HashSet::new();
 
-        if let Some(properties) = input_schema.get_mut("properties").and_then(Value::as_object_mut) {
-            for binding_name in &binding_names {
+        Self::remove_binding_fields_from_schema_instance(input_schema, &binding_names, &schema_document, &mut resolving_references);
+    }
+
+    fn remove_binding_fields_from_schema_instance(
+        schema_instance: &mut Value,
+        binding_names: &HashSet<String>,
+        schema_document: &Value,
+        resolving_references: &mut HashSet<String>,
+    ) {
+        let expanded_reference = Self::expand_root_schema_reference(schema_instance, schema_document, resolving_references);
+
+        if let Some(properties) = schema_instance.get_mut("properties").and_then(Value::as_object_mut) {
+            for binding_name in binding_names {
                 properties.remove(binding_name);
             }
         }
 
-        let mut remove_required = false;
-
-        if let Some(required_fields) = input_schema.get_mut("required").and_then(Value::as_array_mut) {
+        let remove_required = if let Some(required_fields) = schema_instance.get_mut("required").and_then(Value::as_array_mut) {
             required_fields.retain(|required_field| {
                 required_field
                     .as_str()
                     .is_none_or(|required_field_name| !binding_names.contains(required_field_name))
             });
-            remove_required = required_fields.is_empty();
-        }
+
+            required_fields.is_empty()
+        } else {
+            false
+        };
 
         if remove_required {
-            if let Some(schema_object) = input_schema.as_object_mut() {
+            if let Some(schema_object) = schema_instance.as_object_mut() {
                 schema_object.remove("required");
             }
         }
 
-        input_schema
+        for composition_keyword in ["allOf", "anyOf", "oneOf"] {
+            let Some(composed_schemas) = schema_instance.get_mut(composition_keyword).and_then(Value::as_array_mut) else {
+                continue;
+            };
+
+            for composed_schema in composed_schemas {
+                Self::remove_binding_fields_from_schema_instance(composed_schema, binding_names, schema_document, resolving_references);
+            }
+        }
+
+        if let Some(reference) = expanded_reference {
+            resolving_references.remove(&reference);
+        }
+    }
+
+    fn expand_root_schema_reference(
+        schema_instance: &mut Value,
+        schema_document: &Value,
+        resolving_references: &mut HashSet<String>,
+    ) -> Option<String> {
+        let reference = schema_instance.get("$ref").and_then(Value::as_str)?.to_string();
+        let pointer = reference.strip_prefix('#')?;
+
+        if pointer.is_empty() || !resolving_references.insert(reference.clone()) {
+            return None;
+        }
+
+        let referenced_schema = schema_document.pointer(pointer)?.clone();
+        let Some(schema_object) = schema_instance.as_object_mut() else {
+            resolving_references.remove(&reference);
+
+            return None;
+        };
+        schema_object.remove("$ref");
+        let mut sibling_constraints = serde_json::Map::new();
+
+        for (field_name, field_value) in std::mem::take(schema_object) {
+            if matches!(
+                field_name.as_str(),
+                "$defs" | "definitions" | "$schema" | "$id" | "$anchor" | "$comment"
+            ) {
+                schema_object.insert(field_name, field_value);
+            } else {
+                sibling_constraints.insert(field_name, field_value);
+            }
+        }
+
+        let mut composed_schemas = vec![referenced_schema];
+
+        if !sibling_constraints.is_empty() {
+            composed_schemas.push(Value::Object(sibling_constraints));
+        }
+
+        schema_object.insert("allOf".to_string(), Value::Array(composed_schemas));
+
+        Some(reference)
     }
 
     fn finalize_input_json_value(output_schema: Value) -> Value {
@@ -482,9 +565,20 @@ impl ModelToolDefinition {
                 output_schema: Box::new(output_schema),
             },
             output_schema: ModelSchema::workflow(WorkflowType::AnyObject),
+            invocation_schema: None,
             bindings: Value::Null,
             max_calls: None,
             max_calls_scope: ToolCallLimitScope::Workflow,
+        }
+    }
+
+    pub fn merge_bindings_into(&self, arguments: &mut Value) {
+        let (Some(argument_object), Some(binding_object)) = (arguments.as_object_mut(), self.bindings.as_object()) else {
+            return;
+        };
+
+        for (binding_name, binding_value) in binding_object {
+            argument_object.insert(binding_name.clone(), binding_value.clone());
         }
     }
 
@@ -504,6 +598,7 @@ impl ModelToolDefinition {
             "source": self.source.cache_fingerprint_value(),
             "input_schema": self.input_schema.cache_fingerprint_value(schema_cache),
             "output_schema": self.output_schema.cache_fingerprint_value(schema_cache),
+            "invocation_schema": self.invocation_schema.as_ref().map(|schema| schema.cache_fingerprint_value(schema_cache)),
             "bindings": self.bindings,
             "max_calls": self.max_calls,
             "max_calls_scope": self.max_calls_scope.cache_fingerprint_value(),
@@ -671,4 +766,126 @@ impl ModelToolSource {
 pub struct ModelResponse {
     pub output: Value,
     pub context: Value,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use superwire_semantic::support::types::validate_value_against_json_schema;
+
+    #[test]
+    fn removes_binding_fields_from_flat_model_schema() {
+        let model_schema = ModelSchema::model_tool_json_input(
+            json!({
+                "type": "object",
+                "properties": {
+                    "fixed": { "type": "number" },
+                    "visible": { "type": "string" }
+                },
+                "required": ["fixed", "visible"],
+                "additionalProperties": false
+            }),
+            json!({ "fixed": 7 }),
+        )
+        .json_value();
+
+        assert_eq!(model_schema.pointer("/properties/fixed"), None);
+        assert_eq!(model_schema["required"], json!(["visible"]));
+        validate_value_against_json_schema(&json!({ "visible": "shown" }), &model_schema)
+            .expect("model-visible value should satisfy projected flat schema");
+    }
+
+    #[test]
+    fn removes_binding_fields_from_every_composed_root_branch_without_touching_nested_objects() {
+        let branch_schema = json!({
+            "type": "object",
+            "properties": {
+                "fixed": { "type": "number" },
+                "visible": { "type": "string" }
+            },
+            "required": ["fixed", "visible"]
+        });
+        let model_schema = ModelSchema::model_tool_json_input(
+            json!({
+                "type": "object",
+                "properties": {
+                    "nested": {
+                        "type": "object",
+                        "properties": {
+                            "fixed": { "type": "number" }
+                        },
+                        "required": ["fixed"]
+                    }
+                },
+                "allOf": [branch_schema.clone()],
+                "anyOf": [branch_schema.clone()],
+                "oneOf": [branch_schema]
+            }),
+            json!({ "fixed": 7 }),
+        )
+        .json_value();
+
+        for composition_keyword in ["allOf", "anyOf", "oneOf"] {
+            assert_eq!(model_schema.pointer(&format!("/{composition_keyword}/0/properties/fixed")), None);
+            assert_eq!(
+                model_schema.pointer(&format!("/{composition_keyword}/0/required")),
+                Some(&json!(["visible"]))
+            );
+        }
+
+        assert_eq!(
+            model_schema.pointer("/properties/nested/properties/fixed"),
+            Some(&json!({ "type": "number" }))
+        );
+        assert_eq!(model_schema.pointer("/properties/nested/required"), Some(&json!(["fixed"])));
+    }
+
+    #[test]
+    fn projects_root_reference_without_mutating_nested_definition_instances() {
+        let model_schema = ModelSchema::model_tool_json_input(
+            json!({
+                "$ref": "#/$defs/Input",
+                "$defs": {
+                    "Input": {
+                        "type": "object",
+                        "properties": {
+                            "fixed": { "type": "number" },
+                            "visible": { "type": "string" },
+                            "nested": {
+                                "type": "object",
+                                "properties": {
+                                    "fixed": { "type": "number" }
+                                },
+                                "required": ["fixed"]
+                            }
+                        },
+                        "required": ["fixed", "visible"],
+                        "additionalProperties": false
+                    }
+                }
+            }),
+            json!({ "fixed": 7 }),
+        )
+        .json_value();
+
+        assert_eq!(model_schema.pointer("/allOf/0/properties/fixed"), None);
+        assert_eq!(model_schema.pointer("/allOf/0/required"), Some(&json!(["visible"])));
+        assert_eq!(
+            model_schema.pointer("/allOf/0/properties/nested/properties/fixed"),
+            Some(&json!({ "type": "number" }))
+        );
+        assert_eq!(
+            model_schema.pointer("/$defs/Input/properties/fixed"),
+            Some(&json!({ "type": "number" }))
+        );
+        validate_value_against_json_schema(
+            &json!({
+                "visible": "shown",
+                "nested": { "fixed": 9 }
+            }),
+            &model_schema,
+        )
+        .expect("model-visible value should satisfy projected root-reference schema");
+    }
 }

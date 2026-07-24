@@ -3,9 +3,9 @@ use jsonschema::ValidationError;
 use schemars::{JsonSchema, Schema};
 use serde_json::{json, Map, Number, Value};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display, Formatter, Write};
 use std::hash::BuildHasher;
-use superwire_types::ast::{Reference, ReferenceAccess, TypeExpression, TypedField};
+use superwire_types::ast::{Reference, ReferenceAccess, ToolDeclaration, TypeExpression, TypedField};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkflowType {
@@ -29,6 +29,8 @@ pub enum WorkflowType {
     },
     Union(Vec<WorkflowType>),
 }
+
+type ResolvedVariantCases = (String, BTreeMap<String, BTreeMap<String, WorkflowType>>);
 
 #[derive(Debug, Clone)]
 pub struct WorkflowSchemaCache {
@@ -88,7 +90,21 @@ impl WorkflowType {
 
     #[must_use]
     pub fn field_type(&self, field_name: &str) -> Option<Self> {
+        self.field_type_for_access(field_name, false)
+    }
+
+    #[must_use]
+    pub fn field_type_for_reference_access(&self, reference_access: &ReferenceAccess) -> Option<Self> {
+        if reference_access.is_array_pluck() {
+            return self.array_pluck_field_type(reference_access);
+        }
+
+        self.field_type_for_access(reference_access.field.as_str(), reference_access.is_optional())
+    }
+
+    fn field_type_for_access(&self, field_name: &str, allows_missing_member: bool) -> Option<Self> {
         match self {
+            Self::Any | Self::AnyObject => Some(Self::Any),
             Self::Object(fields) => fields.get(field_name).cloned(),
             Self::Variant { discriminator, cases } => {
                 if discriminator == field_name {
@@ -98,11 +114,27 @@ impl WorkflowType {
                 None
             }
             Self::Union(members) => {
-                let field_types = members
-                    .iter()
-                    .filter(|member| !matches!(member, Self::Null))
-                    .filter_map(|member| member.field_type(field_name))
-                    .collect::<Vec<_>>();
+                let mut field_types = Vec::new();
+
+                for member in members {
+                    if matches!(member, Self::Null) {
+                        if allows_missing_member {
+                            continue;
+                        }
+
+                        return None;
+                    }
+
+                    let Some(field_type) = member.field_type_for_access(field_name, allows_missing_member) else {
+                        if allows_missing_member {
+                            continue;
+                        }
+
+                        return None;
+                    };
+
+                    field_types.push(field_type);
+                }
 
                 if field_types.is_empty() {
                     return None;
@@ -110,13 +142,11 @@ impl WorkflowType {
 
                 Some(normalize_union_members(field_types))
             }
-            Self::Any
-            | Self::String
+            Self::String
             | Self::Integer
             | Self::Float
             | Self::Boolean
             | Self::Null
-            | Self::AnyObject
             | Self::StringEnum(_)
             | Self::Array {
                 item_type: _,
@@ -124,15 +154,6 @@ impl WorkflowType {
             }
             | Self::Tuple(_) => None,
         }
-    }
-
-    #[must_use]
-    pub fn field_type_for_reference_access(&self, reference_access: &ReferenceAccess) -> Option<Self> {
-        if !reference_access.is_array_pluck() {
-            return self.field_type(reference_access.field.as_str());
-        }
-
-        self.array_pluck_field_type(reference_access)
     }
 
     #[must_use]
@@ -179,11 +200,12 @@ impl WorkflowType {
                 })
             }
             Self::Union(members) => {
-                let field_types = members
-                    .iter()
-                    .filter(|member| !matches!(member, Self::Null))
-                    .filter_map(|member| member.array_pluck_field_type(reference_access))
-                    .collect::<Vec<_>>();
+                let mut field_types = Vec::new();
+
+                for member in members {
+                    let field_type = member.array_pluck_field_type(reference_access)?;
+                    field_types.push(field_type);
+                }
 
                 if field_types.is_empty() {
                     return None;
@@ -338,21 +360,100 @@ impl WorkflowType {
 
     #[must_use]
     pub fn variant_case_field_type(&self, case_name: &str, field_path: &[String]) -> Option<Self> {
-        match self {
-            Self::Variant { discriminator: _, cases } => {
-                let case_fields = cases.get(case_name)?;
-                let (first_field_name, remaining_field_path) = field_path.split_first()?;
-                let mut current_type = case_fields.get(first_field_name)?.clone();
+        let (_, cases) = self.resolved_variant_cases()?;
+        let case_fields = cases.get(case_name)?;
+        let Some((first_field_name, remaining_field_path)) = field_path.split_first() else {
+            return Some(Self::Object(case_fields.clone()));
+        };
+        let mut current_type = case_fields.get(first_field_name)?.clone();
 
-                for field_name in remaining_field_path {
-                    current_type = current_type.field_type(field_name)?;
+        for field_name in remaining_field_path {
+            current_type = current_type.field_type(field_name)?;
+        }
+
+        Some(current_type)
+    }
+
+    #[must_use]
+    pub fn variant_case_names(&self) -> Option<Vec<String>> {
+        let (_, cases) = self.resolved_variant_cases()?;
+
+        Some(cases.keys().cloned().collect())
+    }
+
+    #[must_use]
+    pub fn variant_discriminator(&self) -> Option<String> {
+        self.resolved_variant_cases().map(|(discriminator, _)| discriminator)
+    }
+
+    #[must_use]
+    pub fn contains_variant_type(&self) -> bool {
+        match self {
+            Self::Variant {
+                discriminator: _,
+                cases: _,
+            } => true,
+            Self::Union(members) => members.iter().any(Self::contains_variant_type),
+            Self::Any
+            | Self::String
+            | Self::Integer
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::AnyObject
+            | Self::StringEnum(_)
+            | Self::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | Self::Tuple(_)
+            | Self::Object(_) => false,
+        }
+    }
+
+    fn resolved_variant_cases(&self) -> Option<ResolvedVariantCases> {
+        match self {
+            Self::Variant { discriminator, cases } => Some((discriminator.clone(), cases.clone())),
+            Self::Union(members) => {
+                let mut resolved_discriminator = None::<String>;
+                let mut resolved_cases = BTreeMap::new();
+                let mut found_variant = false;
+
+                for member in members {
+                    if matches!(member, Self::Null) {
+                        continue;
+                    }
+
+                    let (member_discriminator, member_cases) = member.resolved_variant_cases()?;
+                    found_variant = true;
+
+                    if let Some(discriminator) = &resolved_discriminator {
+                        if discriminator != &member_discriminator {
+                            return None;
+                        }
+                    } else {
+                        resolved_discriminator = Some(member_discriminator);
+                    }
+
+                    for (case_name, case_fields) in member_cases {
+                        if let Some(existing_fields) = resolved_cases.get(&case_name) {
+                            if existing_fields != &case_fields {
+                                return None;
+                            }
+
+                            continue;
+                        }
+
+                        resolved_cases.insert(case_name, case_fields);
+                    }
                 }
 
-                Some(current_type)
+                if !found_variant {
+                    return None;
+                }
+
+                Some((resolved_discriminator?, resolved_cases))
             }
-            Self::Union(members) => members
-                .iter()
-                .find_map(|member| member.variant_case_field_type(case_name, field_path)),
             Self::Any
             | Self::String
             | Self::Integer
@@ -371,10 +472,25 @@ impl WorkflowType {
     }
 
     #[must_use]
-    pub fn variant_case_names(&self) -> Option<Vec<String>> {
+    pub fn array_item_type(&self) -> Option<Self> {
         match self {
-            Self::Variant { discriminator: _, cases } => Some(cases.keys().cloned().collect()),
-            Self::Union(members) => members.iter().find_map(Self::variant_case_names),
+            Self::Array {
+                item_type,
+                fixed_length: _,
+            } => Some((**item_type).clone()),
+            Self::Union(members) => {
+                if members.is_empty() {
+                    return None;
+                }
+
+                let mut item_types = Vec::with_capacity(members.len());
+
+                for member in members {
+                    item_types.push(member.array_item_type()?);
+                }
+
+                Some(normalize_union_members(item_types))
+            }
             Self::Any
             | Self::String
             | Self::Integer
@@ -383,12 +499,91 @@ impl WorkflowType {
             | Self::Null
             | Self::AnyObject
             | Self::StringEnum(_)
-            | Self::Array {
-                item_type: _,
-                fixed_length: _,
-            }
             | Self::Tuple(_)
-            | Self::Object(_) => None,
+            | Self::Object(_)
+            | Self::Variant {
+                discriminator: _,
+                cases: _,
+            } => None,
+        }
+    }
+
+    #[must_use]
+    pub fn to_type_expression(&self) -> TypeExpression {
+        match self {
+            Self::Any | Self::AnyObject => TypeExpression::AnyObject,
+            Self::String => TypeExpression::String,
+            Self::Integer => TypeExpression::Number,
+            Self::Float => TypeExpression::Float,
+            Self::Boolean => TypeExpression::Boolean,
+            Self::Null => TypeExpression::Null,
+            Self::StringEnum(enum_values) => {
+                let mut enum_type_expressions = enum_values.iter().cloned().map(TypeExpression::StringEnum).collect::<Vec<_>>();
+
+                if enum_type_expressions.len() == 1 {
+                    enum_type_expressions.pop().expect("single string enum type should exist")
+                } else {
+                    TypeExpression::Union(enum_type_expressions)
+                }
+            }
+            Self::Array { item_type, fixed_length } => TypeExpression::Array {
+                item_type: Box::new(item_type.to_type_expression()),
+                fixed_length: *fixed_length,
+            },
+            Self::Tuple(item_types) => TypeExpression::Tuple(item_types.iter().map(Self::to_type_expression).collect()),
+            Self::Object(fields) => TypeExpression::Object(
+                fields
+                    .iter()
+                    .map(|(field_name, field_type)| {
+                        TypedField::from_type(
+                            field_name.clone(),
+                            field_type.to_type_expression(),
+                            superwire_types::ast::SourceSpan::generated(),
+                        )
+                    })
+                    .collect(),
+            ),
+            Self::Variant { discriminator, cases } => TypeExpression::Variant {
+                discriminator: discriminator.clone(),
+                cases: cases
+                    .iter()
+                    .map(|(case_name, fields)| {
+                        let case_fields = fields
+                            .iter()
+                            .filter(|(field_name, _)| *field_name != discriminator)
+                            .map(|(field_name, field_type)| {
+                                TypedField::from_type(
+                                    field_name.clone(),
+                                    field_type.to_type_expression(),
+                                    superwire_types::ast::SourceSpan::generated(),
+                                )
+                            })
+                            .collect();
+
+                        superwire_types::ast::VariantCase {
+                            name: case_name.clone(),
+                            fields: case_fields,
+                            span: superwire_types::ast::SourceSpan::generated(),
+                        }
+                    })
+                    .collect(),
+            },
+            Self::Union(members) => {
+                let mut type_expressions = Vec::new();
+
+                for member in members.iter().filter(|member| !matches!(member, Self::Null)) {
+                    match member.to_type_expression() {
+                        TypeExpression::Union(nested_type_expressions) => type_expressions.extend(nested_type_expressions),
+                        type_expression => type_expressions.push(type_expression),
+                    }
+                }
+
+                if members.iter().any(|member| matches!(member, Self::Null)) {
+                    type_expressions.push(TypeExpression::Null);
+                }
+
+                TypeExpression::Union(type_expressions)
+            }
         }
     }
 
@@ -435,59 +630,91 @@ impl WorkflowType {
 
     #[must_use]
     pub fn schema_cache_key(&self) -> String {
-        match self {
-            Self::Any => "any".to_string(),
-            Self::String => "string".to_string(),
-            Self::Integer => "integer".to_string(),
-            Self::Float => "float".to_string(),
-            Self::Boolean => "boolean".to_string(),
-            Self::Null => "null".to_string(),
-            Self::AnyObject => "object".to_string(),
-            Self::StringEnum(enum_values) => format!("enum({})", enum_values.join("|")),
-            Self::Array { item_type, fixed_length } => {
-                let Some(fixed_length) = fixed_length else {
-                    return format!("array({})", item_type.schema_cache_key());
-                };
+        let mut cache_key = String::new();
+        self.write_schema_cache_key(&mut cache_key);
 
-                format!("array({};{fixed_length})", item_type.schema_cache_key())
+        cache_key
+    }
+
+    fn write_schema_cache_key(&self, cache_key: &mut String) {
+        match self {
+            Self::Any => cache_key.push('a'),
+            Self::String => cache_key.push('s'),
+            Self::Integer => cache_key.push('i'),
+            Self::Float => cache_key.push('f'),
+            Self::Boolean => cache_key.push('b'),
+            Self::Null => cache_key.push('n'),
+            Self::AnyObject => cache_key.push('o'),
+            Self::StringEnum(enum_values) => {
+                cache_key.push('e');
+                Self::write_schema_cache_key_count(cache_key, enum_values.len());
+
+                for enum_value in enum_values {
+                    Self::write_schema_cache_key_text(cache_key, enum_value);
+                }
+            }
+            Self::Array { item_type, fixed_length } => {
+                cache_key.push('r');
+
+                if let Some(fixed_length) = fixed_length {
+                    cache_key.push('1');
+                    write!(cache_key, "{fixed_length};").expect("writing to a String should not fail");
+                } else {
+                    cache_key.push('0');
+                }
+
+                item_type.write_schema_cache_key(cache_key);
             }
             Self::Tuple(item_types) => {
-                let joined_item_keys = item_types.iter().map(Self::schema_cache_key).collect::<Vec<_>>().join(",");
+                cache_key.push('t');
+                Self::write_schema_cache_key_count(cache_key, item_types.len());
 
-                format!("tuple({joined_item_keys})")
+                for item_type in item_types {
+                    item_type.write_schema_cache_key(cache_key);
+                }
             }
             Self::Object(fields) => {
-                let field_pairs = fields
-                    .iter()
-                    .map(|(field_name, field_type)| format!("{field_name}:{}", field_type.schema_cache_key()))
-                    .collect::<Vec<_>>()
-                    .join(",");
+                cache_key.push('j');
+                Self::write_schema_cache_key_count(cache_key, fields.len());
 
-                format!("object({field_pairs})")
+                for (field_name, field_type) in fields {
+                    Self::write_schema_cache_key_text(cache_key, field_name);
+                    field_type.write_schema_cache_key(cache_key);
+                }
             }
             Self::Variant { discriminator, cases } => {
-                let case_pairs = cases
-                    .iter()
-                    .map(|(case_name, fields)| {
-                        let field_pairs = fields
-                            .iter()
-                            .map(|(field_name, field_type)| format!("{field_name}:{}", field_type.schema_cache_key()))
-                            .collect::<Vec<_>>()
-                            .join(",");
+                cache_key.push('v');
+                Self::write_schema_cache_key_text(cache_key, discriminator);
+                Self::write_schema_cache_key_count(cache_key, cases.len());
 
-                        format!("{case_name}({field_pairs})")
-                    })
-                    .collect::<Vec<_>>()
-                    .join("|");
+                for (case_name, fields) in cases {
+                    Self::write_schema_cache_key_text(cache_key, case_name);
+                    Self::write_schema_cache_key_count(cache_key, fields.len());
 
-                format!("variant({discriminator};{case_pairs})")
+                    for (field_name, field_type) in fields {
+                        Self::write_schema_cache_key_text(cache_key, field_name);
+                        field_type.write_schema_cache_key(cache_key);
+                    }
+                }
             }
             Self::Union(members) => {
-                let member_keys = members.iter().map(Self::schema_cache_key).collect::<Vec<_>>();
+                cache_key.push('u');
+                Self::write_schema_cache_key_count(cache_key, members.len());
 
-                format!("union({})", member_keys.join("|"))
+                for member in members {
+                    member.write_schema_cache_key(cache_key);
+                }
             }
         }
+    }
+
+    fn write_schema_cache_key_count(cache_key: &mut String, count: usize) {
+        write!(cache_key, "{count};").expect("writing to a String should not fail");
+    }
+
+    fn write_schema_cache_key_text(cache_key: &mut String, text: &str) {
+        write!(cache_key, "{}:", text.len()).expect("writing to a String should not fail");
+        cache_key.push_str(text);
     }
 
     #[must_use]
@@ -722,7 +949,7 @@ impl WorkflowType {
                 }
             }
             Self::Union(union_members) => {
-                let Some(union_schemas) = schema.get_mut("oneOf").and_then(Value::as_array_mut) else {
+                let Some(union_schemas) = schema.get_mut("anyOf").and_then(Value::as_array_mut) else {
                     return;
                 };
 
@@ -844,7 +1071,7 @@ impl WorkflowType {
                 },
             }),
             Self::Union(union_members) => json!({
-                "oneOf": union_members
+                "anyOf": union_members
                     .iter()
                     .map(|union_member| union_member.json_schema_value_with_cache(schema_cache))
                     .collect::<Vec<_>>(),
@@ -982,6 +1209,69 @@ impl TypeExpressionWorkflowTypeExt for TypeExpression {
     }
 }
 
+pub trait ToolDeclarationWorkflowTypeExt {
+    fn resolved_input_type<HashBuilder: BuildHasher>(
+        &self,
+        named_schema_types: &HashMap<String, TypeExpression, HashBuilder>,
+    ) -> Result<WorkflowType, WorkflowSemanticError>;
+
+    fn resolved_full_input_type<HashBuilder: BuildHasher>(
+        &self,
+        named_schema_types: &HashMap<String, TypeExpression, HashBuilder>,
+    ) -> Result<WorkflowType, WorkflowSemanticError>;
+
+    fn resolved_output_type<HashBuilder: BuildHasher>(
+        &self,
+        named_schema_types: &HashMap<String, TypeExpression, HashBuilder>,
+    ) -> Result<WorkflowType, WorkflowSemanticError>;
+}
+
+impl ToolDeclarationWorkflowTypeExt for ToolDeclaration {
+    fn resolved_full_input_type<HashBuilder: BuildHasher>(
+        &self,
+        named_schema_types: &HashMap<String, TypeExpression, HashBuilder>,
+    ) -> Result<WorkflowType, WorkflowSemanticError> {
+        let Some(mcp_schema) = self.mcp_schema.as_ref().filter(|mcp_schema| mcp_schema.uses_discovered_input) else {
+            return TypeExpression::Object(self.input_fields.clone()).to_workflow_type(named_schema_types);
+        };
+
+        workflow_type_from_json_schema(&mcp_schema.input)
+    }
+
+    fn resolved_input_type<HashBuilder: BuildHasher>(
+        &self,
+        named_schema_types: &HashMap<String, TypeExpression, HashBuilder>,
+    ) -> Result<WorkflowType, WorkflowSemanticError> {
+        let mut input_type = self.resolved_full_input_type(named_schema_types)?;
+
+        if let WorkflowType::Object(input_fields) = &mut input_type {
+            for fixed_binding_field in &self.fixed_binding_fields {
+                input_fields.remove(&fixed_binding_field.name);
+            }
+        }
+
+        Ok(input_type)
+    }
+
+    fn resolved_output_type<HashBuilder: BuildHasher>(
+        &self,
+        named_schema_types: &HashMap<String, TypeExpression, HashBuilder>,
+    ) -> Result<WorkflowType, WorkflowSemanticError> {
+        if self.has_untyped_mcp_output() {
+            return Ok(WorkflowType::Any);
+        }
+
+        let Some(mcp_schema) = self.mcp_schema.as_ref().filter(|mcp_schema| mcp_schema.uses_discovered_output) else {
+            return TypeExpression::Object(self.output_fields.clone()).to_workflow_type(named_schema_types);
+        };
+
+        mcp_schema
+            .output
+            .as_ref()
+            .map_or(Ok(WorkflowType::Any), workflow_type_from_json_schema)
+    }
+}
+
 pub fn workflow_type_from_dsl<HashBuilder: BuildHasher>(
     type_expression: &TypeExpression,
     named_schemas: &HashMap<String, TypeExpression, HashBuilder>,
@@ -1024,6 +1314,12 @@ fn workflow_type_from_dsl_with_stack<HashBuilder: BuildHasher>(
             resolution_stack,
         )?)),
         TypeExpression::Variant { discriminator, cases } => {
+            if cases.is_empty() {
+                return Err(WorkflowSemanticError::Other {
+                    message: "variant type requires at least one case".to_string(),
+                });
+            }
+
             let mut resolved_cases = BTreeMap::new();
 
             for case in cases {
@@ -1038,13 +1334,19 @@ fn workflow_type_from_dsl_with_stack<HashBuilder: BuildHasher>(
             })
         }
         TypeExpression::Union(members) => {
+            if members.is_empty() {
+                return Err(WorkflowSemanticError::Other {
+                    message: "union type requires at least one member".to_string(),
+                });
+            }
+
             let mut resolved_members = Vec::with_capacity(members.len());
 
             for union_member in members {
                 resolved_members.push(workflow_type_from_dsl_with_stack(union_member, named_schemas, resolution_stack)?);
             }
 
-            Ok(WorkflowType::Union(resolved_members))
+            normalize_union_members_checked(resolved_members)
         }
         TypeExpression::SchemaReference(schema_name) => {
             if resolution_stack.contains(schema_name) {
@@ -1145,204 +1447,442 @@ where
         source,
     })?;
 
-    let definitions = extract_schema_definitions(&schema_value);
-
-    parse_json_schema(&schema_value, &definitions).map(WorkflowType::normalize)
+    workflow_type_from_json_schema(&schema_value)
 }
 
-fn extract_schema_definitions(root_schema: &Value) -> HashMap<String, Value> {
-    let mut definitions = HashMap::new();
+pub fn workflow_type_from_json_schema(schema_value: &Value) -> Result<WorkflowType, WorkflowSemanticError> {
+    WorkflowJsonSchemaParser::new(schema_value)
+        .parse(schema_value)
+        .map(WorkflowType::normalize)
+}
 
-    if let Some(definition_entries) = root_schema.get("$defs").and_then(Value::as_object) {
-        for (definition_name, definition_schema) in definition_entries {
-            definitions.insert(definition_name.clone(), definition_schema.clone());
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JsonSchemaTypeName {
+    String,
+    Integer,
+    Number,
+    Boolean,
+    Null,
+    Array,
+    Object,
+}
+
+impl JsonSchemaTypeName {
+    fn from_identifier(identifier: &str) -> Option<Self> {
+        match identifier {
+            "string" => Some(Self::String),
+            "integer" => Some(Self::Integer),
+            "number" => Some(Self::Number),
+            "boolean" => Some(Self::Boolean),
+            "null" => Some(Self::Null),
+            "array" => Some(Self::Array),
+            "object" => Some(Self::Object),
+            _ => None,
+        }
+    }
+}
+
+struct WorkflowJsonSchemaParser {
+    definitions: HashMap<String, Value>,
+    resolution_stack: Vec<String>,
+}
+
+impl WorkflowJsonSchemaParser {
+    fn new(root_schema: &Value) -> Self {
+        let mut definitions = HashMap::new();
+
+        for definitions_keyword in ["$defs", "definitions"] {
+            if let Some(definition_entries) = root_schema.get(definitions_keyword).and_then(Value::as_object) {
+                definitions.extend(
+                    definition_entries
+                        .iter()
+                        .map(|(definition_name, definition_schema)| (definition_name.clone(), definition_schema.clone())),
+                );
+            }
+        }
+
+        Self {
+            definitions,
+            resolution_stack: Vec::new(),
         }
     }
 
-    if let Some(definition_entries) = root_schema.get("definitions").and_then(Value::as_object) {
-        for (definition_name, definition_schema) in definition_entries {
-            definitions.insert(definition_name.clone(), definition_schema.clone());
-        }
-    }
-
-    definitions
-}
-
-fn parse_json_schema(schema_value: &Value, definitions: &HashMap<String, Value>) -> Result<WorkflowType, WorkflowSemanticError> {
-    if schema_value.is_boolean() {
-        return Err(WorkflowSemanticError::Other {
-            message: "unsupported boolean schema; dynamic schemas are not allowed".to_string(),
-        });
-    }
-
-    if let Some(reference) = schema_value.get("$ref").and_then(Value::as_str) {
-        return parse_reference_schema(reference, definitions);
-    }
-
-    if let Some(enum_values) = schema_value.get("enum").and_then(Value::as_array) {
-        let mut parsed_enum_values = Vec::new();
-
-        for enum_value in enum_values {
-            let Some(string_value) = enum_value.as_str() else {
-                return Err(WorkflowSemanticError::Other {
-                    message: format!("unsupported non-string enum variant in schema: {enum_value}"),
-                });
+    fn parse(&mut self, schema_value: &Value) -> Result<WorkflowType, WorkflowSemanticError> {
+        if let Some(boolean_schema) = schema_value.as_bool() {
+            return if boolean_schema {
+                Ok(WorkflowType::Any)
+            } else {
+                Err(Self::unsupported("boolean `false` schema has no valid values"))
             };
-
-            parsed_enum_values.push(string_value.to_string());
         }
 
-        parsed_enum_values.sort();
-        parsed_enum_values.dedup();
-
-        return Ok(WorkflowType::StringEnum(parsed_enum_values));
-    }
-
-    if let Some(any_of_schemas) = schema_value.get("anyOf").and_then(Value::as_array) {
-        return parse_union_schema(any_of_schemas, definitions);
-    }
-
-    if let Some(one_of_schemas) = schema_value.get("oneOf").and_then(Value::as_array) {
-        return parse_union_schema(one_of_schemas, definitions);
-    }
-
-    if let Some(type_entry) = schema_value.get("type") {
-        if let Some(type_name) = type_entry.as_str() {
-            return parse_type_name(type_name, schema_value, definitions);
+        if let Some(reference) = schema_value.get("$ref").and_then(Value::as_str) {
+            return self.parse_reference(reference);
         }
 
-        if let Some(type_names) = type_entry.as_array() {
-            let mut union_members = Vec::new();
+        if schema_value.get("allOf").is_some() {
+            return Err(Self::unsupported("`allOf` schemas are not supported"));
+        }
 
-            for type_name in type_names {
-                let Some(type_name) = type_name.as_str() else {
-                    return Err(WorkflowSemanticError::Other {
-                        message: format!("invalid schema `type` entry: {type_name}"),
-                    });
-                };
+        if let Some(enum_values) = schema_value.get("enum").and_then(Value::as_array) {
+            return self.parse_enum(enum_values);
+        }
 
-                union_members.push(parse_type_name(type_name, schema_value, definitions)?);
+        if let Some(any_of_schemas) = schema_value.get("anyOf").and_then(Value::as_array) {
+            return self.parse_union(any_of_schemas, Self::discriminator_name(schema_value));
+        }
+
+        if let Some(one_of_schemas) = schema_value.get("oneOf").and_then(Value::as_array) {
+            return self.parse_union(one_of_schemas, Self::discriminator_name(schema_value));
+        }
+
+        if let Some(constant_value) = schema_value.get("const") {
+            return match constant_value {
+                Value::Null => Ok(WorkflowType::Null),
+                Value::String(string_constant) => Ok(WorkflowType::StringEnum(vec![string_constant.clone()])),
+                _ => Err(Self::unsupported(format!(
+                    "non-string `const` value is not supported: {constant_value}"
+                ))),
+            };
+        }
+
+        if schema_value.get("properties").is_some() {
+            return self.parse_object(schema_value);
+        }
+
+        if let Some(type_entry) = schema_value.get("type") {
+            if let Some(type_name) = type_entry.as_str() {
+                return self.parse_type(type_name, schema_value);
             }
 
-            return Ok(WorkflowType::Union(union_members));
+            if let Some(type_names) = type_entry.as_array() {
+                let mut union_members = Vec::with_capacity(type_names.len());
+
+                for type_name in type_names {
+                    let Some(type_name) = type_name.as_str() else {
+                        return Err(Self::unsupported(format!("invalid schema `type` entry: {type_name}")));
+                    };
+
+                    union_members.push(self.parse_type(type_name, schema_value)?);
+                }
+
+                return normalize_union_members_checked(union_members);
+            }
+
+            return Err(Self::unsupported(format!("invalid schema `type` entry: {type_entry}")));
+        }
+
+        if schema_value.as_object().is_some_and(Map::is_empty) {
+            return Ok(WorkflowType::Any);
+        }
+
+        Err(Self::unsupported(format!("unsupported schema shape: {schema_value}")))
+    }
+
+    fn parse_reference(&mut self, reference: &str) -> Result<WorkflowType, WorkflowSemanticError> {
+        let Some(encoded_reference_name) = reference
+            .strip_prefix("#/$defs/")
+            .or_else(|| reference.strip_prefix("#/definitions/"))
+        else {
+            return Err(Self::unsupported(format!("unsupported schema reference path `{reference}`")));
+        };
+        let reference_name = encoded_reference_name.replace("~1", "/").replace("~0", "~");
+
+        if self.resolution_stack.contains(&reference_name) {
+            let mut cycle = self.resolution_stack.clone();
+            cycle.push(reference_name);
+
+            return Err(Self::unsupported(format!(
+                "recursive schema reference is not supported: {}",
+                cycle.join(" -> ")
+            )));
+        }
+
+        let referenced_schema = self
+            .definitions
+            .get(&reference_name)
+            .cloned()
+            .ok_or_else(|| Self::unsupported(format!("missing schema definition for reference `{reference}`")))?;
+        self.resolution_stack.push(reference_name);
+        let parsed_reference = self.parse(&referenced_schema);
+        self.resolution_stack.pop();
+
+        parsed_reference
+    }
+
+    fn parse_enum(&mut self, enum_values: &[Value]) -> Result<WorkflowType, WorkflowSemanticError> {
+        if enum_values.is_empty() {
+            return Err(Self::unsupported("empty enum schema has no valid values"));
+        }
+
+        let mut string_values = Vec::new();
+        let mut includes_null = false;
+
+        for enum_value in enum_values {
+            match enum_value {
+                Value::String(string_value) => string_values.push(string_value.clone()),
+                Value::Null => includes_null = true,
+                _ => {
+                    return Err(Self::unsupported(format!(
+                        "unsupported non-string enum variant in schema: {enum_value}"
+                    )));
+                }
+            }
+        }
+
+        string_values.sort();
+        string_values.dedup();
+        let mut enum_type = if string_values.is_empty() {
+            WorkflowType::Null
+        } else {
+            WorkflowType::StringEnum(string_values)
+        };
+
+        if includes_null && !matches!(enum_type, WorkflowType::Null) {
+            enum_type = WorkflowType::nullable(enum_type);
+        }
+
+        Ok(enum_type)
+    }
+
+    fn parse_union(
+        &mut self,
+        union_members: &[Value],
+        declared_discriminator: Option<&str>,
+    ) -> Result<WorkflowType, WorkflowSemanticError> {
+        if union_members.is_empty() {
+            return Err(Self::unsupported("empty union schema has no valid values"));
+        }
+
+        let mut parsed_members = Vec::with_capacity(union_members.len());
+
+        for union_member in union_members {
+            parsed_members.push(self.parse(union_member)?);
+        }
+
+        if let Some(variant_type) = Self::infer_variant_union(&parsed_members, declared_discriminator)? {
+            return Ok(variant_type);
+        }
+
+        normalize_union_members_checked(parsed_members)
+    }
+
+    fn discriminator_name(schema_value: &Value) -> Option<&str> {
+        schema_value
+            .get("discriminator")
+            .and_then(|discriminator| discriminator.get("propertyName"))
+            .and_then(Value::as_str)
+    }
+
+    fn infer_variant_union(
+        union_members: &[WorkflowType],
+        declared_discriminator: Option<&str>,
+    ) -> Result<Option<WorkflowType>, WorkflowSemanticError> {
+        let Some(WorkflowType::Object(first_fields)) = union_members.first() else {
+            return Ok(None);
+        };
+        let inferred_discriminators = first_fields
+            .iter()
+            .filter_map(|(field_name, field_type)| {
+                let WorkflowType::StringEnum(enum_values) = field_type else {
+                    return None;
+                };
+
+                (enum_values.len() == 1).then_some(field_name.as_str())
+            })
+            .filter(|field_name| {
+                union_members.iter().all(|union_member| {
+                    let WorkflowType::Object(fields) = union_member else {
+                        return false;
+                    };
+
+                    matches!(fields.get(*field_name), Some(WorkflowType::StringEnum(enum_values)) if enum_values.len() == 1)
+                })
+            })
+            .collect::<Vec<_>>();
+        let discriminator = match declared_discriminator {
+            Some(discriminator) => discriminator,
+            None if inferred_discriminators.len() == 1 => inferred_discriminators[0],
+            None => return Ok(None),
+        };
+        let mut cases = BTreeMap::new();
+
+        for union_member in union_members {
+            let WorkflowType::Object(fields) = union_member else {
+                return Ok(None);
+            };
+            let Some(WorkflowType::StringEnum(case_names)) = fields.get(discriminator) else {
+                return Err(Self::unsupported(format!(
+                    "discriminated union member is missing string discriminator `{discriminator}`"
+                )));
+            };
+
+            if case_names.len() != 1 {
+                return Err(Self::unsupported(format!(
+                    "discriminated union member requires one `{discriminator}` value"
+                )));
+            }
+
+            let case_name = case_names[0].clone();
+
+            if cases.insert(case_name.clone(), fields.clone()).is_some() {
+                return Err(Self::unsupported(format!(
+                    "discriminated union contains duplicate case `{case_name}`"
+                )));
+            }
+        }
+
+        Ok(Some(WorkflowType::Variant {
+            discriminator: discriminator.to_string(),
+            cases,
+        }))
+    }
+
+    fn parse_type(&mut self, type_name: &str, schema_value: &Value) -> Result<WorkflowType, WorkflowSemanticError> {
+        let schema_type = JsonSchemaTypeName::from_identifier(type_name)
+            .ok_or_else(|| Self::unsupported(format!("unsupported schema type `{type_name}`")))?;
+
+        match schema_type {
+            JsonSchemaTypeName::String => Ok(WorkflowType::String),
+            JsonSchemaTypeName::Integer => Ok(WorkflowType::Integer),
+            JsonSchemaTypeName::Number => Ok(WorkflowType::Float),
+            JsonSchemaTypeName::Boolean => Ok(WorkflowType::Boolean),
+            JsonSchemaTypeName::Null => Ok(WorkflowType::Null),
+            JsonSchemaTypeName::Array => self.parse_array(schema_value),
+            JsonSchemaTypeName::Object => self.parse_object(schema_value),
         }
     }
 
-    if let Some(constant_value) = schema_value.get("const") {
-        if constant_value.is_null() {
-            return Ok(WorkflowType::Null);
+    fn parse_array(&mut self, schema_value: &Value) -> Result<WorkflowType, WorkflowSemanticError> {
+        if let Some(prefix_items) = schema_value.get("prefixItems").and_then(Value::as_array) {
+            let mut tuple_items = Vec::with_capacity(prefix_items.len());
+
+            for prefix_item in prefix_items {
+                tuple_items.push(self.parse(prefix_item)?);
+            }
+
+            return Ok(WorkflowType::Tuple(tuple_items));
         }
 
-        if let Some(string_constant) = constant_value.as_str() {
-            return Ok(WorkflowType::StringEnum(vec![string_constant.to_string()]));
-        }
+        let item_type = match schema_value.get("items") {
+            Some(item_schema) => self.parse(item_schema)?,
+            None => WorkflowType::Any,
+        };
+        let minimum_items = schema_value.get("minItems").and_then(Value::as_u64);
+        let maximum_items = schema_value.get("maxItems").and_then(Value::as_u64);
+        let fixed_length = if minimum_items.is_some() && minimum_items == maximum_items {
+            minimum_items
+        } else {
+            None
+        };
+
+        Ok(WorkflowType::Array {
+            item_type: Box::new(item_type),
+            fixed_length,
+        })
     }
 
-    Err(WorkflowSemanticError::Other {
-        message: format!("unsupported schema shape: {schema_value}"),
-    })
-}
+    fn parse_object(&mut self, schema_value: &Value) -> Result<WorkflowType, WorkflowSemanticError> {
+        let mut fields = BTreeMap::new();
+        let required_fields = schema_value
+            .get("required")
+            .and_then(Value::as_array)
+            .map(|required| required.iter().filter_map(Value::as_str).collect::<HashSet<_>>())
+            .unwrap_or_default();
 
-fn parse_reference_schema(reference: &str, definitions: &HashMap<String, Value>) -> Result<WorkflowType, WorkflowSemanticError> {
-    let Some(reference_name) = reference
-        .strip_prefix("#/$defs/")
-        .or_else(|| reference.strip_prefix("#/definitions/"))
-    else {
-        return Err(WorkflowSemanticError::Other {
-            message: format!("unsupported schema reference path `{reference}`"),
-        });
-    };
+        if let Some(properties) = schema_value.get("properties").and_then(Value::as_object) {
+            for (field_name, field_schema) in properties {
+                let mut field_type = self.parse(field_schema)?;
 
-    let Some(referenced_schema) = definitions.get(reference_name) else {
-        return Err(WorkflowSemanticError::Other {
-            message: format!("missing schema definition for reference `{reference}`"),
-        });
-    };
+                if !required_fields.contains(field_name.as_str()) {
+                    field_type = WorkflowType::nullable(field_type);
+                }
 
-    parse_json_schema(referenced_schema, definitions)
-}
-
-fn parse_union_schema(union_members: &[Value], definitions: &HashMap<String, Value>) -> Result<WorkflowType, WorkflowSemanticError> {
-    let mut parsed_members = Vec::new();
-
-    for union_member in union_members {
-        parsed_members.push(parse_json_schema(union_member, definitions)?);
-    }
-
-    Ok(WorkflowType::Union(parsed_members))
-}
-
-fn parse_type_name(
-    type_name: &str,
-    schema_value: &Value,
-    definitions: &HashMap<String, Value>,
-) -> Result<WorkflowType, WorkflowSemanticError> {
-    match type_name {
-        "string" => Ok(WorkflowType::String),
-        "integer" => Ok(WorkflowType::Integer),
-        "number" => Ok(WorkflowType::Float),
-        "boolean" => Ok(WorkflowType::Boolean),
-        "null" => Ok(WorkflowType::Null),
-        "array" => parse_array_schema(schema_value, definitions),
-        "object" => parse_object_schema(schema_value, definitions),
-        _ => Err(WorkflowSemanticError::Other {
-            message: format!("unsupported schema type `{type_name}`"),
-        }),
-    }
-}
-
-fn parse_array_schema(schema_value: &Value, definitions: &HashMap<String, Value>) -> Result<WorkflowType, WorkflowSemanticError> {
-    if let Some(prefix_items) = schema_value.get("prefixItems").and_then(Value::as_array) {
-        let mut tuple_items = Vec::new();
-
-        for prefix_item in prefix_items {
-            tuple_items.push(parse_json_schema(prefix_item, definitions)?);
+                fields.insert(field_name.clone(), field_type);
+            }
         }
 
-        return Ok(WorkflowType::Tuple(tuple_items));
-    }
-
-    let item_type = match schema_value.get("items") {
-        Some(item_schema) => parse_json_schema(item_schema, definitions)?,
-        None => {
-            return Err(WorkflowSemanticError::Other {
-                message: "array schema must include `items`".to_string(),
-            });
+        if fields.is_empty() && schema_value.get("additionalProperties") != Some(&Value::Bool(false)) {
+            return Ok(WorkflowType::AnyObject);
         }
-    };
 
-    let minimum_items = schema_value.get("minItems").and_then(Value::as_u64);
-    let maximum_items = schema_value.get("maxItems").and_then(Value::as_u64);
-
-    let fixed_length = if minimum_items.is_some() && minimum_items == maximum_items {
-        minimum_items
-    } else {
-        None
-    };
-
-    Ok(WorkflowType::Array {
-        item_type: Box::new(item_type),
-        fixed_length,
-    })
-}
-
-fn parse_object_schema(schema_value: &Value, definitions: &HashMap<String, Value>) -> Result<WorkflowType, WorkflowSemanticError> {
-    let mut fields = BTreeMap::new();
-
-    if let Some(properties) = schema_value.get("properties").and_then(Value::as_object) {
-        for (field_name, field_schema) in properties {
-            fields.insert(field_name.clone(), parse_json_schema(field_schema, definitions)?);
-        }
+        Ok(WorkflowType::Object(fields))
     }
 
-    if fields.is_empty() && schema_value.get("additionalProperties") != Some(&Value::Bool(false)) {
-        return Ok(WorkflowType::AnyObject);
+    fn unsupported(message: impl Into<String>) -> WorkflowSemanticError {
+        WorkflowSemanticError::Other { message: message.into() }
     }
-
-    Ok(WorkflowType::Object(fields))
 }
 
 fn normalize_union_members(union_members: Vec<WorkflowType>) -> WorkflowType {
+    normalize_union_members_checked(union_members.clone())
+        .unwrap_or_else(|_| normalize_union_members_without_variant_aggregation(union_members))
+}
+
+fn normalize_union_members_checked(mut union_members: Vec<WorkflowType>) -> Result<WorkflowType, WorkflowSemanticError> {
+    aggregate_variant_union_members(&mut union_members)?;
+
+    Ok(normalize_union_members_without_variant_aggregation(union_members))
+}
+
+fn aggregate_variant_union_members(union_members: &mut Vec<WorkflowType>) -> Result<(), WorkflowSemanticError> {
+    let mut discriminator = None::<String>;
+    let mut aggregated_cases = BTreeMap::new();
+    let mut variant_member_count = 0_usize;
+
+    for union_member in union_members.iter() {
+        let WorkflowType::Variant {
+            discriminator: member_discriminator,
+            cases,
+        } = union_member
+        else {
+            continue;
+        };
+        variant_member_count += 1;
+
+        if discriminator
+            .as_ref()
+            .is_some_and(|discriminator| discriminator != member_discriminator)
+        {
+            return Err(WorkflowSemanticError::Other {
+                message: format!(
+                    "union variant members use incompatible discriminators `{}` and `{member_discriminator}`",
+                    discriminator.as_deref().unwrap_or_default()
+                ),
+            });
+        }
+
+        discriminator.get_or_insert_with(|| member_discriminator.clone());
+
+        for (case_name, case_fields) in cases {
+            if let Some(existing_case_fields) = aggregated_cases.get(case_name) {
+                if existing_case_fields != case_fields {
+                    return Err(WorkflowSemanticError::Other {
+                        message: format!("union variant case `{case_name}` has incompatible field schemas"),
+                    });
+                }
+
+                continue;
+            }
+
+            aggregated_cases.insert(case_name.clone(), case_fields.clone());
+        }
+    }
+
+    if variant_member_count < 2 {
+        return Ok(());
+    }
+
+    union_members.retain(|union_member| !matches!(union_member, WorkflowType::Variant { .. }));
+    union_members.push(WorkflowType::Variant {
+        discriminator: discriminator.unwrap_or_default(),
+        cases: aggregated_cases,
+    });
+
+    Ok(())
+}
+
+fn normalize_union_members_without_variant_aggregation(union_members: Vec<WorkflowType>) -> WorkflowType {
     let mut flattened_members = Vec::new();
 
     for union_member in union_members {
@@ -1390,6 +1930,20 @@ fn normalize_union_members(union_members: Vec<WorkflowType>) -> WorkflowType {
 
 pub fn validate_value_against_type(value: &Value, expected_type: &WorkflowType) -> Result<(), String> {
     expected_type.validate_value(value)
+}
+
+pub fn validate_value_against_json_schema(value: &Value, schema: &Value) -> Result<(), String> {
+    let validator = jsonschema::validator_for(schema).map_err(|compile_error| format!("failed to compile JSON schema: {compile_error}"))?;
+    let mut validation_issues = validator.iter_errors(value).map(format_validation_issue).collect::<Vec<_>>();
+
+    if validation_issues.is_empty() {
+        return Ok(());
+    }
+
+    validation_issues.sort();
+    validation_issues.dedup();
+
+    Err(validation_issues.join("; "))
 }
 
 #[must_use]
@@ -1463,6 +2017,12 @@ pub fn parse_number_literal(number_literal: &str) -> Result<Number, WorkflowSema
         return Ok(Number::from(unsigned_integer_value));
     }
 
+    if !normalized_number_literal.contains('.') {
+        return Err(WorkflowSemanticError::Other {
+            message: format!("integer literal `{number_literal}` is outside the supported 64-bit range"),
+        });
+    }
+
     let float_value = normalized_number_literal
         .parse::<f64>()
         .map_err(|error| WorkflowSemanticError::Other {
@@ -1488,6 +2048,9 @@ pub fn ensure_type_matches(expected_type: &WorkflowType, actual_type: &WorkflowT
     }
 
     match (&expected_type, &actual_type) {
+        (WorkflowType::Float, WorkflowType::Integer)
+        | (WorkflowType::AnyObject, WorkflowType::Object(_))
+        | (WorkflowType::String, WorkflowType::StringEnum(_)) => true,
         (
             WorkflowType::Array {
                 item_type: expected_item_type,
@@ -1546,6 +2109,9 @@ pub fn ensure_type_matches(expected_type: &WorkflowType, actual_type: &WorkflowT
         (WorkflowType::Union(expected_members), _) => expected_members
             .iter()
             .any(|expected_member| ensure_type_matches(expected_member, &actual_type)),
+        (_, WorkflowType::Union(actual_members)) => actual_members
+            .iter()
+            .all(|actual_member| ensure_type_matches(&expected_type, actual_member)),
         _ => expected_type == actual_type,
     }
 }
@@ -1575,6 +2141,46 @@ mod tests {
     use std::collections::{BTreeMap, HashMap};
     use superwire_types::ast::{SourcePosition, SourceSpan, TypeExpression, TypedField, VariantCase};
 
+    #[test]
+    fn numeric_compatibility_only_widens_integer_to_float() {
+        assert!(ensure_type_matches(&WorkflowType::Float, &WorkflowType::Integer));
+        assert!(!ensure_type_matches(&WorkflowType::Integer, &WorkflowType::Float));
+    }
+
+    #[test]
+    fn schema_cache_keys_distinguish_delimiter_shaped_enum_values() {
+        let first_type = WorkflowType::StringEnum(vec!["alpha|beta".to_string(), "gamma".to_string()]);
+        let second_type = WorkflowType::StringEnum(vec!["alpha".to_string(), "beta|gamma".to_string()]);
+
+        assert_ne!(first_type.schema_cache_key(), second_type.schema_cache_key());
+
+        let mut schema_cache = WorkflowSchemaCache::new();
+        let first_schema = first_type.json_schema_value_with_cache(&mut schema_cache);
+        let second_schema = second_type.json_schema_value_with_cache(&mut schema_cache);
+
+        assert_ne!(first_schema, second_schema);
+        assert_eq!(first_schema, first_type.json_schema_value());
+        assert_eq!(second_schema, second_type.json_schema_value());
+        assert_eq!(schema_cache.len(), 2);
+    }
+
+    #[test]
+    fn rejects_empty_type_expression_collections_from_direct_ast_construction() {
+        let named_schemas = HashMap::<String, TypeExpression>::new();
+        let empty_union_error =
+            workflow_type_from_dsl(&TypeExpression::Union(Vec::new()), &named_schemas).expect_err("empty union AST should be rejected");
+        let empty_variant_error = workflow_type_from_dsl(
+            &TypeExpression::Variant {
+                discriminator: "kind".to_string(),
+                cases: Vec::new(),
+            },
+            &named_schemas,
+        )
+        .expect_err("empty variant AST should be rejected");
+
+        assert!(empty_union_error.to_string().contains("requires at least one member"));
+        assert!(empty_variant_error.to_string().contains("requires at least one case"));
+    }
     #[test]
     fn lowers_nullable_enum_to_string_enum_or_null() {
         let type_expression = TypeExpression::nullable(TypeExpression::Union(vec![

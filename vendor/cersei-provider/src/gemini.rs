@@ -4,10 +4,13 @@
 //! shim, enabling access to native Gemini features like safety settings,
 //! grounding, and proper multimodal support.
 
+use crate::openai::{
+    owned_completion_stream, send_stream_event, ProviderResponseExt, StreamEventSenderExt, MAX_PROVIDER_PARTIAL_LINE_BYTES,
+    MAX_PROVIDER_SSE_LINE_BYTES,
+};
 use crate::*;
 use cersei_types::*;
 use futures::StreamExt;
-use tokio::sync::mpsc;
 
 const GEMINI_API_BASE: &str = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -375,8 +378,6 @@ impl Provider for Gemini {
         // output.
         let url = format!("{}/models/{}:streamGenerateContent?alt=sse", self.base_url, model);
 
-        let (tx, rx) = mpsc::channel(256);
-
         let req = self
             .client
             .post(&url)
@@ -385,177 +386,335 @@ impl Provider for Gemini {
             .json(&body)
             .build()
             .map_err(CerseiError::Http)?;
-
         let client = self.client.clone();
+        let completion_stream = owned_completion_stream(move |tx| async move {
+            let response_result = tokio::select! {
+                () = tx.closed() => return,
+                response_result = client.execute(req) => response_result,
+            };
 
-        tokio::spawn(async move {
-            match client.execute(req).await {
+            match response_result {
                 Ok(response) => {
                     if !response.status().is_success() {
-                        let status = response.status().as_u16();
-                        let body = response.text().await.unwrap_or_default();
-                        let _ = tx
-                            .send(StreamEvent::Error {
-                                message: format!("HTTP {}: {}", status, body),
-                            })
-                            .await;
+                        let Some(message) = response.bounded_error_message(&tx).await else {
+                            return;
+                        };
+
+                        send_stream_event!(tx, StreamEvent::Error { message });
+
                         return;
                     }
 
-                    let _ = tx
-                        .send(StreamEvent::MessageStart {
+                    send_stream_event!(
+                        tx,
+                        StreamEvent::MessageStart {
                             id: String::new(),
                             model: String::new(),
-                        })
-                        .await;
+                        }
+                    );
 
                     let mut stream = response.bytes_stream();
-                    let mut buffer = String::new();
-                    let mut block_index: usize = 0;
-                    let mut total_input_tokens: u64 = 0;
-                    let mut total_output_tokens: u64 = 0;
+                    let mut buffer = Vec::new();
+                    let mut stream_bytes = 0_usize;
+                    let mut block_index = 0_usize;
+                    let mut total_input_tokens = 0_u64;
+                    let mut total_output_tokens = 0_u64;
                     let mut saw_function_calls = false;
+                    let mut saw_completion = false;
 
-                    while let Some(chunk) = stream.next().await {
-                        match chunk {
+                    loop {
+                        let chunk_result = tokio::select! {
+                            () = tx.closed() => return,
+                            chunk_result = stream.next() => chunk_result,
+                        };
+                        let Some(chunk_result) = chunk_result else {
+                            break;
+                        };
+
+                        match chunk_result {
                             Ok(bytes) => {
-                                buffer.push_str(&String::from_utf8_lossy(&bytes));
-
-                                while let Some(pos) = buffer.find("\n") {
-                                    let line = buffer[..pos].to_string();
-                                    buffer = buffer[pos + 1..].to_string();
-
-                                    if let Some(data) = line.strip_prefix("data: ") {
-                                        let data = data.trim();
-                                        if data.is_empty() {
-                                            continue;
+                                let Some(resulting_stream_bytes) = stream_bytes.checked_add(bytes.len()) else {
+                                    send_stream_event!(
+                                        tx,
+                                        StreamEvent::Error {
+                                            message: "provider stream exceeded the configured limit".to_string(),
                                         }
+                                    );
 
-                                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-                                            // Extract usage metadata
-                                            if let Some(metadata) = json.get("usageMetadata") {
-                                                total_input_tokens = metadata
-                                                    .get("promptTokenCount")
-                                                    .and_then(|v| v.as_u64())
-                                                    .unwrap_or(total_input_tokens);
-                                                total_output_tokens = metadata
-                                                    .get("candidatesTokenCount")
-                                                    .and_then(|v| v.as_u64())
-                                                    .unwrap_or(total_output_tokens);
+                                    return;
+                                };
+                                stream_bytes = resulting_stream_bytes;
+
+                                if stream_bytes > crate::MAX_PROVIDER_STREAM_BYTES {
+                                    send_stream_event!(
+                                        tx,
+                                        StreamEvent::Error {
+                                            message: "provider stream exceeded the configured limit".to_string(),
+                                        }
+                                    );
+
+                                    return;
+                                }
+
+                                buffer.extend_from_slice(&bytes);
+
+                                let partial_line_bytes = buffer
+                                    .iter()
+                                    .rposition(|byte| *byte == b'\n')
+                                    .map_or(buffer.len(), |line_end| buffer.len().saturating_sub(line_end + 1));
+
+                                if partial_line_bytes > MAX_PROVIDER_PARTIAL_LINE_BYTES {
+                                    send_stream_event!(
+                                        tx,
+                                        StreamEvent::Error {
+                                            message: "provider SSE partial line exceeded the configured limit".to_string(),
+                                        }
+                                    );
+
+                                    return;
+                                }
+
+                                while let Some(line_end) = buffer.iter().position(|byte| *byte == b'\n') {
+                                    if line_end > MAX_PROVIDER_SSE_LINE_BYTES {
+                                        send_stream_event!(
+                                            tx,
+                                            StreamEvent::Error {
+                                                message: "provider SSE line exceeded the configured limit".to_string(),
                                             }
+                                        );
 
-                                            // Process candidates
-                                            if let Some(candidates) = json.get("candidates").and_then(|c| c.as_array()) {
-                                                for candidate in candidates {
-                                                    if let Some(parts) =
-                                                        candidate.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array())
-                                                    {
-                                                        for part in parts {
-                                                            if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
-                                                                let _ = tx
-                                                                    .send(StreamEvent::ContentBlockStart {
-                                                                        index: block_index,
-                                                                        block_type: "text".into(),
-                                                                        id: None,
-                                                                        name: None,
-                                                                    })
-                                                                    .await;
-                                                                let _ = tx
-                                                                    .send(StreamEvent::TextDelta {
-                                                                        index: block_index,
-                                                                        text: text.to_string(),
-                                                                    })
-                                                                    .await;
-                                                                let _ = tx.send(StreamEvent::ContentBlockStop { index: block_index }).await;
-                                                                block_index += 1;
+                                        return;
+                                    }
+
+                                    let line = String::from_utf8_lossy(&buffer[..line_end]).into_owned();
+                                    buffer.drain(..=line_end);
+                                    let Some(data) = line.strip_prefix("data:") else {
+                                        continue;
+                                    };
+                                    let data = data.trim();
+
+                                    if data.is_empty() {
+                                        continue;
+                                    }
+
+                                    let Ok(json) = serde_json::from_str::<serde_json::Value>(data) else {
+                                        continue;
+                                    };
+
+                                    if let Some(metadata) = json.get("usageMetadata") {
+                                        total_input_tokens = metadata
+                                            .get("promptTokenCount")
+                                            .and_then(serde_json::Value::as_u64)
+                                            .unwrap_or(total_input_tokens);
+                                        total_output_tokens = metadata
+                                            .get("candidatesTokenCount")
+                                            .and_then(serde_json::Value::as_u64)
+                                            .unwrap_or(total_output_tokens);
+                                    }
+
+                                    let Some(candidates) = json.get("candidates").and_then(serde_json::Value::as_array) else {
+                                        continue;
+                                    };
+
+                                    for candidate in candidates {
+                                        if let Some(parts) = candidate
+                                            .get("content")
+                                            .and_then(|content| content.get("parts"))
+                                            .and_then(serde_json::Value::as_array)
+                                        {
+                                            for part in parts {
+                                                if let Some(text) = part.get("text").and_then(serde_json::Value::as_str) {
+                                                    if block_index >= crate::MAX_PROVIDER_CONTENT_BLOCKS {
+                                                        send_stream_event!(
+                                                            tx,
+                                                            StreamEvent::Error {
+                                                                message: "provider content block index exceeded the configured limit"
+                                                                    .to_string(),
                                                             }
+                                                        );
 
-                                                            if let Some(fc) = part.get("functionCall") {
-                                                                saw_function_calls = true;
-                                                                let name =
-                                                                    fc.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
-                                                                let args = fc
-                                                                    .get("args")
-                                                                    .cloned()
-                                                                    .unwrap_or(serde_json::Value::Object(Default::default()));
-                                                                // Capture thoughtSignature (sibling of functionCall at part level, Gemini 3.1+)
-                                                                let thought_sig =
-                                                                    part.get("thoughtSignature").and_then(|s| s.as_str()).unwrap_or("");
-                                                                // Capture functionCall.id if present
-                                                                let fc_id = fc.get("id").and_then(|s| s.as_str()).unwrap_or("");
-                                                                // Encode both in tool_id for roundtrip
-                                                                let tool_id = if thought_sig.is_empty() {
-                                                                    format!("gemini-tool-{}", block_index)
-                                                                } else {
-                                                                    format!("gemini-tool-{}::{}::{}", block_index, fc_id, thought_sig)
-                                                                };
+                                                        return;
+                                                    }
 
-                                                                let _ = tx
-                                                                    .send(StreamEvent::ContentBlockStart {
-                                                                        index: block_index,
-                                                                        block_type: "tool_use".into(),
-                                                                        id: Some(tool_id),
-                                                                        name: Some(name),
-                                                                    })
-                                                                    .await;
-                                                                let _ = tx
-                                                                    .send(StreamEvent::InputJsonDelta {
-                                                                        index: block_index,
-                                                                        partial_json: serde_json::to_string(&args).unwrap_or_default(),
-                                                                    })
-                                                                    .await;
-                                                                let _ = tx.send(StreamEvent::ContentBlockStop { index: block_index }).await;
-                                                                block_index += 1;
-                                                            }
+                                                    send_stream_event!(
+                                                        tx,
+                                                        StreamEvent::ContentBlockStart {
+                                                            index: block_index,
+                                                            block_type: "text".into(),
+                                                            id: None,
+                                                            name: None,
                                                         }
+                                                    );
+                                                    send_stream_event!(
+                                                        tx,
+                                                        StreamEvent::TextDelta {
+                                                            index: block_index,
+                                                            text: text.to_string(),
+                                                        }
+                                                    );
+                                                    send_stream_event!(tx, StreamEvent::ContentBlockStop { index: block_index });
+                                                    block_index += 1;
+                                                }
+
+                                                if let Some(function_call) = part.get("functionCall") {
+                                                    if block_index >= crate::MAX_PROVIDER_CONTENT_BLOCKS {
+                                                        send_stream_event!(
+                                                            tx,
+                                                            StreamEvent::Error {
+                                                                message: "provider content block index exceeded the configured limit"
+                                                                    .to_string(),
+                                                            }
+                                                        );
+
+                                                        return;
                                                     }
 
-                                                    // Check finish reason
-                                                    let finish_reason = candidate.get("finishReason").and_then(|r| r.as_str());
-                                                    if let Some(reason) = finish_reason {
-                                                        let stop = if saw_function_calls {
-                                                            StopReason::ToolUse
-                                                        } else {
-                                                            match reason {
-                                                                "STOP" => StopReason::EndTurn,
-                                                                "MAX_TOKENS" => StopReason::MaxTokens,
-                                                                "SAFETY" => StopReason::EndTurn,
-                                                                _ => StopReason::EndTurn,
+                                                    saw_function_calls = true;
+                                                    let function_name = function_call
+                                                        .get("name")
+                                                        .and_then(serde_json::Value::as_str)
+                                                        .unwrap_or("")
+                                                        .to_string();
+                                                    let function_arguments = function_call
+                                                        .get("args")
+                                                        .cloned()
+                                                        .unwrap_or(serde_json::Value::Object(Default::default()));
+                                                    let thought_signature =
+                                                        part.get("thoughtSignature").and_then(serde_json::Value::as_str).unwrap_or("");
+                                                    let function_call_identifier =
+                                                        function_call.get("id").and_then(serde_json::Value::as_str).unwrap_or("");
+                                                    let tool_identifier = if thought_signature.is_empty() {
+                                                        format!("gemini-tool-{block_index}")
+                                                    } else {
+                                                        format!(
+                                                            "gemini-tool-{block_index}::{function_call_identifier}::{thought_signature}"
+                                                        )
+                                                    };
+                                                    let serialized_arguments = match serde_json::to_string(&function_arguments) {
+                                                        Ok(serialized_arguments) => serialized_arguments,
+                                                        Err(error) => {
+                                                            send_stream_event!(
+                                                                tx,
+                                                                StreamEvent::Error {
+                                                                    message: format!(
+                                                                        "failed to serialize provider tool arguments: {error}"
+                                                                    ),
+                                                                }
+                                                            );
+
+                                                            return;
+                                                        }
+                                                    };
+
+                                                    if serialized_arguments.len() > crate::MAX_PROVIDER_TOOL_ARGUMENT_BYTES {
+                                                        send_stream_event!(
+                                                            tx,
+                                                            StreamEvent::Error {
+                                                                message: "provider tool arguments exceeded the configured limit"
+                                                                    .to_string(),
                                                             }
-                                                        };
-                                                        let _ = tx
-                                                            .send(StreamEvent::MessageDelta {
-                                                                stop_reason: Some(stop),
-                                                                usage: Some(Usage {
-                                                                    input_tokens: total_input_tokens,
-                                                                    output_tokens: total_output_tokens,
-                                                                    ..Default::default()
-                                                                }),
-                                                            })
-                                                            .await;
+                                                        );
+
+                                                        return;
                                                     }
+
+                                                    send_stream_event!(
+                                                        tx,
+                                                        StreamEvent::ContentBlockStart {
+                                                            index: block_index,
+                                                            block_type: "tool_use".into(),
+                                                            id: Some(tool_identifier),
+                                                            name: Some(function_name),
+                                                        }
+                                                    );
+                                                    send_stream_event!(
+                                                        tx,
+                                                        StreamEvent::InputJsonDelta {
+                                                            index: block_index,
+                                                            partial_json: serialized_arguments,
+                                                        }
+                                                    );
+                                                    send_stream_event!(tx, StreamEvent::ContentBlockStop { index: block_index });
+                                                    block_index += 1;
                                                 }
                                             }
                                         }
+
+                                        let Some(finish_reason) = candidate.get("finishReason").and_then(serde_json::Value::as_str) else {
+                                            continue;
+                                        };
+                                        saw_completion = true;
+                                        let stop_reason = if saw_function_calls {
+                                            StopReason::ToolUse
+                                        } else {
+                                            match finish_reason {
+                                                "MAX_TOKENS" => StopReason::MaxTokens,
+                                                "STOP" | "SAFETY" => StopReason::EndTurn,
+                                                _ => StopReason::EndTurn,
+                                            }
+                                        };
+
+                                        send_stream_event!(
+                                            tx,
+                                            StreamEvent::MessageDelta {
+                                                stop_reason: Some(stop_reason),
+                                                usage: Some(Usage {
+                                                    input_tokens: total_input_tokens,
+                                                    output_tokens: total_output_tokens,
+                                                    ..Default::default()
+                                                }),
+                                            }
+                                        );
                                     }
                                 }
                             }
-                            Err(e) => {
-                                let _ = tx.send(StreamEvent::Error { message: e.to_string() }).await;
+                            Err(error) => {
+                                send_stream_event!(
+                                    tx,
+                                    StreamEvent::Error {
+                                        message: error.to_string(),
+                                    }
+                                );
+
                                 return;
                             }
                         }
                     }
 
-                    let _ = tx.send(StreamEvent::MessageStop).await;
+                    if !String::from_utf8_lossy(&buffer).trim().is_empty() {
+                        send_stream_event!(
+                            tx,
+                            StreamEvent::Error {
+                                message: "provider SSE stream ended with an incomplete line".to_string(),
+                            }
+                        );
+
+                        return;
+                    }
+
+                    if saw_completion {
+                        send_stream_event!(tx, StreamEvent::MessageStop);
+                    } else {
+                        send_stream_event!(
+                            tx,
+                            StreamEvent::Error {
+                                message: "provider stream ended before a completion event".to_string(),
+                            }
+                        );
+                    }
                 }
-                Err(e) => {
-                    let _ = tx.send(StreamEvent::Error { message: e.to_string() }).await;
+                Err(error) => {
+                    send_stream_event!(
+                        tx,
+                        StreamEvent::Error {
+                            message: error.to_string(),
+                        }
+                    );
                 }
             }
         });
 
-        Ok(CompletionStream::new(rx))
+        Ok(completion_stream)
     }
 }
 
@@ -566,6 +725,7 @@ pub struct GeminiBuilder {
     api_key: Option<String>,
     base_url: Option<String>,
     model: Option<String>,
+    client: Option<reqwest::Client>,
 }
 
 impl GeminiBuilder {
@@ -584,6 +744,11 @@ impl GeminiBuilder {
         self
     }
 
+    pub fn client(mut self, client: reqwest::Client) -> Self {
+        self.client = Some(client);
+        self
+    }
+
     pub fn build(self) -> Result<Gemini> {
         let api_key = if let Some(key) = self.api_key {
             key
@@ -597,7 +762,95 @@ impl GeminiBuilder {
             api_key,
             base_url: self.base_url.unwrap_or_else(|| GEMINI_API_BASE.to_string()),
             default_model: self.model.unwrap_or_else(|| "gemini-3.1-pro-preview".to_string()),
-            client: reqwest::Client::new(),
+            client: self.client.unwrap_or_default(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::openai::test_support::MockProviderServer;
+    use crate::openai::{MAX_PROVIDER_ERROR_BODY_BYTES, MAX_PROVIDER_PARTIAL_LINE_BYTES};
+    use std::time::Duration;
+
+    fn provider(base_url: &str) -> Gemini {
+        Gemini::builder()
+            .api_key("test-api-key")
+            .base_url(base_url)
+            .client(reqwest::Client::new())
+            .build()
+            .expect("Gemini provider should build")
+    }
+
+    #[tokio::test]
+    async fn stream_recovers_after_malformed_event_and_preserves_completion_semantics() {
+        let response_body = concat!(
+            "data: not-json\n",
+            "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hello\"}]},\"finishReason\":\"STOP\"}],",
+            "\"usageMetadata\":{\"promptTokenCount\":1,\"candidatesTokenCount\":1}}\n"
+        );
+        let mock_server = MockProviderServer::fixed(200, response_body.as_bytes().to_vec()).await;
+        let response = provider(mock_server.endpoint())
+            .complete_blocking(CompletionRequest::new("test-model"))
+            .await
+            .expect("valid Gemini stream should complete");
+
+        assert_eq!(response.message.get_all_text(), "hello");
+        assert_eq!(response.stop_reason, StopReason::EndTurn);
+    }
+
+    #[tokio::test]
+    async fn stream_rejects_never_delimited_partial_line() {
+        let response_body = vec![b'x'; MAX_PROVIDER_PARTIAL_LINE_BYTES + 1];
+        let mock_server = MockProviderServer::fixed(200, response_body).await;
+        let error = provider(mock_server.endpoint())
+            .complete_blocking(CompletionRequest::new("test-model"))
+            .await
+            .expect_err("unterminated Gemini stream should fail");
+
+        assert!(error.to_string().contains("partial line exceeded"));
+    }
+
+    #[tokio::test]
+    async fn stream_rejects_oversized_sse_line() {
+        let response_body = format!("data: {}\n", "x".repeat(MAX_PROVIDER_SSE_LINE_BYTES + 1)).into_bytes();
+        let mock_server = MockProviderServer::fixed(200, response_body).await;
+        let error = provider(mock_server.endpoint())
+            .complete_blocking(CompletionRequest::new("test-model"))
+            .await
+            .expect_err("oversized Gemini SSE line should fail");
+
+        assert!(error.to_string().contains("SSE line exceeded"));
+    }
+
+    #[tokio::test]
+    async fn error_response_body_is_streamed_and_bounded() {
+        let response_body = vec![b'e'; MAX_PROVIDER_ERROR_BODY_BYTES + 1];
+        let mock_server = MockProviderServer::fixed(500, response_body).await;
+        let error = provider(mock_server.endpoint())
+            .complete_blocking(CompletionRequest::new("test-model"))
+            .await
+            .expect_err("oversized Gemini error response should fail");
+
+        assert!(error.to_string().contains("error response body exceeded"));
+    }
+
+    #[tokio::test]
+    async fn dropping_receiver_aborts_stream_task_and_connection() {
+        let mut mock_server = MockProviderServer::endless(200, b"x".to_vec()).await;
+        let completion_stream = provider(mock_server.endpoint())
+            .complete(CompletionRequest::new("test-model"))
+            .await
+            .expect("Gemini stream should start");
+        let mut event_receiver = completion_stream.into_receiver();
+
+        tokio::time::timeout(Duration::from_secs(1), event_receiver.recv())
+            .await
+            .expect("Gemini message start should arrive")
+            .expect("Gemini stream should remain open");
+        drop(event_receiver);
+
+        mock_server.wait_for_disconnect().await;
     }
 }

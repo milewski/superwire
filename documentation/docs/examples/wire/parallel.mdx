@@ -1,0 +1,50 @@
+```wire parallel.wire
+input {
+    topic: string
+}
+
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+agent risks {
+    model: model.fast
+    instruction: "List risks for {{ input.topic }}."
+
+    output {
+        items: [string]
+    }
+}
+
+agent actions {
+    model: model.fast
+    instruction: "List actions for {{ input.topic }}."
+
+    output {
+        items: [string]
+    }
+}
+
+agent plan {
+    model: model.fast
+    instruction: "Create a plan from risks {{ agent.risks.items }} and actions {{ agent.actions.items }}."
+
+    output {
+        summary: string
+    }
+}
+
+output {
+    risks: agent.risks.items
+    actions: agent.actions.items
+    plan: agent.plan.summary
+}
+```

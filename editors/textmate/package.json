@@ -3,6 +3,9 @@
   "displayName": "Superwire",
   "description": "Syntax highlighting for Superwire DSL (.wire files)",
   "version": "1.0.0",
+  "scripts": {
+    "check": "node scripts/validate-grammar.mjs"
+  },
   "engines": {
     "vscode": "^1.0.0"
   },

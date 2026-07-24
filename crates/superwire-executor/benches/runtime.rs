@@ -354,14 +354,12 @@ impl FakeBenchmarkProvider {
 #[async_trait]
 impl ModelProvider for FakeBenchmarkProvider {
     async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ModelProviderError> {
-        let output = self
-            .model_outputs
-            .get(&request.agent_name)
-            .cloned()
-            .ok_or_else(|| ModelProviderError::Model {
-                agent_name: request.agent_name.clone(),
-                message: "benchmark fake provider has no output for agent".to_string(),
-            })?;
+        let output = self.model_outputs.get(&request.agent_name).cloned().ok_or_else(|| {
+            ModelProviderError::model(
+                request.agent_name.clone(),
+                "benchmark fake provider has no output for agent".to_string(),
+            )
+        })?;
 
         Ok(ModelResponse {
             output,

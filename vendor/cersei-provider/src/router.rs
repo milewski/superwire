@@ -1,11 +1,14 @@
 //! Model router: parse `provider/model` strings and construct the right provider.
 //!
-//! ```rust,ignore
+//! ```rust,no_run
 //! use cersei_provider::router;
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!
 //! let (provider, model) = router::from_model_string("openai/gpt-4o")?;
 //! let (provider, model) = router::from_model_string("groq/llama-3.1-70b-versatile")?;
 //! let (provider, model) = router::from_model_string("gpt-4o")?; // auto-detect
+//! # Ok(())
+//! # }
 //! ```
 
 use crate::registry::{self, ApiFormat, ProviderEntry};

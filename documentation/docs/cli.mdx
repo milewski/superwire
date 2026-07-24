@@ -1,0 +1,145 @@
+---
+title: CLI
+description: Check, format, run, lock, and generate runtime values for workflows.
+---
+
+import HelloWorkflow from "/examples/wire/hello.mdx";
+
+The `superwire-cli` binary is produced by the Cargo package of the same name and is also included in the executor Docker image.
+
+## Install or run
+
+<Tabs>
+  <Tab title="Native">
+    ```bash
+    cargo build --release -p superwire-cli
+    install -m 0755 target/release/superwire-cli "$HOME/.local/bin/superwire-cli"
+    ```
+  </Tab>
+  <Tab title="Docker">
+    ```bash
+    docker run --rm \
+      --entrypoint superwire-cli \
+      -v "$PWD:/work" \
+      -w /work \
+      rmilewski/superwire:latest \
+      --help
+    ```
+  </Tab>
+</Tabs>
+
+## Command map
+
+```text
+superwire-cli fmt <PATH>
+superwire-cli workflow check <WORKFLOW_PATH>
+superwire-cli workflow run [OPTIONS] <WORKFLOW_PATH>
+superwire-cli workflow vars [OPTIONS] <WORKFLOW_PATH_OR_DIRECTORY>...
+superwire-cli workflow lock [OPTIONS] <WORKFLOW_PATH_OR_DIRECTORY>...
+```
+
+## Local MCP network trust
+
+The CLI deliberately constructs its local MCP client with `trusted` policy; it does not inherit the executor server's `Disabled` default or expose the server's policy selector. `workflow check`, `workflow run`, and `workflow lock` can therefore contact workflow-declared public, private, or local MCP endpoints and send resolved headers when discovery or execution requires it.
+
+`trusted` still accepts only absolute HTTP(S) URLs without user information. Only HTTP JSON-RPC MCP transport is implemented; stdio and local-process transports are not enabled. This URL validation is not network sandboxing. For untrusted workflow sources, run the CLI with OS or container egress controls that allow only intended MCP destinations.
+
+## Local provider network trust
+
+`workflow run` deliberately uses provider policy `trusted` so reviewed local/private OpenAI-compatible or Ollama endpoints continue to work. Custom provider endpoints must be absolute HTTP(S) URLs without user information, queries, or fragments; they are DNS-resolved and pinned before an explicit custom-endpoint credential is selected. The client ignores environment proxies, rejects redirects, and applies bounded network/response/stream limits. This is not a network sandbox: use OS/container egress controls when running untrusted workflow source.
+
+## Validate a workflow
+
+Save the checked fixture as `hello.wire`:
+
+<HelloWorkflow />
+
+```bash
+superwire-cli workflow check hello.wire
+```
+
+Success prints:
+
+```text
+workflow is valid
+```
+
+`check` parses source, builds runtime schemas, and validates executor semantics without calling a model provider. When the workflow requires MCP schema discovery, `check` uses the CLI's `trusted` policy and can send resolved headers to declared endpoints.
+
+## Format workflows
+
+Format one file or every `.wire` file below a directory:
+
+```bash
+superwire-cli fmt hello.wire
+superwire-cli fmt workflows
+```
+
+The command updates files in place and prints only files that changed. It returns exit code `2` for invalid input and `1` for an internal/runtime error.
+
+## Run locally
+
+```bash
+superwire-cli workflow run hello.wire \
+  --input-json '{"name":"Ada"}' \
+  --secrets-file hello.secrets.json \
+  --pretty
+```
+
+The CLI prints the final `.wire` output object directly. HTTP JSON adds an outer `output` field; the CLI does not.
+
+### Runtime-value options
+
+| Option | Purpose |
+| --- | --- |
+| `--input-json <JSON>` | Inline JSON object for `input`. |
+| `--input-file <PATH>` | JSON object file for `input`. |
+| `--secrets-json <JSON>` | Inline JSON object for `secrets`. Avoid real keys in shell history. |
+| `--secrets-file <PATH>` | JSON object file for `secrets`. Use restrictive permissions. |
+| `--set <KEY=VALUE>` | Set an input path; repeatable. Every value is a string. |
+| `--pretty` | Pretty-print the final JSON object. |
+| `--cache-driver <DRIVER>` | Local run cache driver; default `in-memory`. |
+| `--cache-ttl <DURATION>` | Local cache TTL; default `1h`. |
+| `--no-cache` | Disable the local run cache. |
+
+`--input-json`, `--input-file`, and `--set` are mutually exclusive. Use JSON when the workflow expects numbers, booleans, arrays, or objects because `--set` always produces strings.
+
+```bash
+superwire-cli workflow run hello.wire --set name=Ada
+```
+
+## Generate `.wire.vars`
+
+Generate sample runtime values from one file, multiple files, or a directory:
+
+```bash
+superwire-cli workflow vars .
+superwire-cli workflow vars workflows --output .wire.vars
+```
+
+The command merges typed input and secret fields and writes sample JSON. Treat generated secret values as placeholders, not credentials.
+
+## Lock MCP imports
+
+Resolve MCP tool, resource, and prompt metadata into `superwire.lock`:
+
+```bash
+superwire-cli workflow lock .
+superwire-cli workflow lock workflows \
+  --vars-file .wire.vars \
+  --output superwire.lock
+```
+
+`workflow lock` may contact declared MCP servers. Supply runtime values with `.wire.vars`, input/secrets JSON, files, or `--set`. Review and commit the resulting lock when reproducible MCP schemas are part of the project contract. Refresh it when imports or server schemas change.
+
+See [MCP lockfiles](/mcp/lockfiles).
+
+## Machine-readable errors
+
+Set `SUPERWIRE_ERROR_FORMAT=json` to write a JSON error payload to standard error:
+
+```bash
+SUPERWIRE_ERROR_FORMAT=json superwire-cli workflow check invalid.wire
+```
+
+The payload contains `code`, `message`, and `details`. Outer `code` is `invalid_input` or `internal_error`; `details` is an `ExecutorDiagnostic` or `null`. HTTP uses a different outer envelope: `{ "error": ExecutorDiagnostic }`.

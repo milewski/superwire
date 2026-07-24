@@ -104,6 +104,8 @@ schema event_payload {
 
 In this example, `type` is the discriminator and each case defines its own object shape.
 
+Enums and variants are non-empty contracts. Empty `enum {}` or `variant discriminator {}` types fail parsing rather than becoming open/unknown types.
+
 ## Field descriptions
 
 Use triple-slash comments to document schema fields. These descriptions are preserved for schema-aware tooling and can improve structured output quality.

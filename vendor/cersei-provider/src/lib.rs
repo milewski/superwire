@@ -16,6 +16,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 
+pub const MAX_PROVIDER_SSE_FRAME_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_PROVIDER_STREAM_BYTES: usize = 32 * 1024 * 1024;
+pub const MAX_PROVIDER_TOOL_ARGUMENT_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_PROVIDER_CONTENT_BLOCKS: usize = 256;
+
 // Re-exports
 pub use anthropic::Anthropic;
 pub use gemini::Gemini;
@@ -198,14 +203,26 @@ impl CompletionStream {
 
     /// Consume the stream and collect into a complete response.
     pub async fn collect(mut self) -> Result<CompletionResponse> {
-        let mut acc = StreamAccumulator::new();
+        let mut accumulator = StreamAccumulator::new();
+        let mut saw_message_stop = false;
+
         while let Some(event) = self.rx.recv().await {
             if let StreamEvent::Error { message } = &event {
                 return Err(CerseiError::Provider(message.clone()));
             }
-            acc.process_event(event);
+
+            if matches!(event, StreamEvent::MessageStop) {
+                saw_message_stop = true;
+            }
+
+            accumulator.process_event(event)?;
         }
-        acc.into_response()
+
+        if !saw_message_stop {
+            return Err(CerseiError::Provider("provider stream ended before a completion event".to_string()));
+        }
+
+        accumulator.into_response()
     }
 
     /// Access the underlying receiver for real-time event processing.

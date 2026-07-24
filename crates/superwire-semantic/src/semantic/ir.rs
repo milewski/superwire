@@ -2,7 +2,8 @@ use crate::semantic::support::type_inference::{
     infer_expression_type, ExpressionTypeInferenceExt, TypeExpressionInferenceExt, TypeInferenceContext,
 };
 use crate::semantic::support::types::{
-    ensure_type_matches, workflow_type_from_rust_schema, TypeExpressionWorkflowTypeExt, WorkflowSchemaCache, WorkflowType,
+    ensure_type_matches, workflow_type_from_rust_schema, ToolDeclarationWorkflowTypeExt, TypeExpressionWorkflowTypeExt,
+    WorkflowSchemaCache, WorkflowType,
 };
 use crate::semantic::WorkflowSemanticError;
 use schemars::JsonSchema;
@@ -203,13 +204,19 @@ fn collect_tool_types(
     let mut output = HashMap::new();
 
     for tool_declaration in workflow.tool_declarations() {
-        let input_type = TypeExpression::Object(tool_declaration.input_fields.clone()).to_workflow_type(named_schema_types)?;
+        if let Some(schema_issue) = tool_declaration.schema_issues.first() {
+            return Err(WorkflowSemanticError::Other {
+                message: format!(
+                    "tool `{}` has an invalid discovered MCP schema: {}",
+                    tool_declaration.name,
+                    schema_issue.message()
+                ),
+            });
+        }
+
+        let input_type = tool_declaration.resolved_input_type(named_schema_types)?;
         let binding_type = TypeExpression::Object(tool_declaration.binding_fields.clone()).to_workflow_type(named_schema_types)?;
-        let output_type = if tool_declaration.has_untyped_mcp_output() {
-            WorkflowType::Any
-        } else {
-            TypeExpression::Object(tool_declaration.output_fields.clone()).to_workflow_type(named_schema_types)?
-        };
+        let output_type = tool_declaration.resolved_output_type(named_schema_types)?;
         input.insert(tool_declaration.name.clone(), input_type.clone());
         bindings.insert(tool_declaration.name.clone(), binding_type.clone());
         output.insert(tool_declaration.name.clone(), output_type.clone());
@@ -386,12 +393,18 @@ trait AgentForLoopTypeExt {
 impl AgentForLoopTypeExt for AgentForLoop {
     fn binding_types(&self, type_inference_context: &TypeInferenceContext) -> Result<HashMap<String, WorkflowType>, WorkflowSemanticError> {
         let iterable_type = infer_expression_type(&self.iterable, type_inference_context, "agent for-loop iterable type inference")?;
-        let item_type = iterable_type
-            .array_item_type()
-            .ok_or_else(|| WorkflowSemanticError::ExpressionEvaluation {
+        let item_type = iterable_type.array_item_type().ok_or_else(|| {
+            let type_error = WorkflowSemanticError::ExpressionEvaluation {
                 context: "agent for-loop iterable type inference".to_string(),
-                message: format!("for-loop iterable must be an array, found {iterable_type}"),
-            })?;
+                message: format!("for-loop iterable type mismatch: expected an array `[item]`, found `{iterable_type}`"),
+            };
+
+            if let Some(iterable_span) = self.iterable.source_span() {
+                type_error.with_span(iterable_span)
+            } else {
+                type_error
+            }
+        })?;
         let mut binding_types = HashMap::new();
 
         match &self.pattern {
@@ -400,12 +413,20 @@ impl AgentForLoopTypeExt for AgentForLoop {
             }
             AgentForLoopPattern::ObjectDestructuring(field_names) => {
                 for field_name in field_names {
-                    let field_type = item_type
-                        .field_type(field_name)
-                        .ok_or_else(|| WorkflowSemanticError::ExpressionEvaluation {
+                    let field_type = item_type.field_type(field_name).ok_or_else(|| {
+                        let type_error = WorkflowSemanticError::ExpressionEvaluation {
                             context: "agent for-loop binding type inference".to_string(),
-                            message: format!("for-loop item type does not include field `{field_name}`"),
-                        })?;
+                            message: format!(
+                                "for-loop destructuring field `{field_name}` is missing: expected that field on item type `{item_type}`"
+                            ),
+                        };
+
+                        if let Some(iterable_span) = self.iterable.source_span() {
+                            type_error.with_span(iterable_span)
+                        } else {
+                            type_error
+                        }
+                    })?;
 
                     binding_types.insert(field_name.clone(), field_type);
                 }
@@ -413,36 +434,6 @@ impl AgentForLoopTypeExt for AgentForLoop {
         }
 
         Ok(binding_types)
-    }
-}
-
-trait WorkflowTypeArrayExt {
-    fn array_item_type(&self) -> Option<WorkflowType>;
-}
-
-impl WorkflowTypeArrayExt for WorkflowType {
-    fn array_item_type(&self) -> Option<WorkflowType> {
-        match self {
-            Self::Array {
-                item_type,
-                fixed_length: _,
-            } => Some((**item_type).clone()),
-            Self::Union(union_members) => union_members.iter().find_map(Self::array_item_type),
-            Self::Any
-            | Self::String
-            | Self::Integer
-            | Self::Float
-            | Self::Boolean
-            | Self::Null
-            | Self::AnyObject
-            | Self::StringEnum(_)
-            | Self::Tuple(_)
-            | Self::Object(_)
-            | Self::Variant {
-                discriminator: _,
-                cases: _,
-            } => None,
-        }
     }
 }
 
@@ -674,13 +665,14 @@ fn optional_agent_property_expression(
 
 #[cfg(test)]
 mod tests {
-    use super::build_typed_workflow_ir;
+    use super::{build_dynamic_typed_workflow_ir, build_typed_workflow_ir};
+    use crate::semantic::support::expression::{evaluate_expression, EvaluationContext};
     use crate::semantic::support::types::WorkflowType;
     use crate::semantic::WorkflowSemanticError;
     use schemars::JsonSchema;
     use serde::{Deserialize, Serialize};
-    use serde_json::json;
-    use std::collections::BTreeMap;
+    use serde_json::{json, Map, Value};
+    use std::collections::{BTreeMap, HashMap};
     use superwire_macros::parse_inline_workflow;
 
     #[derive(Debug, Serialize, JsonSchema)]
@@ -1021,5 +1013,438 @@ mod tests {
             typecheck_result,
             Err(WorkflowSemanticError::InvalidAgentProperty { property, .. }) if property == "instruction"
         ));
+    }
+    #[test]
+    fn resolves_custom_variant_discriminator_and_preserves_matched_null() {
+        let workflow = parse_inline_workflow! {
+            input {
+                event: variant kind {
+                    created {
+                        value: maybe string
+                    }
+                    deleted {
+                        reason: string
+                    }
+                }
+            }
+
+            output {
+                result: match input.event {
+                    created.value
+                    deleted.reason
+                }
+            }
+        };
+
+        let typed_workflow_ir = build_dynamic_typed_workflow_ir(&workflow).expect("custom-discriminator match should typecheck");
+        let output_expression = &typed_workflow_ir.output_declaration.fields[0].value;
+        let evaluation_context = EvaluationContext {
+            input_values: Map::from_iter([(
+                "event".to_string(),
+                json!({
+                    "kind": "created",
+                    "value": null,
+                }),
+            )]),
+            secret_values: Map::new(),
+            agent_outputs: HashMap::new(),
+            agent_contexts: HashMap::new(),
+            local_bindings: HashMap::new(),
+        };
+        let matched_value =
+            evaluate_expression(output_expression, &evaluation_context, "custom discriminator match").expect("match should evaluate");
+
+        assert_eq!(matched_value, Value::Null);
+    }
+
+    #[test]
+    fn infers_match_result_union_independently_of_branch_order() {
+        let forward_workflow = parse_inline_workflow! {
+            input {
+                event: variant kind {
+                    created {
+                        value: string
+                    }
+                    counted {
+                        value: number
+                    }
+                }
+            }
+
+            output {
+                value: match input.event {
+                    created.value
+                    counted.value
+                }
+            }
+        };
+        let reversed_workflow = parse_inline_workflow! {
+            input {
+                event: variant kind {
+                    created {
+                        value: string
+                    }
+                    counted {
+                        value: number
+                    }
+                }
+            }
+
+            output {
+                value: match input.event {
+                    counted.value
+                    created.value
+                }
+            }
+        };
+        let forward_ir = build_dynamic_typed_workflow_ir(&forward_workflow).expect("forward match should typecheck");
+        let reversed_ir = build_dynamic_typed_workflow_ir(&reversed_workflow).expect("reversed match should typecheck");
+
+        assert_eq!(forward_ir.workflow_output_type, reversed_ir.workflow_output_type);
+        assert_eq!(
+            forward_ir.workflow_output_type,
+            WorkflowType::Object(BTreeMap::from([(
+                "value".to_string(),
+                WorkflowType::Union(vec![WorkflowType::String, WorkflowType::Integer]).normalize(),
+            )]))
+        );
+        let output_schema = forward_ir.workflow_output_type.json_schema_value();
+
+        assert_eq!(
+            output_schema
+                .pointer("/properties/value/anyOf")
+                .and_then(Value::as_array)
+                .map(Vec::len),
+            Some(2)
+        );
+        assert_eq!(output_schema.pointer("/properties/value/oneOf"), None);
+    }
+
+    #[test]
+    fn projects_nullable_whole_variant_case_consistently_in_types_and_values() {
+        let workflow = parse_inline_workflow! {
+            input {
+                event: maybe variant kind {
+                    created {
+                        value: string
+                    }
+                }
+            }
+
+            output {
+                result: match input.event {
+                    created
+                    _ null
+                }
+            }
+        };
+        let typed_workflow_ir = build_dynamic_typed_workflow_ir(&workflow).expect("whole-case match should typecheck");
+        let output_expression = &typed_workflow_ir.output_declaration.fields[0].value;
+        let expected_case_type = WorkflowType::Object(BTreeMap::from([
+            ("kind".to_string(), WorkflowType::StringEnum(vec!["created".to_string()])),
+            ("value".to_string(), WorkflowType::String),
+        ]));
+        let expected_output_type = WorkflowType::Object(BTreeMap::from([(
+            "result".to_string(),
+            WorkflowType::Union(vec![expected_case_type, WorkflowType::Null]).normalize(),
+        )]));
+
+        assert_eq!(typed_workflow_ir.workflow_output_type, expected_output_type);
+
+        let matching_context = EvaluationContext {
+            input_values: Map::from_iter([("event".to_string(), json!({ "kind": "created", "value": "ready" }))]),
+            secret_values: Map::new(),
+            agent_outputs: HashMap::new(),
+            agent_contexts: HashMap::new(),
+            local_bindings: HashMap::new(),
+        };
+        let matched_value =
+            evaluate_expression(output_expression, &matching_context, "whole-case match").expect("matching case should evaluate");
+
+        assert_eq!(matched_value, json!({ "kind": "created", "value": "ready" }));
+
+        let null_context = EvaluationContext {
+            input_values: Map::from_iter([("event".to_string(), Value::Null)]),
+            secret_values: Map::new(),
+            agent_outputs: HashMap::new(),
+            agent_contexts: HashMap::new(),
+            local_bindings: HashMap::new(),
+        };
+        let fallback_value =
+            evaluate_expression(output_expression, &null_context, "nullable whole-case match").expect("null fallback should evaluate");
+
+        assert_eq!(fallback_value, Value::Null);
+    }
+
+    #[test]
+    fn rejects_for_loop_when_any_union_branch_is_not_iterable() {
+        let workflow = parse_inline_workflow! {
+            provider openai from openai {}
+
+            model openai_model from openai {
+                id: "model-a"
+            }
+
+            input {
+                values: [string] | string
+            }
+
+            agent formatter for value in input.values {
+                model: model.openai_model
+                instruction: value
+                output {
+                    value: string
+                }
+            }
+
+            output {
+                values: agent.formatter
+            }
+        };
+
+        let typecheck_error = build_dynamic_typed_workflow_ir(&workflow).expect_err("mixed iterable union should not typecheck");
+        let diagnostic = typecheck_error.diagnostic();
+        let expected_span = workflow
+            .find_agent("formatter")
+            .and_then(|agent_declaration| agent_declaration.for_loop.as_ref())
+            .and_then(|for_loop| for_loop.iterable.source_span())
+            .expect("for-loop iterable should have a source span");
+
+        assert!(
+            typecheck_error
+                .to_string()
+                .contains("for-loop iterable type mismatch: expected an array `[item]`"),
+            "unexpected typecheck error: {typecheck_error}"
+        );
+        assert_eq!(diagnostic.primary_span, Some(expected_span));
+        assert_eq!(
+            diagnostic.help.as_deref(),
+            Some(
+                "Compare the reported expected and found types, then update the expression, field path, or declaration so every branch is compatible."
+            )
+        );
+    }
+
+    #[test]
+    fn preserves_match_span_on_semantic_diagnostic() {
+        let workflow = parse_inline_workflow! {
+            input {
+                event: variant kind {
+                    created {
+                        value: string
+                    }
+                    deleted {
+                        reason: string
+                    }
+                }
+            }
+
+            output {
+                result: match input.event {
+                    created.value
+                }
+            }
+        };
+        let typecheck_error = build_dynamic_typed_workflow_ir(&workflow).expect_err("non-exhaustive match should not typecheck");
+        let diagnostic = typecheck_error.diagnostic();
+        let expected_span = workflow
+            .find_output()
+            .and_then(|output_declaration| output_declaration.fields.first())
+            .and_then(|output_field| output_field.value.source_span())
+            .expect("match expression should have a source span");
+
+        assert_eq!(diagnostic.primary_span, Some(expected_span));
+        assert!(diagnostic.message.contains("non-exhaustive match expression"));
+        assert_eq!(
+            diagnostic.help.as_deref(),
+            Some(
+                "Compare the reported expected and found types, then update the expression, field path, or declaration so every branch is compatible."
+            )
+        );
+    }
+
+    #[test]
+    fn reports_union_tool_input_expected_and_actual_types() {
+        let workflow = parse_inline_workflow! {
+            tool lookup {
+                input {
+                    id: number | string
+                }
+
+                output {
+                    value: string
+                }
+            }
+
+            output {
+                value: call tool.lookup {
+                    input {
+                        id: true
+                    }
+                }
+            }
+        };
+        let typecheck_error = build_dynamic_typed_workflow_ir(&workflow).expect_err("invalid union tool input should fail");
+        let diagnostic = typecheck_error.diagnostic();
+        let expected_span = workflow
+            .find_output()
+            .and_then(|output_declaration| output_declaration.fields.first())
+            .and_then(|output_field| output_field.value.source_span())
+            .expect("tool call should have a source span");
+
+        assert_eq!(diagnostic.primary_span, Some(expected_span));
+        assert!(diagnostic.message.contains("tool `tool.lookup` `input` field `id` type mismatch"));
+        assert!(diagnostic.message.contains("expected `number | string`"));
+        assert!(diagnostic.message.contains("found `boolean`"));
+    }
+
+    #[test]
+    fn reports_expected_variant_cases_for_unknown_match_case() {
+        let workflow = parse_inline_workflow! {
+            input {
+                event: variant kind {
+                    created {
+                        value: string
+                    }
+                    deleted {
+                        value: string
+                    }
+                }
+            }
+
+            output {
+                value: match input.event {
+                    archived.value
+                    _ null
+                }
+            }
+        };
+        let typecheck_error = build_dynamic_typed_workflow_ir(&workflow).expect_err("unknown match case should fail");
+        let diagnostic = typecheck_error.diagnostic();
+
+        assert!(diagnostic.message.contains("unknown match case `archived`"));
+        assert!(diagnostic.message.contains("expected one of `created`, `deleted`"));
+        assert!(diagnostic.primary_span.is_some());
+        assert_eq!(
+            diagnostic.help.as_deref(),
+            Some(
+                "Compare the reported expected and found types, then update the expression, field path, or declaration so every branch is compatible."
+            )
+        );
+    }
+
+    #[test]
+    fn aggregates_union_variants_with_the_same_discriminator() {
+        let workflow = parse_inline_workflow! {
+            input {
+                event: variant kind {
+                    created {
+                        id: string
+                    }
+                } | variant kind {
+                    deleted {
+                        id: string
+                    }
+                }
+            }
+
+            output {
+                value: input.event
+            }
+        };
+        let typed_workflow_ir = build_dynamic_typed_workflow_ir(&workflow).expect("compatible variants should aggregate");
+        let input_schema = typed_workflow_ir.input_type.expect("input type should exist").json_schema_value();
+        let variant_cases = input_schema
+            .pointer("/properties/event/oneOf")
+            .and_then(Value::as_array)
+            .expect("aggregated variant should remain discriminated");
+
+        assert_eq!(variant_cases.len(), 2);
+        assert_eq!(
+            input_schema.pointer("/properties/event/discriminator/propertyName"),
+            Some(&Value::String("kind".to_string()))
+        );
+    }
+
+    #[test]
+    fn rejects_union_variants_with_incompatible_discriminators() {
+        let workflow = parse_inline_workflow! {
+            input {
+                event: variant kind {
+                    created {
+                        id: string
+                    }
+                } | variant category {
+                    deleted {
+                        id: string
+                    }
+                }
+            }
+
+            output {
+                value: input.event
+            }
+        };
+        let typecheck_error =
+            build_dynamic_typed_workflow_ir(&workflow).expect_err("incompatible variant discriminators should not typecheck");
+
+        assert!(
+            typecheck_error
+                .to_string()
+                .contains("incompatible discriminators `kind` and `category`"),
+            "unexpected typecheck error: {typecheck_error}"
+        );
+    }
+
+    #[test]
+    fn rejects_union_variants_with_conflicting_case_schemas() {
+        let workflow = parse_inline_workflow! {
+            input {
+                event: variant kind {
+                    created {
+                        id: string
+                    }
+                } | variant kind {
+                    created {
+                        id: number
+                    }
+                }
+            }
+
+            output {
+                value: input.event
+            }
+        };
+        let typecheck_error =
+            build_dynamic_typed_workflow_ir(&workflow).expect_err("conflicting variant case schemas should not typecheck");
+
+        assert!(
+            typecheck_error
+                .to_string()
+                .contains("union variant case `created` has incompatible field schemas"),
+            "unexpected typecheck error: {typecheck_error}"
+        );
+    }
+
+    #[test]
+    fn emits_any_of_for_ordinary_dsl_unions() {
+        let workflow = parse_inline_workflow! {
+            input {
+                value: string | number
+            }
+
+            output {
+                value: input.value
+            }
+        };
+        let typed_workflow_ir = build_dynamic_typed_workflow_ir(&workflow).expect("ordinary union should typecheck");
+        let input_schema = typed_workflow_ir.input_type.expect("input type should exist").json_schema_value();
+        let union_schema = input_schema
+            .pointer("/properties/value/anyOf")
+            .and_then(Value::as_array)
+            .expect("ordinary union should emit anyOf");
+
+        assert_eq!(union_schema.len(), 2);
+        assert!(input_schema.pointer("/properties/value/oneOf").is_none());
     }
 }

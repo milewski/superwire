@@ -1,90 +1,24 @@
 ---
-title: MCP Tools, Prompts, and Resources
-description: Use MCP capabilities through imports and uses.
+title: MCP tools
+description: Use a deterministic bound call and scoped model-owned access.
 ---
 
-This example combines both MCP execution styles:
+import McpTaskWorkflow from "/examples/wire/mcp-task.mdx";
 
-- Workflow-owned tool call in `dynamic` for deterministic fetch.
-- Model-owned MCP capabilities in `uses` for agent reasoning context.
+<McpTaskWorkflow />
 
-If you are new to MCP in Superwire, read [MCP and Tools Overview](/mcp/overview) first.
+This checked fixture demonstrates both ownership modes:
 
-```wire
-input {
-    task_id: number
-}
+1. The tool declaration binds `task_id` from trusted workflow input. `dynamic.task` calls it deterministically.
+2. The writer also receives scoped model-owned access through `uses`, limited to one call for that agent and two calls for the workflow import.
 
-secrets {
-    api_key: string
-    mcp_token: string
-}
+The placeholder `example.test` endpoint is intentionally non-routable. Replace it with your MCP server, supply runtime secrets, and generate a lock before execution:
 
-provider llm from openai {
-    endpoint: "https://api.openai.com/v1"
-    api_key: secrets.api_key
-}
-
-model fast from llm {
-    id: "gpt-4.1-mini"
-}
-
-mcp tasks {
-    endpoint: "http://localhost:8000/mcp/tasks"
-
-    headers {
-        Authorization: "Bearer {{ secrets.mcp_token }}"
-    }
-}
-
-from mcp.tasks {
-    prompt task_writer_instructions
-    resource project_readme
-}
-
-tool fetch_task from mcp.tasks.tool.fetch_task {
-    input {
-        task_id: number
-    }
-
-    output {
-        title: string
-        description: string
-        status: string
-    }
-}
-
-dynamic {
-    task: call tool.fetch_task {
-        bindings {
-            task_id: input.task_id
-        }
-    }
-}
-
-agent writer {
-    model: model.fast
-
-    uses: [
-        prompt.task_writer_instructions,
-        resource.project_readme,
-        tool.fetch_task,
-    ]
-
-    instruction: "Write a concise task update for {{ dynamic.task.title }}."
-
-    output {
-        update: string
-    }
-}
-
-output {
-    update: agent.writer.update
-}
+```bash
+superwire-cli workflow vars mcp-task.wire --output .wire.vars
+superwire-cli workflow lock mcp-task.wire \
+  --vars-file .wire.vars \
+  --output superwire.lock
 ```
 
-Why this pattern works:
-
-- `call tool.fetch_task` guarantees task data exists before agent execution.
-- `uses` gives the agent scoped access to only the prompt/resource/tool it needs.
-- The final `output` stays typed and stable for application consumers.
+The CLI performs lock discovery with trusted network access, including private or local HTTP endpoints. Run it only for reviewed workflow source from a process with appropriately restricted egress, and do not commit a real token in `.wire.vars`. See [MCP lockfiles](/mcp/lockfiles).

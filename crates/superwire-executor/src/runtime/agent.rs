@@ -1,7 +1,7 @@
 use super::{AgentExecutionContext, CompletedAgentExecution, ExecutorError, ToolCallExecutionContext, WorkflowExecutor};
 use crate::model::{
-    ModelAsset, ModelFileAttachment, ModelPromptContent, ModelProvider, ModelRequest, ModelSchema, ModelSchemaCache, ModelToolDefinition,
-    ToolCallTracker,
+    ExecutorEventSenderExt, ModelAsset, ModelFileAttachment, ModelPromptContent, ModelProvider, ModelRequest, ModelSchema,
+    ModelSchemaCache, ModelToolDefinition, ToolCallTracker,
 };
 use crate::runtime::cache::{hash_serializable_value, AgentCacheKey, AgentCacheOptions, CachedAgentExecution};
 use crate::runtime::mcp::normalize_prompt;
@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
 use superwire_dsl::{AgentContext, AgentExpressionPropertyName, AgentFile, AgentProperty, Expression, ModelAssetKind, ObjectField};
 use superwire_mcp::McpClientPool;
-use superwire_protocol::event::ExecutorEvent;
+use superwire_protocol::event::{ExecutorDiagnostic, ExecutorDiagnosticCode, ExecutorDiagnosticSubject, ExecutorEvent, ExecutorStage};
 use superwire_semantic::support::expression::{evaluate_expression, EvaluationContext};
 use superwire_semantic::support::provider::ProviderConfig;
 use superwire_semantic::support::types::WorkflowType;
@@ -27,6 +27,140 @@ pub(in crate::runtime) struct AgentRunContext<'a, ModelProviderType> {
     pub(in crate::runtime) model_provider: &'a ModelProviderType,
     pub(in crate::runtime) agent_execution_context: &'a AgentExecutionContext,
     pub(in crate::runtime) iteration_index: Option<usize>,
+}
+
+struct AgentLifecycle {
+    event_sender: Option<mpsc::Sender<ExecutorEvent>>,
+    agent_name: String,
+    iteration_index: Option<usize>,
+    started_at: Instant,
+    terminal: bool,
+}
+
+impl AgentLifecycle {
+    fn new(agent_run_context: &AgentRunContext<'_, impl ModelProvider>, started_at: Instant) -> Self {
+        Self {
+            event_sender: agent_run_context.agent_execution_context.event_sender.clone(),
+            agent_name: agent_run_context.planned_agent.name.clone(),
+            iteration_index: agent_run_context.iteration_index,
+            started_at,
+            terminal: false,
+        }
+    }
+
+    fn mark_terminal(&mut self) {
+        self.terminal = true;
+    }
+}
+
+impl Drop for AgentLifecycle {
+    fn drop(&mut self) {
+        if self.terminal {
+            return;
+        }
+
+        let Some(event_sender) = &self.event_sender else {
+            return;
+        };
+        let event = if std::thread::panicking() {
+            let diagnostic = ExecutorDiagnostic::error(
+                ExecutorDiagnosticCode::InternalPanic,
+                ExecutorStage::Agent,
+                format!("agent `{}` execution panicked before a terminal event", self.agent_name),
+                ExecutorDiagnosticSubject::Agent {
+                    agent_name: self.agent_name.clone(),
+                    iteration_index: self.iteration_index,
+                },
+            );
+
+            ExecutorEvent::agent_failed(self.agent_name.clone(), diagnostic, self.started_at.elapsed(), self.iteration_index)
+        } else {
+            let diagnostic = ExecutorDiagnostic::error(
+                ExecutorDiagnosticCode::Cancelled,
+                ExecutorStage::Agent,
+                format!("agent `{}` execution was cancelled before a terminal event", self.agent_name),
+                ExecutorDiagnosticSubject::Agent {
+                    agent_name: self.agent_name.clone(),
+                    iteration_index: self.iteration_index,
+                },
+            );
+
+            ExecutorEvent::agent_cancelled(self.agent_name.clone(), diagnostic, self.started_at.elapsed(), self.iteration_index)
+        };
+
+        event_sender.try_send_observed(event);
+    }
+}
+
+struct ContextCompactionLifecycle {
+    event_sender: Option<mpsc::Sender<ExecutorEvent>>,
+    agent_name: String,
+    started_at: Instant,
+    terminal: bool,
+}
+
+impl ContextCompactionLifecycle {
+    fn new(agent_name: String, event_sender: Option<mpsc::Sender<ExecutorEvent>>, started_at: Instant) -> Self {
+        Self {
+            event_sender,
+            agent_name,
+            started_at,
+            terminal: false,
+        }
+    }
+
+    fn fail(&mut self, diagnostic: ExecutorDiagnostic) {
+        if let Some(event_sender) = &self.event_sender {
+            event_sender.try_send_observed(ExecutorEvent::context_compaction_failed(
+                self.agent_name.clone(),
+                diagnostic,
+                self.started_at.elapsed(),
+            ));
+        }
+
+        self.terminal = true;
+    }
+
+    fn mark_terminal(&mut self) {
+        self.terminal = true;
+    }
+}
+
+impl Drop for ContextCompactionLifecycle {
+    fn drop(&mut self) {
+        if self.terminal {
+            return;
+        }
+
+        let (diagnostic_code, message) = if std::thread::panicking() {
+            (
+                ExecutorDiagnosticCode::InternalPanic,
+                format!(
+                    "context compaction for agent `{}` panicked before a terminal event",
+                    self.agent_name
+                ),
+            )
+        } else {
+            (
+                ExecutorDiagnosticCode::Cancelled,
+                format!(
+                    "context compaction for agent `{}` was cancelled before a terminal event",
+                    self.agent_name
+                ),
+            )
+        };
+        let diagnostic = ExecutorDiagnostic::error(
+            diagnostic_code,
+            ExecutorStage::Agent,
+            message,
+            ExecutorDiagnosticSubject::Agent {
+                agent_name: self.agent_name.clone(),
+                iteration_index: None,
+            },
+        );
+
+        self.fail(diagnostic);
+    }
 }
 
 struct PreparedAgentRequest {
@@ -146,8 +280,22 @@ impl PreparedAgentRequest {
         let Some(cache_store) = &agent_execution_context.cache_options.store else {
             return Ok(None);
         };
-        let Some(cached_execution) = cache_store.get(cache_key)? else {
-            return Ok(None);
+        let cached_execution = match cache_store.get(cache_key) {
+            Ok(Some(cached_execution)) => cached_execution,
+            Ok(None) => return Ok(None),
+            Err(error) => {
+                let diagnostic = error.diagnostic();
+
+                log::warn!("agent `{}` cache read degraded: code={:?}", planned_agent.name, diagnostic.code);
+
+                if let Some(event_sender) = &agent_execution_context.event_sender {
+                    event_sender
+                        .send_observed(error.cache_degraded_event(Some(planned_agent.name.clone())))
+                        .await;
+                }
+
+                return Ok(None);
+            }
         };
 
         log::debug!("agent `{}` cache hit: hash={}", planned_agent.name, cache_key.agent_hash());
@@ -155,10 +303,10 @@ impl PreparedAgentRequest {
         planned_agent.validate_output_value(&cached_execution.output)?;
 
         if let Some(event_sender) = &agent_execution_context.event_sender {
-            let _ = event_sender
-                .send(ExecutorEvent::agent_completed(
+            event_sender
+                .send_observed(ExecutorEvent::agent_completed(
                     planned_agent.name.clone(),
-                    cached_execution.output.clone(),
+                    &cached_execution.output,
                     agent_started_at.elapsed(),
                     iteration_index,
                     true,
@@ -253,8 +401,26 @@ impl PreparedCompactionRequest {
         let Some(cache_store) = &cache_options.store else {
             return Ok(None);
         };
-        let Some(cached_execution) = cache_store.get(cache_key)? else {
-            return Ok(None);
+        let cached_execution = match cache_store.get(cache_key) {
+            Ok(Some(cached_execution)) => cached_execution,
+            Ok(None) => return Ok(None),
+            Err(error) => {
+                let diagnostic = error.diagnostic();
+
+                log::warn!(
+                    "context compaction for agent `{}` cache read degraded: code={:?}",
+                    self.agent_name,
+                    diagnostic.code
+                );
+
+                if let Some(event_sender) = event_sender {
+                    event_sender
+                        .send_observed(error.cache_degraded_event(Some(self.agent_name.clone())))
+                        .await;
+                }
+
+                return Ok(None);
+            }
         };
 
         log::debug!(
@@ -264,10 +430,10 @@ impl PreparedCompactionRequest {
         );
 
         if let Some(event_sender) = event_sender {
-            let _ = event_sender
-                .send(ExecutorEvent::context_compaction_completed(
+            event_sender
+                .send_observed(ExecutorEvent::context_compaction_completed(
                     self.agent_name.clone(),
-                    cached_execution.output,
+                    &cached_execution.output,
                     compaction_started_at.elapsed(),
                 ))
                 .await;
@@ -454,6 +620,7 @@ impl WorkflowExecutor {
     const DEFAULT_CONTEXT_COMPACTION_INSTRUCTION: &'static str =
         "Compact the prior context into a concise summary for the next agent. Preserve facts, decisions, constraints, tool results, and unresolved questions. Omit redundant wording.";
 
+    #[allow(clippy::too_many_lines)]
     pub(in crate::runtime) async fn execute_agent<ModelProviderType>(
         &self,
         agent_run_context: AgentRunContext<'_, ModelProviderType>,
@@ -495,8 +662,8 @@ impl WorkflowExecutor {
         );
 
         if let Some(event_sender) = &agent_execution_context.event_sender {
-            let _ = event_sender
-                .send(ExecutorEvent::agent_started(
+            event_sender
+                .send_observed(ExecutorEvent::agent_started(
                     planned_agent.name.clone(),
                     prepared_request.model_name.clone(),
                     prepared_request.tool_names.clone(),
@@ -505,63 +672,94 @@ impl WorkflowExecutor {
                 .await;
         }
 
-        let cache_key = prepared_request.cache_key(agent_execution_context)?;
+        let mut agent_lifecycle = AgentLifecycle::new(&agent_run_context, agent_started_at);
+        let execution_result: Result<CompletedAgentExecution, ExecutorError> = async {
+            let cache_key = prepared_request.cache_key(agent_execution_context)?;
 
-        if let Some(completed_agent_execution) = prepared_request
-            .completed_from_cache(
-                cache_key.as_ref(),
-                planned_agent,
-                agent_execution_context,
-                agent_started_at,
-                agent_run_context.iteration_index,
-            )
-            .await?
-        {
-            return Ok(completed_agent_execution);
+            if let Some(completed_agent_execution) = prepared_request
+                .completed_from_cache(
+                    cache_key.as_ref(),
+                    planned_agent,
+                    agent_execution_context,
+                    agent_started_at,
+                    agent_run_context.iteration_index,
+                )
+                .await?
+            {
+                return Ok(completed_agent_execution);
+            }
+
+            let output_injections = prepared_request.output_injections.clone();
+            let mut model_response = model_provider
+                .generate(prepared_request.into_model_request(
+                    agent_execution_context.event_sender.clone(),
+                    self.mcp_pool.clone(),
+                    agent_execution_context.tool_call_tracker.clone(),
+                ))
+                .await?;
+
+            log::debug!("agent `{}` model response received", planned_agent.name);
+
+            model_response.output = planned_agent.inject_output_values(model_response.output, &output_injections)?;
+
+            planned_agent.validate_output_value(&model_response.output)?;
+
+            if let Some(cache_key) = cache_key {
+                if let Some(cache_store) = &agent_execution_context.cache_options.store {
+                    if let Err(error) = cache_store.put(
+                        cache_key,
+                        CachedAgentExecution::new(model_response.output.clone(), model_response.context.clone()),
+                        agent_execution_context.cache_options.time_to_live,
+                    ) {
+                        let diagnostic = error.diagnostic();
+
+                        log::warn!("agent `{}` cache write degraded: code={:?}", planned_agent.name, diagnostic.code);
+
+                        if let Some(event_sender) = &agent_execution_context.event_sender {
+                            event_sender
+                                .send_observed(error.cache_degraded_event(Some(planned_agent.name.clone())))
+                                .await;
+                        }
+                    }
+                }
+            }
+
+            if let Some(event_sender) = &agent_execution_context.event_sender {
+                event_sender
+                    .send_observed(ExecutorEvent::agent_completed(
+                        planned_agent.name.clone(),
+                        &model_response.output,
+                        agent_started_at.elapsed(),
+                        agent_run_context.iteration_index,
+                        false,
+                    ))
+                    .await;
+            }
+
+            Ok(CompletedAgentExecution {
+                agent_name: planned_agent.name.clone(),
+                output: model_response.output,
+                context: model_response.context,
+            })
         }
+        .await;
 
-        let output_injections = prepared_request.output_injections.clone();
-        let mut model_response = model_provider
-            .generate(prepared_request.into_model_request(
-                agent_execution_context.event_sender.clone(),
-                self.mcp_pool.clone(),
-                agent_execution_context.tool_call_tracker.clone(),
-            ))
-            .await?;
-
-        log::debug!("agent `{}` model response received", planned_agent.name);
-
-        model_response.output = planned_agent.inject_output_values(model_response.output, &output_injections)?;
-
-        planned_agent.validate_output_value(&model_response.output)?;
-
-        if let Some(cache_key) = cache_key {
-            if let Some(cache_store) = &agent_execution_context.cache_options.store {
-                cache_store.put(
-                    cache_key,
-                    CachedAgentExecution::new(model_response.output.clone(), model_response.context.clone()),
-                    agent_execution_context.cache_options.time_to_live,
-                )?;
+        if let Err(error) = &execution_result {
+            if let Some(event_sender) = &agent_execution_context.event_sender {
+                event_sender
+                    .send_observed(ExecutorEvent::agent_failed(
+                        planned_agent.name.clone(),
+                        error.diagnostic(),
+                        agent_started_at.elapsed(),
+                        agent_run_context.iteration_index,
+                    ))
+                    .await;
             }
         }
 
-        if let Some(event_sender) = &agent_execution_context.event_sender {
-            let _ = event_sender
-                .send(ExecutorEvent::agent_completed(
-                    planned_agent.name.clone(),
-                    model_response.output.clone(),
-                    agent_started_at.elapsed(),
-                    agent_run_context.iteration_index,
-                    false,
-                ))
-                .await;
-        }
+        agent_lifecycle.mark_terminal();
 
-        Ok(CompletedAgentExecution {
-            agent_name: planned_agent.name.clone(),
-            output: model_response.output,
-            context: model_response.context,
-        })
+        execution_result
     }
 
     async fn prepare_agent_request<ModelProviderType>(
@@ -862,6 +1060,7 @@ impl WorkflowExecutor {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn compact_agent_context<ModelProviderType>(
         &self,
         agent_context: &AgentContext,
@@ -905,25 +1104,41 @@ impl WorkflowExecutor {
         };
         let cache_key = prepared_compaction_request.cache_key(request.cache_options)?;
         let compaction_started_at = Instant::now();
+        let mut compaction_lifecycle = ContextCompactionLifecycle::new(
+            prepared_compaction_request.agent_name.clone(),
+            request.event_sender.cloned(),
+            compaction_started_at,
+        );
 
         if let Some(event_sender) = request.event_sender {
-            let _ = event_sender.try_send(ExecutorEvent::context_compaction_started(
+            event_sender.try_send_observed(ExecutorEvent::context_compaction_started(
                 prepared_compaction_request.agent_name.clone(),
                 prepared_compaction_request.source_agent_name.clone(),
                 prepared_compaction_request.model_name.clone(),
             ));
         }
 
-        if let Some(cached_context) = prepared_compaction_request
+        let cached_context_result = prepared_compaction_request
             .completed_context_from_cache(
                 cache_key.as_ref(),
                 request.cache_options,
                 request.event_sender,
                 compaction_started_at,
             )
-            .await?
-        {
-            return Ok(cached_context);
+            .await;
+
+        match cached_context_result {
+            Ok(Some(cached_context)) => {
+                compaction_lifecycle.mark_terminal();
+
+                return Ok(cached_context);
+            }
+            Ok(None) => {}
+            Err(error) => {
+                compaction_lifecycle.fail(error.diagnostic());
+
+                return Err(error);
+            }
         }
 
         let compaction_response = match request
@@ -937,32 +1152,42 @@ impl WorkflowExecutor {
         {
             Ok(compaction_response) => compaction_response,
             Err(error) => {
-                if let Some(event_sender) = request.event_sender {
-                    let _ = event_sender.try_send(ExecutorEvent::context_compaction_failed(
-                        prepared_compaction_request.agent_name.clone(),
-                        error.to_string(),
-                        compaction_started_at.elapsed(),
-                    ));
-                }
+                let executor_error = ExecutorError::from(error);
 
-                return Err(error.into());
+                compaction_lifecycle.fail(executor_error.diagnostic());
+
+                return Err(executor_error);
             }
         };
 
-        prepared_compaction_request.put_completed(
+        if let Err(error) = prepared_compaction_request.put_completed(
             cache_key,
             request.cache_options,
             compaction_response.output.clone(),
             compaction_response.context.clone(),
-        )?;
+        ) {
+            let diagnostic = error.diagnostic();
+
+            log::warn!(
+                "context compaction for agent `{}` cache write degraded: code={:?}",
+                prepared_compaction_request.agent_name,
+                diagnostic.code
+            );
+
+            if let Some(event_sender) = request.event_sender {
+                event_sender.try_send_observed(error.cache_degraded_event(Some(prepared_compaction_request.agent_name.clone())));
+            }
+        }
 
         if let Some(event_sender) = request.event_sender {
-            let _ = event_sender.try_send(ExecutorEvent::context_compaction_completed(
+            event_sender.try_send_observed(ExecutorEvent::context_compaction_completed(
                 prepared_compaction_request.agent_name.clone(),
-                compaction_response.output.clone(),
+                &compaction_response.output,
                 compaction_started_at.elapsed(),
             ));
         }
+
+        compaction_lifecycle.mark_terminal();
 
         Ok(compaction_response.context)
     }
@@ -1174,8 +1399,11 @@ impl WorkflowExecutor {
         )?;
         let content = match content_value {
             Value::String(content) => content,
-            value => serde_json::to_string(&value).map_err(|error| ExecutorError::Other {
-                message: format!("failed to JSON serialize file content for agent `{}`: {error}", planned_agent.name),
+            value => serde_json::to_string(&value).map_err(|error| {
+                ExecutorError::internal_with_source(
+                    format!("failed to JSON serialize file content for agent `{}`: {error}", planned_agent.name),
+                    error,
+                )
             })?,
         };
         let purpose = self.evaluate_optional_agent_file_string(
@@ -1259,5 +1487,25 @@ impl<'a> CompactionModel<'a> {
         }
 
         Ok(inference)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn dropped_compaction_lifecycle_emits_cancelled_failure() {
+        let (event_sender, mut event_receiver) = mpsc::channel(1);
+
+        {
+            let _compaction_lifecycle = ContextCompactionLifecycle::new("writer".to_string(), Some(event_sender), Instant::now());
+        }
+
+        let event = event_receiver.recv().await.expect("cancelled compaction event should be emitted");
+        let diagnostic = event.diagnostic.expect("cancelled compaction should include a diagnostic");
+
+        assert_eq!(event.kind, superwire_protocol::event::ExecutorEventKind::ContextCompactionFailed);
+        assert_eq!(diagnostic.code, ExecutorDiagnosticCode::Cancelled);
     }
 }

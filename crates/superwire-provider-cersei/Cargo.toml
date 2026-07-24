@@ -19,6 +19,7 @@ superwire-model = { path = "../superwire-model" }
 superwire-protocol = { path = "../superwire-protocol" }
 superwire-semantic = { path = "../superwire-semantic" }
 superwire-types = { path = "../superwire-types" }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]

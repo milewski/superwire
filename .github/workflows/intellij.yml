@@ -5,15 +5,28 @@ on:
     branches: [main]
     paths:
       - 'editors/intellij/**'
-      - 'crates/superwire-lsp/**'
+      - 'editors/textmate/**'
+      - 'crates/**'
+      - 'vendor/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
       - '.github/workflows/intellij.yml'
   push:
     branches: [main]
     paths:
       - 'editors/intellij/**'
-      - 'crates/superwire-lsp/**'
+      - 'editors/textmate/**'
+      - 'crates/**'
+      - 'vendor/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
       - '.github/workflows/intellij.yml'
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -28,37 +41,43 @@ jobs:
         include:
           - os: ubuntu-latest
             rust_targets: x86_64-unknown-linux-gnu
+            bundle_targets: linux-x86_64,windows-x86_64
           - os: macos-latest
             rust_targets: aarch64-apple-darwin x86_64-apple-darwin
+            bundle_targets: macos-aarch64,macos-x86_64
           - os: windows-latest
             rust_targets: x86_64-pc-windows-gnu
+            bundle_targets: windows-x86_64
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           submodules: recursive
 
+      - name: Validate TextMate grammar
+        run: npm --prefix editors/textmate run check
+
       - name: Set up Java 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
         with:
           distribution: temurin
           java-version: '21'
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
         with:
           toolchain: '1.94'
           targets: ${{ matrix.rust_targets }}
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: '.'
           cache-on-failure: true
 
       - name: Cache Gradle packages
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/.gradle/caches
@@ -79,9 +98,16 @@ jobs:
             cargo build -p superwire-lsp --release --target "$target"
           done
 
-      - name: Build IntelliJ plugin
+      - name: Build IntelliJ plugin (Unix)
+        if: runner.os != 'Windows'
         working-directory: editors/intellij
-        run: ./gradlew buildPlugin
+        run: ./gradlew test verifyPlugin buildPlugin verifyPackagedLspBinary "-PsuperwireLspBundleTargets=${{ matrix.bundle_targets }}"
+
+      - name: Build IntelliJ plugin (Windows)
+        if: runner.os == 'Windows'
+        working-directory: editors/intellij
+        shell: pwsh
+        run: .\gradlew.bat test verifyPlugin buildPlugin verifyPackagedLspBinary "-PsuperwireLspBundleTargets=${{ matrix.bundle_targets }}"
 
       - name: Extract plugin distribution
         shell: bash
@@ -109,7 +135,7 @@ jobs:
           PY
 
       - name: Upload plugin artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: superwire-intellij-${{ runner.os }}
           path: editors/intellij/build/upload-artifact/**

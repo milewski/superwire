@@ -1,46 +1,88 @@
 ---
-title: Error Handling
-description: Understand parse, validation, and runtime errors.
+title: Error handling
+description: Handle typed pre-stream failures, streamed diagnostics, cancellation, retries, and CLI errors.
 ---
 
-The executor can fail before execution, during validation, or while running providers and tools.
+## Failure phases
 
-## Error phases
+| Phase | Example | Surface |
+| --- | --- | --- |
+| Parse/semantic | malformed block, invalid reference/type | CLI/LSP or HTTP 400 before execution |
+| Runtime input/configuration | missing/mistyped input, secret, unknown request field | CLI or HTTP 400 |
+| Provider | rate limit, retry exhaustion | HTTP 502 or streamed failure |
+| Cache | unavailable required operation or degraded read/write | HTTP 503 or `cache_degraded` warning |
+| Tool/MCP/output/internal | contract violation, call failure, panic | HTTP 500 or streamed failure |
+| Stream/cancellation | unknown/expired/gapped run, cancellation conflict | HTTP 404/409/410 or event diagnostic |
 
-| Phase | Example |
-| --- | --- |
-| Parse | malformed block syntax |
-| Validation | unknown reference or invalid schema path |
-| Runtime | provider request failed, tool call failed, invalid model output |
-
-## `/execute` error shape
+## HTTP before a stream starts
 
 ```json
 {
   "error": {
-    "kind": "validation_error",
-    "message": "Unknown reference: agent.missing.summary",
-    "issues": [
-      {
-        "path": "agent.writer.instruction",
-        "message": "Unknown reference: agent.missing.summary"
-      }
-    ]
+    "code": "invalid_input",
+    "stage": "input",
+    "severity": "error",
+    "retryability": "never",
+    "message": "invalid JSON request body",
+    "subject": {
+      "type": "workflow"
+    }
   }
 }
 ```
 
-## `/execute` event-stream error shape
+Read HTTP status plus `error.code`. `retry_after_ms` and recursive `cause` preserve delay/source detail when present. The closed field/code/stage/subject contract is in [Diagnostics](/api-reference/diagnostics).
+
+An endpoint blocked by the executor's MCP network policy is a pre-execution `invalid_configuration` diagnostic at stage `mcp`, normally HTTP 400. It is not a transport failure and is not request-retryable: only the executor operator can change `--mcp-network-policy`.
+
+## Failure after SSE begins
 
 ```text
+id: 8
 event: workflow_failed
-data: {"message":"Provider request failed"}
+data: {"kind":"workflow_failed","timestamp_ms":1710000001000,"message":"provider request failed after 4 attempts","diagnostic":{"code":"provider_retries_exhausted","stage":"model","severity":"error","retryability":"safe","message":"provider request failed after 4 attempts","subject":{"type":"provider","agent_name":"writer","attempt":4,"http_status":503},"cause":{"code":"model_provider_failed","stage":"model","severity":"error","retryability":"safe","message":"HTTP 503","subject":{"type":"provider","agent_name":"writer","attempt":4,"http_status":503}}}}
+
 ```
 
-## Common fixes
+`workflow_failed`, `workflow_cancelled`, and `workflow_completed` are terminal. A successful initial HTTP status does not imply workflow success.
 
-- Check that every referenced agent field exists in that agent's `output` block.
-- Check that `input` and `secrets` payloads match the workflow declarations.
-- Check that imported tools, prompts, and resources are listed in an agent's `uses` array when the agent needs them.
-- Check provider endpoint, API key, and model IDs.
-- Check that tool call runtime values are supplied with `bindings {}`.
+Nested work emits its own failed/cancelled events. `cache_degraded` is a non-terminal warning: execution deliberately continues. `stream_gap` is non-terminal but closes that subscription and requires cursor-aware reconnect. Read `diagnostic` first; top-level failure/warning `message` mirrors it for display.
+
+Nested events are metadata projections: use identifiers, argument/binding names, durations, and `result_kind`/`item_count` summaries to locate the failing operation. They do not provide raw inputs, outputs, prompts, contexts, schemas, upstream bodies or headers, secrets, or run capabilities. Retention and replay cannot recover those payloads; only `workflow_completed` carries final output.
+
+A projected SSE event is limited to a 245,760-byte complete frame. If the final output would exceed it, the executor assigns no ID to the oversized completion and emits one terminal `workflow_failed` with `event_too_large`; `diagnostic.subject` contains only `actual_bytes` and `maximum_bytes`. Treat that output as unavailable—reconnect cannot recover it.
+
+## Provider retry policy
+
+The provider already retries transient transport errors and HTTP 408/425/429/5xx with bounded exponential backoff, capped `Retry-After`, and visible attempt events. Exhaustion nests the final provider diagnostic in `cause`. See [Provider matrix](/integrations/providers#provider-retries) before adding an outer retry.
+
+## Cancellation
+
+A cancel response with `transition: "accepted"` means abort was requested, not completed. Keep consuming/reconnecting until a terminal event. Idempotent repeats return `already_requested` or `already_terminal` according to run state.
+
+## CLI
+
+Human-readable diagnostics:
+
+```bash
+superwire-cli workflow check workflow.wire
+```
+
+Machine-readable command failure:
+
+```bash
+SUPERWIRE_ERROR_FORMAT=json superwire-cli workflow check workflow.wire
+```
+
+CLI JSON has `code`, `message`, and `details`; `details` is an `ExecutorDiagnostic` or `null`.
+
+## Application policy
+
+- Validation failures are caller/deployment errors; do not retry them.
+- Use `retryability`/`retry_after_ms` and tool idempotency for outer retries.
+- Preserve the run identifier and last non-gap SSE ID; reconnecting is not a new execution.
+- Require explicit acceptance before skipping a replay gap.
+- Log only public event metadata and typed diagnostics; never attempt to recover or log secrets, raw inputs/outputs, prompts, contexts, schemas, upstream bodies or headers, or run capabilities.
+- Show diagnostic `code`, `stage`, `subject`, and nested `cause` in operational detail views; do not infer them from unavailable payloads or message text.
+
+See [Streaming and events](/api-reference/streaming-events) and [Troubleshooting](/troubleshooting).

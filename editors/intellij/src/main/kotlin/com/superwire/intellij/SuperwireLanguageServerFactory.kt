@@ -8,7 +8,7 @@ import com.redhat.devtools.lsp4ij.server.StreamConnectionProvider
 
 class SuperwireLanguageServerFactory : LanguageServerFactory {
     override fun createConnectionProvider(project: Project): StreamConnectionProvider {
-        val serverCommand = SuperwireServerCommandResolver.resolveServerCommand(project)
+        val serverCommand = SuperwireServerCommandResolver.resolveServerCommand()
 
         return OSProcessStreamConnectionProvider(GeneralCommandLine(serverCommand))
     }

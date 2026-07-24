@@ -1,6 +1,6 @@
 use super::super::ast::{
     AgentContext, AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, Declaration, Expression, MatchBranch, ObjectField,
-    Reference, ReferenceAccess, ReferenceKeyword, SourceSpan, StringTemplatePart, TypeExpression, TypeExpressionFieldCache, Workflow,
+    Reference, ReferenceKeyword, SourceSpan, StringTemplatePart, TypeExpression, TypeExpressionFieldCache, Workflow,
 };
 use super::issues::{AgentDeclarationIssuesExt, ReferenceIssuesExt};
 use super::tools::validate_agent_tool_bindings;
@@ -1034,21 +1034,21 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             }
 
             let mut next_candidate_types = Vec::new();
+            let mut has_valid_access = false;
+            let mut all_accesses_valid = true;
 
             for candidate_type in &candidate_types {
-                candidate_type.collect_field_types_for_reference_access_with_cache(
+                let candidate_access_is_valid = candidate_type.collect_field_types_for_reference_access_with_cache(
                     reference_access,
                     &mut |schema_name| self.validation_index.schema_type_expression(schema_name, SourceSpan::generated()),
                     &mut next_candidate_types,
                     &mut field_cache,
                 );
+                has_valid_access |= candidate_access_is_valid;
+                all_accesses_valid &= candidate_access_is_valid;
             }
 
-            if reference_access.is_optional() {
-                next_candidate_types.push(TypeExpression::Null);
-            }
-
-            if next_candidate_types.is_empty() {
+            if !has_valid_access || (!reference_access.is_optional() && !all_accesses_valid) {
                 let reference_path = reference.render_path();
                 let issue_key = (context.clone(), reference_path.clone(), reference_access.field.clone());
 
@@ -1058,6 +1058,10 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                 }
 
                 return;
+            }
+
+            if reference_access.is_optional() {
+                next_candidate_types.push(TypeExpression::Null);
             }
 
             candidate_types = next_candidate_types;
@@ -1085,16 +1089,19 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             }
 
             let mut next_candidate_types = Vec::new();
+            let mut has_valid_access = false;
+            let mut all_accesses_valid = true;
 
             for candidate_type in &candidate_types {
-                Self::collect_next_workflow_types_for_reference_access(candidate_type, reference_access, &mut next_candidate_types);
+                if let Some(field_type) = candidate_type.field_type_for_reference_access(reference_access) {
+                    next_candidate_types.push(field_type);
+                    has_valid_access = true;
+                } else {
+                    all_accesses_valid = false;
+                }
             }
 
-            if reference_access.is_optional() {
-                next_candidate_types.push(superwire_semantic::support::types::WorkflowType::Null);
-            }
-
-            if next_candidate_types.is_empty() {
+            if !has_valid_access || (!reference_access.is_optional() && !all_accesses_valid) {
                 let reference_path = reference.render_path();
                 let issue_key = (context.clone(), reference_path.clone(), reference_access.field.clone());
 
@@ -1104,6 +1111,10 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                 }
 
                 return;
+            }
+
+            if reference_access.is_optional() {
+                next_candidate_types.push(superwire_semantic::support::types::WorkflowType::Null);
             }
 
             candidate_types = next_candidate_types;
@@ -1117,51 +1128,6 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         if self.missing_optional_reference_accesses.insert(issue_key) {
             self.validation_report
                 .push_issue_with_span(reference.missing_optional_access_issue(field_name, context), Some(reference.span));
-        }
-    }
-
-    fn collect_next_workflow_types_for_reference_access(
-        candidate_type: &WorkflowType,
-        reference_access: &ReferenceAccess,
-        next_candidate_types: &mut Vec<WorkflowType>,
-    ) {
-        if reference_access.is_array_pluck() {
-            if let Some(field_type) = candidate_type.array_pluck_field_type(reference_access) {
-                next_candidate_types.push(field_type);
-            }
-
-            return;
-        }
-
-        match candidate_type {
-            WorkflowType::Object(fields) => {
-                if let Some(field_type) = fields.get(&reference_access.field) {
-                    next_candidate_types.push(field_type.clone());
-                }
-            }
-            WorkflowType::Union(union_members) => {
-                for union_member in union_members {
-                    Self::collect_next_workflow_types_for_reference_access(union_member, reference_access, next_candidate_types);
-                }
-            }
-            WorkflowType::Variant { discriminator, cases } => {
-                if discriminator == &reference_access.field {
-                    next_candidate_types.extend(cases.keys().cloned().map(|case_name| WorkflowType::StringEnum(vec![case_name])));
-                }
-            }
-            WorkflowType::Any
-            | WorkflowType::String
-            | WorkflowType::Integer
-            | WorkflowType::Float
-            | WorkflowType::Boolean
-            | WorkflowType::Null
-            | WorkflowType::AnyObject
-            | WorkflowType::StringEnum(_)
-            | WorkflowType::Array {
-                item_type: _,
-                fixed_length: _,
-            }
-            | WorkflowType::Tuple(_) => {}
         }
     }
 

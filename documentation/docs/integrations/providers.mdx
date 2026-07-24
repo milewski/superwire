@@ -1,0 +1,112 @@
+---
+title: Provider matrix
+description: Choose a built-in driver, API family, endpoint, key source, and model wire API.
+---
+
+A provider declaration names a runtime driver. `endpoint` and `api_key` are the only provider properties. If omitted, the runtime uses the driver's default endpoint and supported environment variables.
+
+## Drivers
+
+| Driver | API family | Default endpoint | Environment key fallback |
+| --- | --- | --- | --- |
+| `anthropic` | Anthropic | `https://api.anthropic.com` | `ANTHROPIC_API_KEY`, `ANTHROPIC_KEY` |
+| `anthropic_compatible` | Anthropic | `https://api.anthropic.com` | none; supply `api_key` |
+| `google` | Google | `https://generativelanguage.googleapis.com/v1beta` | `GOOGLE_API_KEY`, `GEMINI_API_KEY` |
+| `openai` | OpenAI-compatible | `https://api.openai.com/v1` | `OPENAI_API_KEY` |
+| `openai_compatible` | OpenAI-compatible | `https://api.openai.com/v1` | none; supply `api_key` |
+| `mistral` | OpenAI-compatible | `https://api.mistral.ai/v1` | `MISTRAL_API_KEY` |
+| `groq` | OpenAI-compatible | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` |
+| `deepseek` | OpenAI-compatible | `https://api.deepseek.com/v1` | `DEEPSEEK_API_KEY` |
+| `xai` | OpenAI-compatible | `https://api.x.ai/v1` | `XAI_API_KEY` |
+| `together` | OpenAI-compatible | `https://api.together.xyz/v1` | `TOGETHER_API_KEY` |
+| `fireworks` | OpenAI-compatible | `https://api.fireworks.ai/inference/v1` | `FIREWORKS_API_KEY` |
+| `perplexity` | OpenAI-compatible | `https://api.perplexity.ai` | `PERPLEXITY_API_KEY` |
+| `cerebras` | OpenAI-compatible | `https://api.cerebras.ai/v1` | `CEREBRAS_API_KEY` |
+| `ollama` | OpenAI-compatible | `http://localhost:11434/v1` | no key required |
+| `openrouter` | OpenAI-compatible | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` |
+| `cohere` | OpenAI-compatible | `https://api.cohere.com/compatibility/v1` | `COHERE_API_KEY`, `CO_API_KEY` |
+| `sambanova` | OpenAI-compatible | `https://api.sambanova.ai/v1` | `SAMBANOVA_API_KEY` |
+
+“OpenAI-compatible” describes the transport family, not guaranteed support for every OpenAI endpoint or feature. Confirm the selected backend implements the model API mode and features your workflow uses.
+
+## Runtime secret binding
+
+Use a typed secret when the caller supplies the credential:
+
+```wire
+secrets {
+    api_key: string
+}
+
+provider primary from anthropic {
+    api_key: secrets.api_key
+}
+```
+
+Use environment fallback when the executor owns one deployment credential:
+
+```wire
+provider primary from anthropic {
+}
+```
+
+The second form reads `ANTHROPIC_API_KEY` or `ANTHROPIC_KEY` from the executor environment. Do not pass provider keys through model instructions.
+
+## Model wire API
+
+Models default to the Responses API mode:
+
+```wire
+model fast from primary {
+    id: "gpt-4.1-mini"
+}
+```
+
+Choose Chat Completions explicitly when the backend or feature requires it:
+
+```wire
+model files from primary {
+    id: "gpt-4.1-mini"
+    wire_api: "chat/completion"
+}
+```
+
+Allowed values are `"responses"` and `"chat/completion"`. Agent `file` directives require `"chat/completion"`.
+
+## Model assets
+
+Declare non-text asset kinds the model accepts:
+
+```wire
+model vision from primary {
+    id: "vision-model"
+    assets: ["image", "video", "document"]
+}
+```
+
+Superwire validates `asset` usage against this list before the provider call.
+
+## Provider retries
+
+Provider retry settings live in model inference configuration:
+
+```wire
+model resilient from primary {
+    id: "gpt-4.1-mini"
+
+    inference {
+        provider_max_retries: 3
+        provider_retry_base_delay_ms: 1000
+    }
+}
+```
+
+Defaults are three retries and a 1,000 ms base delay. `provider_max_retries` is capped at 8; base and per-attempt delays are capped at 60,000 ms. Backoff doubles from the base with checked arithmetic. A provider `Retry-After` value overrides calculated backoff but is also capped at 60 seconds.
+
+Retries apply to HTTP 408, 425, 429, 5xx, connection/time-out/transport/I/O failures. Authentication, permission, tool, context-overflow, configuration, MCP, JSON/validation, cancellation, and other permanent failures are not retried.
+
+SSE emits `provider_attempt_started`, `provider_attempt_completed`, and `provider_attempt_failed`. Exhaustion produces `provider_retries_exhausted` with the final provider diagnostic in `cause`; applications should use its retryability/status rather than adding an unbounded outer retry loop.
+
+## Docker-hosted providers
+
+When the executor runs in Docker, its `localhost` is not the host. For host Ollama, expose `host.docker.internal` as described in [Installation](/installation#docker-networking), then override the endpoint.

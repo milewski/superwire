@@ -1,0 +1,35 @@
+```wire classify.wire
+input {
+    message: string
+}
+
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+schema classification {
+    category: enum { bug, feature, question }
+    confidence: number
+    reason: string
+}
+
+agent classify {
+    model: model.fast
+    instruction: "Classify this request: {{ input.message }}"
+    output {
+        result: schema.classification
+    }
+}
+
+output {
+    result: agent.classify.result
+}
+```

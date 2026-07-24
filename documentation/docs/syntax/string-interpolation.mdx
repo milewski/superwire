@@ -35,6 +35,8 @@ agent format_json {
 
 In the example above, `{` and `}` around the JSON are literal text, while `{{ input.name }}` is interpolated.
 
+Escaped braces (`\{` and `\}`) are also supported and round-trip through formatting, but ordinary single braces already remain literal. Unknown backslash escapes fail parsing; see [Quoted-string escapes](/syntax/expressions#quoted-string-escapes).
+
 ## Multiline strings
 
 Use triple quotes for multiline instructions while still using interpolation:

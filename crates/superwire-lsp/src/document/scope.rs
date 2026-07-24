@@ -1,11 +1,11 @@
 use lsp_types::CompletionItemKind;
 use superwire_dsl::{
     structure, AgentFilePropertyName, AssetPropertyName, DeclarationKeyword, ExpressionKeyword, ForClauseKeyword, ImportKeyword,
-    McpImportPropertyName, McpServerPropertyName, ModelDeclarationPropertyName, ModelUsagePropertyName, ReferenceKeyword,
-    SingletonDeclarationKind, ToolPropertyName,
+    McpImportPropertyName, McpServerPropertyName, ModelDeclarationPropertyName, ModelUsagePropertyName, ReferenceKeyword, ToolPropertyName,
 };
 use superwire_semantic::InferenceSetting;
 
+use super::syntax::{SyntaxPunctuation, SyntaxSnapshot, SyntaxTokenKind};
 use super::text_utils::{is_identifier, trailing_identifier};
 use super::CompletionSuggestion;
 
@@ -45,44 +45,60 @@ enum ScopeBlock {
     Dynamic,
 }
 
-pub fn completion_scope_at_offset(source_text: &str, cursor_offset: usize) -> CompletionScope {
+pub fn completion_scope_at_offset(source_text: &str, cursor_offset: usize, syntax_snapshot: &SyntaxSnapshot) -> CompletionScope {
     let mut scope_blocks = Vec::<ScopeBlock>::new();
     let mut token_state = ScopeScannerTokenState::default();
-    let mut string_state = ScopeScannerStringState::default();
+    let mut previous_token_end_byte_offset = 0_usize;
 
-    for character in source_text[..cursor_offset].chars() {
-        if string_state.accept(character) {
-            continue;
+    for syntax_token in syntax_snapshot
+        .tokens()
+        .iter()
+        .take_while(|syntax_token| syntax_token.byte_range.start < cursor_offset)
+    {
+        let source_between_tokens = source_text
+            .get(previous_token_end_byte_offset..syntax_token.byte_range.start)
+            .unwrap_or_default();
+
+        if source_between_tokens.contains(['\n', '\r', ';']) {
+            token_state.clear_after_statement();
         }
 
-        if character.is_ascii_alphanumeric() || character == '_' {
-            token_state.current_identifier.push(character);
-            continue;
-        }
-
-        token_state.flush_identifier();
-
-        match character {
-            ':' => {
+        match syntax_token.kind {
+            SyntaxTokenKind::Identifier => {
+                token_state.current_identifier = syntax_token.text(source_text).to_string();
+                token_state.flush_identifier();
+            }
+            SyntaxTokenKind::Punctuation(SyntaxPunctuation::Colon) => {
                 token_state.pending_property = token_state.recent_identifiers.last().cloned();
             }
-            '{' => {
+            SyntaxTokenKind::Punctuation(SyntaxPunctuation::OpenBrace) => {
                 let block_kind = token_state.block_for_open_brace(scope_blocks.last().copied());
                 scope_blocks.push(block_kind);
                 token_state.clear_after_brace();
             }
-            '}' => {
+            SyntaxTokenKind::Punctuation(SyntaxPunctuation::CloseBrace) => {
                 let _ = scope_blocks.pop();
                 token_state.clear_after_brace();
             }
-            '\n' | '\r' | ';' => {
-                token_state.clear_after_statement();
-            }
-            ',' => {
+            SyntaxTokenKind::Punctuation(SyntaxPunctuation::Comma) => {
                 token_state.pending_property = None;
             }
-            _ => {}
+            SyntaxTokenKind::Number
+            | SyntaxTokenKind::StringLiteral
+            | SyntaxTokenKind::MultilineStringLiteral
+            | SyntaxTokenKind::Comment
+            | SyntaxTokenKind::Punctuation(
+                SyntaxPunctuation::OpenBracket
+                | SyntaxPunctuation::CloseBracket
+                | SyntaxPunctuation::OpenParenthesis
+                | SyntaxPunctuation::CloseParenthesis
+                | SyntaxPunctuation::Dot,
+            )
+            | SyntaxTokenKind::Operator(_)
+            | SyntaxTokenKind::Unknown => {}
         }
+
+        previous_token_end_byte_offset = syntax_token.byte_range.end;
     }
 
     match scope_blocks.last().copied() {
@@ -178,7 +194,10 @@ impl ScopeScannerTokenState {
             return ScopeBlock::AssetOptions;
         }
 
-        if last_identifier == SingletonDeclarationKind::Input.as_str() || last_identifier == SingletonDeclarationKind::Secrets.as_str() {
+        if matches!(
+            DeclarationKeyword::from_identifier(last_identifier),
+            Some(DeclarationKeyword::Input | DeclarationKeyword::Secrets)
+        ) {
             return ScopeBlock::TypedDeclaration;
         }
 
@@ -206,49 +225,40 @@ impl ScopeScannerTokenState {
             return ScopeBlock::McpServer;
         }
 
-        if let Some(agent_keyword_index) = self
-            .recent_identifiers
-            .iter()
-            .position(|identifier| DeclarationKeyword::from_identifier(identifier) == Some(DeclarationKeyword::Agent))
-        {
-            if let Some(agent_name_identifier) = self.recent_identifiers.get(agent_keyword_index + 1) {
-                if ForClauseKeyword::from_identifier(agent_name_identifier).is_none()
-                    && DeclarationKeyword::from_identifier(agent_name_identifier).is_none()
-                {
-                    return ScopeBlock::Agent;
-                }
-            }
-        }
-
-        if let Some(schema_keyword_index) = self
-            .recent_identifiers
-            .iter()
-            .position(|identifier| DeclarationKeyword::from_identifier(identifier) == Some(DeclarationKeyword::Schema))
-        {
-            if let Some(schema_name_identifier) = self.recent_identifiers.get(schema_keyword_index + 1) {
-                if ForClauseKeyword::from_identifier(schema_name_identifier).is_none()
-                    && DeclarationKeyword::from_identifier(schema_name_identifier).is_none()
-                {
-                    return ScopeBlock::TypedDeclaration;
-                }
-            }
-        }
-
-        if let Some(tool_keyword_index) = self
-            .recent_identifiers
-            .iter()
-            .position(|identifier| DeclarationKeyword::from_identifier(identifier) == Some(DeclarationKeyword::Tool))
-        {
-            if let Some(tool_name_identifier) = self.recent_identifiers.get(tool_keyword_index + 1) {
-                if ForClauseKeyword::from_identifier(tool_name_identifier).is_none()
-                    && DeclarationKeyword::from_identifier(tool_name_identifier).is_none()
-                {
-                    return ScopeBlock::Tool;
-                }
-            }
+        if let Some(named_declaration_block) = self.named_declaration_block_for_open_brace() {
+            return named_declaration_block;
         }
 
         ScopeBlock::Other
+    }
+
+    fn named_declaration_block_for_open_brace(&self) -> Option<ScopeBlock> {
+        let declaration_blocks = [
+            (DeclarationKeyword::Agent, ScopeBlock::Agent),
+            (DeclarationKeyword::Schema, ScopeBlock::TypedDeclaration),
+            (DeclarationKeyword::Tool, ScopeBlock::Tool),
+        ];
+
+        for (declaration_keyword, scope_block) in declaration_blocks {
+            let Some(declaration_keyword_index) = self
+                .recent_identifiers
+                .iter()
+                .position(|identifier| DeclarationKeyword::from_identifier(identifier) == Some(declaration_keyword))
+            else {
+                continue;
+            };
+            let Some(declaration_name_identifier) = self.recent_identifiers.get(declaration_keyword_index + 1) else {
+                continue;
+            };
+
+            if ForClauseKeyword::from_identifier(declaration_name_identifier).is_none()
+                && DeclarationKeyword::from_identifier(declaration_name_identifier).is_none()
+            {
+                return Some(scope_block);
+            }
+        }
+
+        None
     }
 
     fn pending_block_for_open_brace(&self) -> Option<ScopeBlock> {
@@ -434,41 +444,6 @@ impl ScopeScannerTokenState {
         self.pending_property = None;
         self.recent_identifiers.clear();
         self.current_identifier.clear();
-    }
-}
-
-#[derive(Debug, Default)]
-struct ScopeScannerStringState {
-    inside_string: bool,
-    escaping: bool,
-}
-
-impl ScopeScannerStringState {
-    fn accept(&mut self, character: char) -> bool {
-        if self.inside_string {
-            if self.escaping {
-                self.escaping = false;
-                return true;
-            }
-
-            if character == '\\' {
-                self.escaping = true;
-                return true;
-            }
-
-            if character == '"' {
-                self.inside_string = false;
-            }
-
-            return true;
-        }
-
-        if character == '"' {
-            self.inside_string = true;
-            return true;
-        }
-
-        false
     }
 }
 

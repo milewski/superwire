@@ -5,6 +5,7 @@ export interface PlaygroundTabChipAction {
   label: string;
   icon: ReactNode;
   onClick: () => void;
+  disabled?: boolean;
 }
 
 interface PlaygroundTabChipProps {
@@ -119,6 +120,7 @@ export default function PlaygroundTabChip({
               variant="ghost"
               size="icon-sm"
               aria-label={action.label}
+              disabled={action.disabled}
               onClick={action.onClick}
             >
               {action.icon}

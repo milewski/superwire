@@ -1,36 +1,29 @@
 ---
-title: Basic Agent
-description: A one-agent workflow.
+title: Basic agent
+description: Run the canonical strongly typed hello workflow.
 ---
 
-```wire
-input {
-    message: string
-}
+import HelloWorkflow from "/examples/wire/hello.mdx";
 
-secrets {
-    api_key: string
-}
+<HelloWorkflow />
 
-provider llm from openai {
-    endpoint: "https://api.openai.com/v1"
-    api_key: secrets.api_key
-}
+Runtime values:
 
-model fast from llm {
-    id: "gpt-4.1-mini"
-}
-
-agent reply {
-    model: model.fast
-    instruction: "Reply to {{ input.message }}."
-
-    output {
-        message: string
-    }
-}
-
-output {
-    message: agent.reply.message
+```json
+{
+  "input": {"name": "Ada"},
+  "secrets": {"api_key": "replace-at-runtime"}
 }
 ```
+
+Final workflow object:
+
+```json
+{
+  "message": "Hello Ada."
+}
+```
+
+HTTP JSON wraps that value as `{ "output": { "message": "Hello Ada." } }`; the CLI prints the inner object directly.
+
+Every complete workflow example in this documentation is imported from a checked fixture under `examples/wire`. See [Quickstart](/quickstart) to execute this one.

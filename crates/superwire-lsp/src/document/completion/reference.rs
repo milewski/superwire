@@ -32,6 +32,7 @@ impl DocumentState {
         semantic_index: &SemanticIndex,
         inputs: ReferenceCompletionInputs<'_>,
     ) -> Option<Vec<CompletionSuggestion>> {
+        let position_context = self.position_context(inputs.position)?;
         let line_has_property_separator = inputs.line_prefix.trim_start().contains(':');
         let reference_completion_path = ReferenceCompletionPath::from_line_prefix(inputs.line_prefix)?;
         let for_loop_iterable_reference_context = matches!(
@@ -48,7 +49,7 @@ impl DocumentState {
         let reference_suggestions = semantic_index.reference_path_suggestions(
             &reference_completion_path,
             reference_completion_constraint,
-            inputs.position,
+            position_context,
             Self::has_existing_tool_binding_block(inputs.line_suffix),
         );
 
@@ -166,12 +167,12 @@ impl DocumentState {
         let prompt_interpolation_reference_context =
             Self::is_prompt_interpolation_reference_context(line_prefix, inside_interpolation_expression);
         let for_loop_iterator_reference_root =
-            semantic_index.has_for_loop_binding_at_position(position, reference_completion_path.root_identifier());
+            semantic_index.has_for_loop_binding_at_position(self.position_context(position)?, reference_completion_path.root_identifier());
 
         match reference_completion_path.root_keyword() {
             Some(ReferenceKeyword::Input | ReferenceKeyword::Agent | ReferenceKeyword::Dynamic) => {
                 if can_suggest_interpolation_roots {
-                    return Some(Self::interpolation_root_suggestions_for_context(
+                    return Some(self.interpolation_root_suggestions_for_context(
                         semantic_index,
                         line_prefix,
                         position,
@@ -185,7 +186,7 @@ impl DocumentState {
             Some(ReferenceKeyword::Secrets) => {
                 if prompt_interpolation_reference_context {
                     if can_suggest_interpolation_roots {
-                        return Some(Self::interpolation_root_suggestions_for_context(
+                        return Some(self.interpolation_root_suggestions_for_context(
                             semantic_index,
                             line_prefix,
                             position,
@@ -205,7 +206,7 @@ impl DocumentState {
                 }
 
                 if can_suggest_interpolation_roots {
-                    return Some(Self::interpolation_root_suggestions_for_context(
+                    return Some(self.interpolation_root_suggestions_for_context(
                         semantic_index,
                         line_prefix,
                         position,
@@ -228,7 +229,7 @@ impl DocumentState {
         reference_suggestions: &[CompletionSuggestion],
         line_has_property_separator: bool,
     ) -> Option<Vec<CompletionSuggestion>> {
-        if !line_has_property_separator || !semantic_index.is_output_position(position) {
+        if !line_has_property_separator || !semantic_index.is_output_position(self.position_context(position)?) {
             return None;
         }
 
@@ -417,17 +418,21 @@ impl DocumentState {
     }
 
     pub(super) fn interpolation_root_suggestions_for_context(
+        &self,
         semantic_index: &SemanticIndex,
         line_prefix: &str,
         position: Position,
         root_prefix: &str,
         inside_interpolation_expression: bool,
     ) -> Vec<CompletionSuggestion> {
+        let Some(position_context) = self.position_context(position) else {
+            return Vec::new();
+        };
         if Self::is_prompt_interpolation_reference_context(line_prefix, inside_interpolation_expression) {
-            return semantic_index.prompt_interpolation_root_suggestions(root_prefix, position);
+            return semantic_index.prompt_interpolation_root_suggestions(root_prefix, position_context);
         }
 
-        semantic_index.interpolation_root_suggestions(root_prefix, position)
+        semantic_index.interpolation_root_suggestions(root_prefix, position_context)
     }
 
     fn is_prompt_interpolation_reference_context(line_prefix: &str, inside_interpolation_expression: bool) -> bool {

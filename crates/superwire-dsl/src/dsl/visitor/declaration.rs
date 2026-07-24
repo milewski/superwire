@@ -3,7 +3,7 @@ use crate::dsl::ast::{
     Declaration, DynamicBlock, Expression, InputDeclaration, ModelDeclaration, ObjectField, OutputDeclaration, ProviderDeclaration,
     SchemaDeclaration, SecretsDeclaration,
 };
-use crate::dsl::parser::{DslParseError, Rule};
+use crate::dsl::parser::{DslParseError, ReservedBindingContext, Rule};
 use pest::iterators::Pair;
 
 impl AstVisitor {
@@ -171,10 +171,20 @@ impl AstVisitor {
         let object_expression_pair = self.first_inner_pair(dynamic_pair, "dynamic declaration")?;
         let fields = self.visit_object_expression(object_expression_pair)?;
 
-        Ok(DynamicBlock {
+        let dynamic_block = DynamicBlock {
             fields,
             span: declaration_span,
-        })
+        };
+
+        if let Some(reserved_field) = dynamic_block.reserved_reference_keyword_field() {
+            return Err(DslParseError::ReservedBindingName {
+                binding_name: reserved_field.name.clone(),
+                context: ReservedBindingContext::Dynamic,
+                span: reserved_field.span,
+            });
+        }
+
+        Ok(dynamic_block)
     }
     pub(super) fn visit_output_declaration(&self, output_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {
         let declaration_span = source_span_from_pair(&output_pair);

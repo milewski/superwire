@@ -15,11 +15,20 @@ pub struct CodeActionEdit {
 }
 
 #[derive(Debug, Clone)]
+pub struct DocumentDiagnosticRelated {
+    pub range: Range,
+    pub message: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct DocumentDiagnostic {
     pub range: Range,
     pub severity: DiagnosticSeverity,
     pub code: DiagnosticCode,
     pub message: String,
+    pub related: Vec<DocumentDiagnosticRelated>,
+    pub notes: Vec<String>,
+    pub help: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -104,4 +113,46 @@ pub struct CodeLensHint {
     pub range: Range,
     pub title: String,
     pub command: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SemanticHighlightKind {
+    Keyword,
+    Type,
+    Class,
+    Property,
+    Function,
+    Variable,
+    String,
+    Number,
+    Comment,
+    Operator,
+    EnumMember,
+    Namespace,
+}
+
+impl SemanticHighlightKind {
+    #[must_use]
+    pub const fn legend_index(self) -> u32 {
+        match self {
+            Self::Keyword => 0,
+            Self::Type => 1,
+            Self::Class => 2,
+            Self::Property => 3,
+            Self::Function => 4,
+            Self::Variable => 5,
+            Self::String => 6,
+            Self::Number => 7,
+            Self::Comment => 8,
+            Self::Operator => 9,
+            Self::EnumMember => 10,
+            Self::Namespace => 11,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct SemanticHighlight {
+    pub range: Range,
+    pub kind: SemanticHighlightKind,
 }

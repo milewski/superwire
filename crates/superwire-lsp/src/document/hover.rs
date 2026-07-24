@@ -1,8 +1,12 @@
-use superwire_dsl::{DeclarationKeyword, ReferenceKeyword, SingletonDeclarationKind};
+use superwire_dsl::{
+    BuiltinFunctionName, DeclarationKeyword, ExpressionKeyword, ImportKeyword, ReferenceKeyword, ScalarTypeKeyword,
+    SingletonDeclarationKind,
+};
 use superwire_semantic::ProviderDriver;
 
 use lsp_types::{CompletionItemKind, Position};
 
+use super::position::DocumentPosition;
 use super::reference::ReferenceCompletionPath;
 use super::semantic_index::SemanticIndex;
 use super::{CompletionSuggestion, DocumentState, RenderTypeExpression};
@@ -12,16 +16,22 @@ impl DocumentState {
     pub fn hover_markdown(&self, position: Position) -> Option<String> {
         let hovered_symbol = self.symbol_token_at(position)?;
 
-        if let Some(symbol_markdown) = builtin_symbol_markdown(&hovered_symbol) {
-            return Some(symbol_markdown);
+        if let Some(position_context) = self.position_context(position) {
+            if let Some(symbol_markdown) = self
+                .semantic_snapshot
+                .semantic_index
+                .hover_markdown(&hovered_symbol, position_context)
+            {
+                return Some(symbol_markdown);
+            }
         }
 
-        self.semantic_snapshot.semantic_index.hover_markdown(&hovered_symbol)
+        builtin_symbol_markdown(&hovered_symbol)
     }
 }
 
 impl SemanticIndex {
-    pub fn hover_markdown(&self, hovered_symbol: &str) -> Option<String> {
+    pub fn hover_markdown(&self, hovered_symbol: &str, position: DocumentPosition<'_>) -> Option<String> {
         if let Some(provider_summary) = self.providers.get(hovered_symbol) {
             let provider_driver_name = provider_summary.driver.map_or("unknown", ProviderDriver::as_str);
 
@@ -56,7 +66,12 @@ impl SemanticIndex {
         }
 
         match reference_completion_path.root_keyword() {
-            Some(ReferenceKeyword::Dynamic) => Some(format!("**{hovered_symbol}**\n\nDynamic reference.")),
+            Some(ReferenceKeyword::Dynamic) => {
+                let (dynamic_fields, _) = self.dynamic_scope_at_position(position);
+                let field_type = self.resolve_singleton_reference_type(dynamic_fields, resolved_reference_accesses.as_slice())?;
+
+                Some(format!("**{}**\n\nType: `{}`", hovered_symbol, field_type.render_type()))
+            }
             Some(ReferenceKeyword::Input) => {
                 let field_type = self.resolve_singleton_reference_type(&self.input_fields, resolved_reference_accesses.as_slice())?;
 
@@ -70,7 +85,6 @@ impl SemanticIndex {
             Some(ReferenceKeyword::Agent) => {
                 let agent_name = resolved_accesses.first()?;
                 let agent_summary = self.agents.get(agent_name)?;
-
                 let agent_output_type = agent_summary.output_type.as_ref()?;
 
                 if resolved_accesses.len() == 1 {
@@ -87,9 +101,52 @@ impl SemanticIndex {
 
                 Some(format!("**{}**\n\nType: `{}`", hovered_symbol, final_type.render_type()))
             }
-            Some(ReferenceKeyword::Resource) => Some(format!("**{hovered_symbol}**\n\nMCP resource reference.")),
-            Some(ReferenceKeyword::Prompt) => Some(format!("**{hovered_symbol}**\n\nMCP prompt reference.")),
-            Some(ReferenceKeyword::Model | ReferenceKeyword::Tool) | None => None,
+            Some(ReferenceKeyword::Tool) => {
+                let tool_name = resolved_accesses.first()?;
+                let tool_summary = self.tools.get(tool_name)?;
+                let output_type = tool_summary.output_type_expression.as_ref()?;
+
+                if resolved_accesses.len() == 1 {
+                    return Some(format!("**tool.{tool_name}**\n\nOutput type: `{}`", output_type.render_type()));
+                }
+
+                let candidate_types = self
+                    .tooling_snapshot
+                    .resolve_reference_access_path_types(vec![output_type.clone()], &resolved_reference_accesses[1..]);
+                let final_type = candidate_types.first()?;
+
+                Some(format!("**{}**\n\nType: `{}`", hovered_symbol, final_type.render_type()))
+            }
+            Some(ReferenceKeyword::Model) => {
+                let model_name = resolved_accesses.first()?;
+                let model_summary = self.models.get(model_name)?;
+
+                Some(format!("**model.{model_name}**\n\nProvider: `{}`", model_summary.provider_name))
+            }
+            Some(ReferenceKeyword::Resource) => Some(format!("**{hovered_symbol}**\n\nImported MCP resource reference.")),
+            Some(ReferenceKeyword::Prompt) => Some(format!("**{hovered_symbol}**\n\nImported MCP prompt reference.")),
+            None => {
+                let binding_types = self.for_loop_binding_types_at_position(position, reference_completion_path.root_identifier())?;
+
+                if resolved_reference_accesses.is_empty() {
+                    return Some(format!(
+                        "**{}**\n\nFor-loop binding type: `{}`",
+                        reference_completion_path.root_identifier(),
+                        binding_types
+                            .iter()
+                            .map(RenderTypeExpression::render_type)
+                            .collect::<Vec<_>>()
+                            .join(" | ")
+                    ));
+                }
+
+                let candidate_types = self
+                    .tooling_snapshot
+                    .resolve_reference_access_path_types(binding_types.to_vec(), resolved_reference_accesses.as_slice());
+                let final_type = candidate_types.first()?;
+
+                Some(format!("**{}**\n\nType: `{}`", hovered_symbol, final_type.render_type()))
+            }
         }
     }
 }
@@ -102,80 +159,82 @@ struct BuiltinSymbolDoc {
     documentation: &'static str,
 }
 
-const BUILTIN_SYMBOL_DOCS: [BuiltinSymbolDoc; 12] = [
-    BuiltinSymbolDoc {
-        label: "from",
-        kind: CompletionItemKind::KEYWORD,
-        detail: "MCP batch import",
-        documentation: "Use `from mcp.<server>.tool { ... }` to import multiple MCP tools with shared bindings.",
-    },
-    BuiltinSymbolDoc {
-        label: "as",
-        kind: CompletionItemKind::KEYWORD,
-        detail: "Import alias",
-        documentation: "Use `as <local_name>` inside MCP tool batch imports to alias a tool.",
-    },
-    BuiltinSymbolDoc {
-        label: "tool",
-        kind: CompletionItemKind::MODULE,
-        detail: "Tool namespace",
-        documentation: "Use `tool.<name>` to reference declared tools.",
-    },
-    BuiltinSymbolDoc {
-        label: "resource",
-        kind: CompletionItemKind::MODULE,
-        detail: "Resource namespace",
-        documentation: "Use `read resource.<name>` to read imported MCP resources.",
-    },
-    BuiltinSymbolDoc {
-        label: "prompt",
-        kind: CompletionItemKind::MODULE,
-        detail: "Prompt namespace",
-        documentation: "Use `render prompt.<name>` to render imported MCP prompts.",
-    },
-    BuiltinSymbolDoc {
-        label: "context",
-        kind: CompletionItemKind::FUNCTION,
-        detail: "Builtin function",
-        documentation: "Returns serialized context for `agent.<name>`.",
-    },
-    BuiltinSymbolDoc {
-        label: "template",
-        kind: CompletionItemKind::FUNCTION,
-        detail: "Builtin function",
-        documentation: "Renders a string template from source and bindings.",
-    },
-    BuiltinSymbolDoc {
-        label: "compact",
-        kind: CompletionItemKind::FUNCTION,
-        detail: "Builtin function",
-        documentation: "Compacts nullable values in object-like data.",
-    },
-    BuiltinSymbolDoc {
-        label: "string",
-        kind: CompletionItemKind::STRUCT,
-        detail: "Primitive type",
-        documentation: "String type.",
-    },
-    BuiltinSymbolDoc {
-        label: "number",
-        kind: CompletionItemKind::STRUCT,
-        detail: "Primitive type",
-        documentation: "Integer number type.",
-    },
-    BuiltinSymbolDoc {
-        label: "float",
-        kind: CompletionItemKind::STRUCT,
-        detail: "Primitive type",
-        documentation: "Floating-point number type.",
-    },
-    BuiltinSymbolDoc {
-        label: "boolean",
-        kind: CompletionItemKind::STRUCT,
-        detail: "Primitive type",
-        documentation: "Boolean type.",
-    },
-];
+fn expression_builtin_symbol_docs() -> [BuiltinSymbolDoc; 12] {
+    [
+        BuiltinSymbolDoc {
+            label: ImportKeyword::From.as_str(),
+            kind: CompletionItemKind::KEYWORD,
+            detail: "MCP batch import",
+            documentation: "Imports multiple MCP items with shared bindings.",
+        },
+        BuiltinSymbolDoc {
+            label: ImportKeyword::As.as_str(),
+            kind: CompletionItemKind::KEYWORD,
+            detail: "Import alias",
+            documentation: "Aliases an item inside an MCP batch import.",
+        },
+        BuiltinSymbolDoc {
+            label: ReferenceKeyword::Tool.as_str(),
+            kind: CompletionItemKind::MODULE,
+            detail: "Tool namespace",
+            documentation: "References declared tools.",
+        },
+        BuiltinSymbolDoc {
+            label: ReferenceKeyword::Resource.as_str(),
+            kind: CompletionItemKind::MODULE,
+            detail: "Resource namespace",
+            documentation: "References imported MCP resources.",
+        },
+        BuiltinSymbolDoc {
+            label: ReferenceKeyword::Prompt.as_str(),
+            kind: CompletionItemKind::MODULE,
+            detail: "Prompt namespace",
+            documentation: "References imported MCP prompts.",
+        },
+        BuiltinSymbolDoc {
+            label: ExpressionKeyword::Context.as_str(),
+            kind: CompletionItemKind::FUNCTION,
+            detail: "Builtin function",
+            documentation: "Returns serialized context for an agent.",
+        },
+        BuiltinSymbolDoc {
+            label: BuiltinFunctionName::Template.as_str(),
+            kind: CompletionItemKind::FUNCTION,
+            detail: "Builtin function",
+            documentation: "Renders a string template from source and bindings.",
+        },
+        BuiltinSymbolDoc {
+            label: ExpressionKeyword::Compact.as_str(),
+            kind: CompletionItemKind::FUNCTION,
+            detail: "Builtin function",
+            documentation: "Compacts nullable values in object-like data.",
+        },
+        BuiltinSymbolDoc {
+            label: ScalarTypeKeyword::String.as_str(),
+            kind: CompletionItemKind::STRUCT,
+            detail: "Primitive type",
+            documentation: "String type.",
+        },
+        BuiltinSymbolDoc {
+            label: ScalarTypeKeyword::Number.as_str(),
+            kind: CompletionItemKind::STRUCT,
+            detail: "Primitive type",
+            documentation: "Integer number type.",
+        },
+        BuiltinSymbolDoc {
+            label: ScalarTypeKeyword::Float.as_str(),
+            kind: CompletionItemKind::STRUCT,
+            detail: "Primitive type",
+            documentation: "Floating-point number type.",
+        },
+        BuiltinSymbolDoc {
+            label: ScalarTypeKeyword::Boolean.as_str(),
+            kind: CompletionItemKind::STRUCT,
+            detail: "Primitive type",
+            documentation: "Boolean type.",
+        },
+    ]
+}
 
 trait DeclarationKeywordCompletionDoc {
     fn completion_detail(self) -> &'static str;
@@ -243,13 +302,19 @@ fn builtin_symbol_markdown(symbol_name: &str) -> Option<String> {
     ))
 }
 
-fn declaration_builtin_symbol_docs() -> [BuiltinSymbolDoc; 11] {
+fn declaration_builtin_symbol_docs() -> [BuiltinSymbolDoc; 12] {
     [
         BuiltinSymbolDoc {
             label: DeclarationKeyword::Provider.as_str(),
             kind: CompletionItemKind::KEYWORD,
             detail: DeclarationKeyword::Provider.completion_detail(),
             documentation: DeclarationKeyword::Provider.completion_documentation(),
+        },
+        BuiltinSymbolDoc {
+            label: DeclarationKeyword::Model.as_str(),
+            kind: CompletionItemKind::KEYWORD,
+            detail: DeclarationKeyword::Model.completion_detail(),
+            documentation: DeclarationKeyword::Model.completion_documentation(),
         },
         BuiltinSymbolDoc {
             label: DeclarationKeyword::Mcp.as_str(),
@@ -315,7 +380,9 @@ fn declaration_builtin_symbol_docs() -> [BuiltinSymbolDoc; 11] {
 }
 
 fn builtin_symbol_docs() -> impl Iterator<Item = BuiltinSymbolDoc> {
-    declaration_builtin_symbol_docs().into_iter().chain(BUILTIN_SYMBOL_DOCS)
+    declaration_builtin_symbol_docs()
+        .into_iter()
+        .chain(expression_builtin_symbol_docs())
 }
 
 fn find_builtin_symbol_doc(symbol_name: &str) -> Option<BuiltinSymbolDoc> {

@@ -1,10 +1,10 @@
 use std::collections::{BTreeMap, HashSet};
 
-use lsp_types::{CompletionItemKind, Position};
+use lsp_types::CompletionItemKind;
 use superwire_dsl::{DeclarationKeyword, ReferenceAccess, ReferenceAccessKind, ReferenceKeyword, SourceSpan, TypeExpression, TypedField};
 use superwire_mcp::McpServerLock;
 
-use super::position::source_span_contains_position;
+use super::position::DocumentPosition;
 use super::semantic_index::{FieldMetadata, SemanticIndex};
 use super::text_utils::{for_clause_iterable_prefix, is_identifier, trailing_reference_token};
 use super::{CompletionSuggestion, RenderTypeExpression};
@@ -441,7 +441,7 @@ impl SemanticIndex {
         &self,
         reference_completion_path: &ReferenceCompletionPath,
         reference_completion_constraint: ReferenceCompletionConstraint,
-        position: Position,
+        position: DocumentPosition<'_>,
         existing_tool_binding_block: bool,
     ) -> Vec<CompletionSuggestion> {
         let current_schema_name = self.schema_name_at_position(position);
@@ -564,8 +564,9 @@ impl SemanticIndex {
         }
 
         if reference_completion_path.complete_accesses.len() == 1 {
-            return ["tool", "resource", "prompt"]
+            return [DeclarationKeyword::Tool, DeclarationKeyword::Resource, DeclarationKeyword::Prompt]
                 .into_iter()
+                .map(DeclarationKeyword::as_str)
                 .filter(|kind_name| kind_name.starts_with(&reference_completion_path.pending_prefix))
                 .map(|kind_name| CompletionSuggestion {
                     label: kind_name.to_string(),
@@ -584,11 +585,22 @@ impl SemanticIndex {
         let import_kind = &reference_completion_path.complete_accesses[1];
         let pending_prefix = &reference_completion_path.pending_prefix;
 
-        match import_kind.as_str() {
-            "tool" => self.mcp_tool_name_suggestions(server_name, pending_prefix),
-            "resource" => self.mcp_resource_name_suggestions(server_name, pending_prefix),
-            "prompt" => self.mcp_prompt_name_suggestions(server_name, pending_prefix),
-            _ => Vec::new(),
+        match DeclarationKeyword::from_identifier(import_kind) {
+            Some(DeclarationKeyword::Tool) => self.mcp_tool_name_suggestions(server_name, pending_prefix),
+            Some(DeclarationKeyword::Resource) => self.mcp_resource_name_suggestions(server_name, pending_prefix),
+            Some(DeclarationKeyword::Prompt) => self.mcp_prompt_name_suggestions(server_name, pending_prefix),
+            Some(
+                DeclarationKeyword::Provider
+                | DeclarationKeyword::Model
+                | DeclarationKeyword::Mcp
+                | DeclarationKeyword::Secrets
+                | DeclarationKeyword::Input
+                | DeclarationKeyword::Schema
+                | DeclarationKeyword::Dynamic
+                | DeclarationKeyword::Agent
+                | DeclarationKeyword::Output,
+            )
+            | None => Vec::new(),
         }
     }
 
@@ -633,7 +645,7 @@ impl SemanticIndex {
         &self,
         reference_completion_path: &ReferenceCompletionPath,
         reference_completion_constraint: ReferenceCompletionConstraint,
-        position: Position,
+        position: DocumentPosition<'_>,
     ) -> Vec<CompletionSuggestion> {
         let (dynamic_fields, dynamic_field_metadata) = self.dynamic_scope_at_position(position);
 
@@ -644,7 +656,7 @@ impl SemanticIndex {
                 .filter(|(field_name, _)| {
                     dynamic_field_locations
                         .get(*field_name)
-                        .is_none_or(|field_span| !source_span_contains_position(*field_span, position))
+                        .is_none_or(|field_span| !position.contains(*field_span))
                 })
                 .map(|(field_name, field_type)| (field_name.clone(), field_type.clone()))
                 .collect::<BTreeMap<_, _>>();
@@ -676,7 +688,7 @@ impl SemanticIndex {
         &self,
         reference_completion_path: &ReferenceCompletionPath,
         reference_completion_constraint: ReferenceCompletionConstraint,
-        position: Position,
+        position: DocumentPosition<'_>,
     ) -> Option<Vec<CompletionSuggestion>> {
         if reference_completion_path.root_keyword().is_some() {
             return None;

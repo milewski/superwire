@@ -99,10 +99,17 @@ impl FailingModelProvider {
 #[async_trait]
 impl ModelProvider for FailingModelProvider {
     async fn generate(&self, _request: ModelRequest) -> Result<ModelResponse, ModelProviderError> {
-        Err(ModelProviderError::Model {
-            agent_name: "failing-provider".to_string(),
-            message: self.message.clone(),
-        })
+        Err(ModelProviderError::model("failing-provider".to_string(), self.message.clone()))
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PanickingModelProvider;
+
+#[async_trait]
+impl ModelProvider for PanickingModelProvider {
+    async fn generate(&self, _model_request: ModelRequest) -> Result<ModelResponse, ModelProviderError> {
+        panic!("scripted server model panic");
     }
 }
 
@@ -203,6 +210,7 @@ pub async fn execute(fixture: &str, outputs: Vec<Value>) -> Value {
 
 pub struct TestMcpHttpServer {
     endpoint: String,
+    request_count: Arc<AtomicUsize>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -233,21 +241,28 @@ impl TestMcpHttpServer {
         let listener = TcpListener::bind("127.0.0.1:0").expect("test MCP listener should bind");
         let endpoint = format!("http://{}", listener.local_addr().expect("local address should exist"));
         let expected_headers = expected_headers.into_iter().collect::<BTreeMap<_, _>>();
+        let request_count = Arc::new(AtomicUsize::new(0));
+        let thread_request_count = Arc::clone(&request_count);
 
         thread::spawn(move || {
             let catalog = TestMcpCatalog;
 
             for incoming_stream in listener.incoming().take(12) {
                 let stream = incoming_stream.expect("test MCP stream should open");
+                thread_request_count.fetch_add(1, Ordering::Relaxed);
                 catalog.handle_request(stream, &expected_headers);
             }
         });
 
-        Self { endpoint }
+        Self { endpoint, request_count }
     }
 
     pub fn endpoint(&self) -> String {
         self.endpoint.clone()
+    }
+
+    pub fn request_count(&self) -> usize {
+        self.request_count.load(Ordering::Relaxed)
     }
 }
 

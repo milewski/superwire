@@ -5,6 +5,28 @@ description: Understand how MCP servers, tools, resources, and prompts fit into 
 
 MCP gives Superwire workflows access to external capabilities. In practice, MCP is where your workflow connects to real systems: APIs, databases, internal services, and curated prompt or content sources.
 
+## Transport and trust
+
+Superwire implements remote MCP over HTTP JSON-RPC. Endpoints must be absolute `http` or `https` URLs without URL user information. `stdio` and other local-process MCP transports are not implemented.
+
+Network authority depends on the component:
+
+| Component | Network authority |
+| --- | --- |
+| Executor runtime routes (`/execute`, `/validate`, `/graph`) | The operator sets `--mcp-network-policy` to `disabled`, `public-only`, or `trusted` for the whole server. Server configuration defaults to `disabled`; an HTTP request cannot override it. |
+| `superwire-cli` | Deliberately uses `trusted`, so CLI discovery and execution can reach reviewed local/private endpoints. |
+| `superwire-lsp` | Independently remains no-network unless client initialization explicitly sets `workspaceTrust.networkMcpDiscovery` to `trusted`. |
+
+The executor policies are:
+
+- `disabled`: blocks all outbound MCP networking.
+- `public-only`: permits only public `http`/`https` destinations. It resolves hostnames and rejects the endpoint if any literal address or DNS answer is local, private, link-local, multicast, reserved, documentation, or cloud metadata. It pins the approved normalized address set and port in a custom `ureq` resolver.
+- `trusted`: also permits local/private HTTP endpoints, but still requires `http`/`https` and rejects URL user information. It does not enable `stdio` or local processes.
+
+For both enabled policies, the HTTP client ignores environment proxies, disables automatic redirects, and rejects redirect responses.
+
+These are endpoint trust and SSRF controls, not a network sandbox. Apply deployment egress controls independently.
+
 Use this section as the mental model:
 
 ```text
@@ -76,5 +98,7 @@ agent writer {
     }
 }
 ```
+
+This internal-server example requires `trusted` when the endpoint resolves to a local/private address. The CLI already uses `trusted`; executor runtime routes and LSP discovery use their independent gates described above.
 
 This pattern keeps deterministic fetches in the workflow and model creativity in the agent.

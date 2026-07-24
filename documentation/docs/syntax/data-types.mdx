@@ -66,6 +66,8 @@ string | number
 schema.contact.email | schema.contact.phone
 ```
 
+Ordinary unions lower to JSON Schema `anyOf`. They do not use `oneOf`, because overlapping member schemas are valid. Use a `variant` when the contract needs an explicit discriminator and named cases.
+
 Use `maybe` as nullable shorthand:
 
 ```wire
@@ -91,6 +93,8 @@ enum {
     published
 }
 ```
+
+An enum must contain at least one case. `enum {}` is a parse error with help to add an identifier.
 
 ## Schema references
 
@@ -139,4 +143,7 @@ schema api_event {
         }
     }
 }
+
 ```
+
+A variant must contain at least one named case with an object body. `variant type {}` is a targeted parse error.

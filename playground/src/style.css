@@ -133,7 +133,7 @@
 
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: 0;
   overflow-x: clip;
   background: var(--background);
 }
@@ -469,6 +469,12 @@ textarea {
   color: #2563eb;
 }
 
+.mini-status.cancelled {
+  border-color: color-mix(in srgb, #f59e0b 48%, transparent);
+  background: color-mix(in srgb, #f59e0b 14%, transparent);
+  color: #b45309;
+}
+
 .dark .mini-status.completed,
 .dark .status-pill.completed,
 .dark .status-pill.valid {
@@ -477,6 +483,10 @@ textarea {
 
 .dark .mini-status.running {
   color: #60a5fa;
+}
+
+.dark .mini-status.cancelled {
+  color: #fbbf24;
 }
 
 .status-pill.invalid,
@@ -1172,6 +1182,19 @@ textarea {
   border-color: color-mix(in srgb, var(--danger) 45%, transparent);
   background: color-mix(in srgb, var(--danger) 13%, transparent);
   color: var(--danger);
+}
+
+.event-cancelled,
+.event-warning {
+  border-color: color-mix(in srgb, #f59e0b 52%, transparent);
+  background: color-mix(in srgb, #f59e0b 14%, transparent);
+  color: #b45309;
+}
+
+.event-gap {
+  border-color: color-mix(in srgb, #8b5cf6 52%, transparent);
+  background: color-mix(in srgb, #8b5cf6 14%, transparent);
+  color: #7c3aed;
 }
 
 .event-planned,
@@ -2147,6 +2170,17 @@ textarea {
   border-color: color-mix(in srgb, var(--graph-output) 34%, var(--graph-line));
 }
 
+.graph-node[data-status="cancelled"] {
+  border-color: color-mix(in srgb, #f59e0b 72%, var(--graph-line));
+  box-shadow: none;
+}
+
+.graph-node[data-status="cancelled"] .graph-node__icon {
+  border-color: color-mix(in srgb, #f59e0b 56%, var(--graph-line));
+  background: color-mix(in srgb, #f59e0b 15%, transparent);
+  color: #d97706;
+}
+
 .graph-node[data-status="failed"] {
   border-color: color-mix(in srgb, var(--danger) 78%, var(--graph-line));
   box-shadow: none;
@@ -2292,6 +2326,12 @@ textarea {
   animation: graph-status-pulse 1.1s ease-in-out infinite;
 }
 
+
+.graph-node__status--cancelled {
+  border-color: color-mix(in srgb, #f59e0b 52%, transparent);
+  background: color-mix(in srgb, #f59e0b 14%, transparent);
+  color: #d97706;
+}
 .graph-node__status--completed {
   border-color: color-mix(in srgb, var(--graph-output) 28%, var(--graph-line));
   background: color-mix(in srgb, var(--graph-output) 6%, var(--graph-panel-soft));
@@ -2411,6 +2451,10 @@ textarea {
   background: color-mix(in srgb, var(--graph-output) 82%, var(--foreground) 18%);
 }
 
+
+.graph-node__execution-strip-summary span[data-status="cancelled"] {
+  background: #f59e0b;
+}
 .graph-node__execution-strip-summary span[data-status="running"] {
   background: var(--graph-agent);
 }
@@ -2465,6 +2509,11 @@ textarea {
 .graph-node__execution-strip button[data-status="running"]::before {
   background: var(--graph-agent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--graph-agent) 16%, transparent);
+}
+
+.graph-node__execution-strip button[data-status="cancelled"]::before {
+  background: #f59e0b;
+  box-shadow: none;
 }
 
 .graph-node__execution-strip button[data-status="waiting"]::before {
@@ -2522,6 +2571,15 @@ textarea {
   color: color-mix(in srgb, var(--foreground) 86%, transparent);
   font-size: 0.76rem;
   line-height: 1.45;
+}
+
+.graph-node__failure[data-status="cancelled"] {
+  border-color: color-mix(in srgb, #f59e0b 48%, var(--graph-line));
+  background: color-mix(in srgb, #f59e0b 10%, var(--graph-panel));
+}
+
+.graph-node__failure[data-status="cancelled"] strong {
+  color: #d97706;
 }
 
 .graph-node__instruction {
@@ -2881,6 +2939,14 @@ textarea {
 
 .graph-edge--completed path {
   opacity: 0.92;
+}
+
+.graph-edge--failed path {
+  stroke: var(--danger);
+}
+
+.graph-edge--cancelled path {
+  stroke: #f59e0b;
 }
 
 .react-flow__edge-textbg {
@@ -3502,6 +3568,731 @@ textarea {
   transform: translate(50%, -50%) !important;
 }
 
+
+.playground,
+.playground__frame,
+.playground__main,
+.playground__canvas,
+.playground__content,
+.workflow-layout,
+.workflow-workspace,
+.workflow-editor-pane,
+.workflow-inspector {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.workflow-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.playground__topbar {
+  display: flex;
+  min-height: 3.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 1rem;
+}
+
+.playground__logo {
+  width: 9.5rem;
+}
+
+.playground__tabs {
+  scrollbar-width: thin;
+  padding: 0.55rem 1rem;
+}
+
+.playground-tabs__list {
+  width: max-content;
+  min-width: 100%;
+}
+
+.playground__canvas {
+  padding: clamp(0.75rem, 2vw, 1.5rem);
+}
+
+.playground__controls {
+  min-height: 3.25rem;
+  gap: 0.65rem;
+  padding: 0.4rem 0;
+}
+
+.playground-mode-switch {
+  border-radius: 0.8rem;
+}
+
+.playground-mode-switch__button {
+  height: 2.35rem;
+  border-radius: 0.65rem;
+  padding-inline: 0.8rem;
+  font-size: 0.86rem;
+}
+
+.playground-mode-switch__button svg {
+  width: 1rem !important;
+  height: 1rem !important;
+}
+
+.playground-command-menu {
+  display: none;
+  position: relative;
+}
+
+.playground-command-menu > summary {
+  display: inline-flex;
+  height: 2.35rem;
+  list-style: none;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  background: var(--card);
+  padding: 0 0.75rem;
+  color: var(--foreground);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.playground-command-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.playground-command-menu > summary svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.playground-command-menu__content {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  z-index: 80;
+  display: grid;
+  width: min(17rem, calc(100vw - 1rem));
+  gap: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  background: var(--popover);
+  padding: 0.45rem;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.28);
+}
+
+.playground-command-menu__content button {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.workflow-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.workflow-editor-pane {
+  min-width: 0;
+}
+
+.workflow-inspector {
+  display: flex;
+  max-height: calc(100dvh - 10.5rem);
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.workflow-inspector > .workflow-log-panel {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.workflow-editor .wire-editor-shell,
+.workflow-editor .json-code-editor--full {
+  height: clamp(20rem, calc(100dvh - 18rem), 44rem) !important;
+  min-height: 15rem;
+}
+
+.workflow-log-panel__body {
+  min-width: 0;
+}
+
+.workflow-output__json,
+.workflow-output__json .cm-editor,
+.workflow-output__json .cm-scroller {
+  max-height: min(38dvh, 28rem);
+  overflow: auto !important;
+}
+
+.workflow-problems {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workflow-problems li {
+  border-left: 3px solid var(--danger);
+  border-radius: 0.35rem;
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+  padding: 0.55rem 0.65rem;
+  color: color-mix(in srgb, var(--foreground) 90%, transparent);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.workflow-problems li[data-tone="warning"],
+.workflow-problems li[data-tone="cancelled"] {
+  border-left-color: #f59e0b;
+  background: color-mix(in srgb, #f59e0b 9%, transparent);
+}
+
+.workflow-problems li[data-tone="gap"] {
+  border-left-color: #8b5cf6;
+  background: color-mix(in srgb, #8b5cf6 9%, transparent);
+}
+
+.workflow-problems li > strong {
+  display: block;
+}
+
+.workflow-problems details {
+  margin-top: 0.4rem;
+}
+
+.workflow-problems summary {
+  cursor: pointer;
+  color: var(--muted-foreground);
+  font-weight: 650;
+}
+
+.workflow-problems pre {
+  max-height: 18rem;
+  margin: 0.45rem 0 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.45rem;
+  background: color-mix(in srgb, var(--background) 82%, var(--card));
+  padding: 0.6rem;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  white-space: pre-wrap;
+}
+
+.stream-gap-dialog__diagnostic .cm-editor,
+.stream-gap-dialog__diagnostic .cm-scroller {
+  max-height: min(42dvh, 22rem);
+  overflow: auto !important;
+}
+
+.wire-editor-status {
+  margin: 0;
+  border-top: 1px solid color-mix(in srgb, var(--danger) 30%, var(--border));
+  background: color-mix(in srgb, var(--danger) 8%, var(--card));
+  padding: 0.55rem 1rem;
+  color: var(--danger);
+  font-size: 0.75rem;
+}
+
+.rename-dialog__label {
+  margin-bottom: -0.55rem;
+  color: var(--foreground);
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.empty-state {
+  color: var(--muted-foreground);
+}
+
+.playground-command-menu > summary:focus-visible,
+.graph-settings__trigger:focus-visible,
+.graph-node__header:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media (min-width: 1024px) {
+  .workflow-workspace {
+    grid-template-columns: minmax(0, 1.65fr) minmax(20rem, 0.75fr);
+  }
+
+  .workflow-inspector {
+    position: sticky;
+    top: 4rem;
+  }
+}
+
+@media (max-width: 760px) {
+  .playground {
+    padding-bottom: calc(4.75rem + env(safe-area-inset-bottom));
+  }
+
+  .playground__topbar {
+    min-height: 3rem;
+    padding: 0.35rem 0.65rem;
+  }
+
+  .playground__logo {
+    width: 7.8rem;
+  }
+
+  .playground__topbar-actions button {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+
+  .playground__tabs {
+    padding: 0.4rem 0.55rem;
+  }
+
+  .playground-tabs__list {
+    gap: 0.45rem;
+  }
+
+  .playground-tab-chip[data-size="large"] {
+    height: 2.35rem;
+  }
+
+  .playground__canvas {
+    padding: 0.55rem;
+  }
+
+  .playground__controls {
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+
+  .playground__controls .playground-mode-switch {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .playground__controls .playground-mode-switch__button {
+    min-width: 0;
+    flex: 1 1 auto;
+    padding-inline: 0.55rem;
+  }
+
+  .playground-actions {
+    flex-wrap: nowrap;
+  }
+
+  .playground-actions__desktop,
+  .workflow-fragment-actions {
+    display: none;
+  }
+
+  .playground-command-menu {
+    display: block;
+  }
+
+  .playground-run-control {
+    position: fixed;
+    right: 0.6rem;
+    bottom: calc(0.6rem + env(safe-area-inset-bottom));
+    left: 0.6rem;
+    z-index: 90;
+    display: grid;
+    border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+    border-radius: 0.95rem;
+    background: color-mix(in srgb, var(--card) 94%, transparent);
+    padding: 0.4rem;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.28);
+    backdrop-filter: blur(18px);
+  }
+
+  .playground-run-control button {
+    width: 100%;
+  }
+
+  .workflow-editor__header {
+    min-height: 3rem;
+    padding: 0.45rem 0.75rem;
+  }
+
+  .workflow-editor-tabs {
+    gap: 0.45rem;
+    padding: 0.4rem 0.5rem;
+  }
+
+  .workflow-editor-tabs__variables {
+    gap: 0.15rem;
+    padding: 0.2rem;
+  }
+
+  .workflow-editor .wire-editor-shell,
+  .workflow-editor .json-code-editor--full {
+    height: min(52dvh, 30rem) !important;
+    min-height: 15rem;
+  }
+
+  .workflow-inspector {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .workflow-log-panel__body,
+  .events-log__virtual-viewport,
+  .workflow-output__json,
+  .workflow-output__json .cm-editor,
+  .workflow-output__json .cm-scroller {
+    max-height: min(42dvh, 22rem);
+    overflow: auto !important;
+  }
+}
+
+.graph-view__canvas--desktop .graph-node[data-collapsed="true"] {
+  width: 276px;
+  min-width: 276px;
+  border-color: color-mix(in srgb, var(--graph-agent) 24%, var(--graph-line));
+  background: color-mix(in srgb, var(--graph-panel) 90%, var(--foreground) 10%);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
+}
+
+.graph-selection-inspector details > summary {
+  display: grid;
+  cursor: pointer;
+  gap: 0.15rem;
+}
+
+.graph-selection-inspector details > p,
+.graph-selection-inspector details > dl,
+.graph-selection-inspector details > .graph-selection-inspector__schema {
+  margin-top: 0.45rem;
+}
+
+.graph-run-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.graph-run-summary > span:not(.graph-view__state) {
+  display: inline-flex;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid var(--graph-line);
+  border-radius: 999px;
+  background: var(--graph-panel-soft);
+  padding: 0.25rem 0.65rem;
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+}
+
+.graph-run-summary strong {
+  color: var(--foreground);
+  text-transform: capitalize;
+}
+
+.graph-global-failures {
+  border: 1px solid var(--graph-line);
+  border-radius: 0.8rem;
+  background: var(--graph-panel);
+  padding: 0.75rem 0.9rem;
+}
+
+.graph-global-failures p[data-tone="warning"],
+.graph-global-failures p[data-tone="cancelled"] {
+  border-left: 2px solid #f59e0b;
+  padding-left: 0.55rem;
+}
+
+.graph-global-failures p[data-tone="gap"] {
+  border-left: 2px solid #8b5cf6;
+  padding-left: 0.55rem;
+}
+
+.graph-global-failures strong {
+  color: var(--foreground);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.graph-global-failures p {
+  margin: 0.35rem 0 0;
+  color: var(--foreground);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.graph-view__workspace {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem);
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.graph-view__canvas--desktop {
+  height: min(72dvh, 46rem);
+  min-height: 34rem;
+}
+
+.graph-selection-inspector {
+  display: flex;
+  max-height: min(72dvh, 46rem);
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.65rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--graph-line);
+  border-radius: 1rem;
+  background: var(--graph-panel);
+  padding: 0.8rem;
+  scrollbar-width: thin;
+}
+
+.graph-selection-inspector__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  border-bottom: 1px solid var(--graph-line);
+  padding-bottom: 0.65rem;
+}
+
+.graph-selection-inspector__header > span {
+  min-width: 0;
+}
+
+.graph-selection-inspector__header small,
+.graph-selection-inspector__header strong {
+  display: block;
+}
+
+.graph-selection-inspector__header small {
+  color: var(--muted-foreground);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.graph-selection-inspector__header strong {
+  margin-top: 0.2rem;
+  overflow: hidden;
+  font-size: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-selection-inspector__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.graph-selection-inspector__badges span {
+  border: 1px solid var(--graph-line);
+  border-radius: 999px;
+  background: var(--graph-panel-soft);
+  padding: 0.2rem 0.45rem;
+  color: var(--muted-foreground);
+  font-size: 0.62rem;
+}
+
+.graph-selection-inspector > section {
+  display: grid;
+  gap: 0.45rem;
+  border: 1px solid var(--graph-line);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--graph-panel-soft) 72%, transparent);
+  padding: 0.65rem;
+}
+
+.graph-selection-inspector h3 {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.graph-selection-inspector p,
+.graph-selection-inspector small {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.graph-selection-inspector pre {
+  max-height: 14rem;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.graph-selection-inspector dl,
+.graph-selection-inspector ul {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.graph-selection-inspector dl > div,
+.graph-selection-inspector li {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.graph-selection-inspector dt,
+.graph-selection-inspector li strong,
+.graph-selection-inspector__schema > strong {
+  color: var(--foreground);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.graph-selection-inspector dd {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  overflow-wrap: anywhere;
+}
+
+.graph-selection-inspector__schema {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.graph-selection-inspector .graph-node__failure {
+  margin: 0;
+}
+
+.graph-mobile-list {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .graph-view__workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .graph-view__canvas--desktop {
+    display: none;
+  }
+
+  .graph-mobile-list {
+    display: block;
+    overflow: hidden;
+    border: 1px solid var(--graph-line);
+    border-radius: 0.9rem;
+    background: var(--graph-panel);
+  }
+
+  .graph-mobile-list > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--graph-line);
+    padding: 0.65rem 0.75rem;
+  }
+
+  .graph-mobile-list > header strong {
+    font-size: 0.82rem;
+  }
+
+  .graph-mobile-list > header small {
+    color: var(--muted-foreground);
+    font-size: 0.68rem;
+  }
+
+  .graph-mobile-list ol {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .graph-mobile-list li + li {
+    border-top: 1px solid var(--graph-line);
+  }
+
+  .graph-mobile-list button {
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: 1.8rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.55rem;
+    border: 0;
+    background: transparent;
+    padding: 0.65rem 0.7rem;
+    color: var(--foreground);
+    text-align: left;
+  }
+
+  .graph-mobile-list button[data-selected="true"] {
+    background: color-mix(in srgb, var(--graph-agent) 9%, transparent);
+    box-shadow: inset 3px 0 0 var(--graph-agent);
+  }
+
+  .graph-mobile-list__index {
+    display: inline-grid;
+    width: 1.6rem;
+    height: 1.6rem;
+    place-items: center;
+    border: 1px solid var(--graph-line);
+    border-radius: 999px;
+    color: var(--muted-foreground);
+    font-size: 0.65rem;
+  }
+
+  .graph-mobile-list__identity {
+    min-width: 0;
+  }
+
+  .graph-mobile-list__identity strong,
+  .graph-mobile-list__identity small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .graph-mobile-list__identity strong {
+    font-size: 0.8rem;
+  }
+
+  .graph-mobile-list__identity small {
+    margin-top: 0.15rem;
+    color: var(--muted-foreground);
+    font-size: 0.67rem;
+  }
+
+  .graph-selection-inspector {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .graph-view__canvas--empty {
+    min-height: 24rem;
+  }
+}
 
 @theme inline {
   --font-heading: var(--font-sans);

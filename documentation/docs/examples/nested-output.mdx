@@ -1,42 +1,29 @@
 ---
-title: Nested Output
-description: Return nested structured data.
+title: Nested output
+description: Return typed agent data inside an application-shaped object.
 ---
 
-```wire
-input {
-    project_id: number
-    topic: string
-}
+import NestedWorkflow from "/examples/wire/nested.mdx";
 
-secrets {
-    api_key: string
-}
+<NestedWorkflow />
 
-provider llm from openai {
-    endpoint: "https://api.openai.com/v1"
-    api_key: secrets.api_key
-}
+The final `output` block can compose runtime input and a complete agent object. HTTP JSON adds only the transport wrapper:
 
-model fast from llm {
-    id: "gpt-4.1-mini"
-}
-
-agent plan {
-    model: model.fast
-    instruction: "Create a plan for {{ input.topic }}."
-
-    output {
-        summary: string
-        tasks: [{ title: string, priority: enum { low, medium, high } }]
+```json
+{
+  "output": {
+    "project": {
+      "id": 42,
+      "topic": "Release readiness",
+      "plan": {
+        "summary": "...",
+        "tasks": [
+          {"title": "Verify rollout", "priority": "high"}
+        ]
+      }
     }
-}
-
-output {
-    project: {
-        id: input.project_id
-        topic: input.topic
-        plan: agent.plan
-    }
+  }
 }
 ```
+
+The model supplies `plan`; the runtime supplies `id` and `topic` directly from typed input.

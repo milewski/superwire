@@ -16,6 +16,8 @@ interface WireEditorProps {
   darkMode: boolean;
   inputJson: string;
   secretsJson: string;
+  readOnly?: boolean;
+  ariaLabel: string;
   jumpTarget: EditorJumpTarget | null;
   onChange: (value: string, cursorOffset: number) => void;
   onBlur: () => void;
@@ -356,6 +358,8 @@ export default function WireEditor({
   darkMode,
   inputJson,
   secretsJson,
+  readOnly = false,
+  ariaLabel,
   jumpTarget,
   onChange,
   onBlur,
@@ -373,6 +377,7 @@ export default function WireEditor({
   const documentVersionRef = useRef(1);
   const diagnosticsRef = useRef<LspDiagnostic[]>([]);
   const [editorHeight, setEditorHeight] = useState(260);
+  const [connectionMessage, setConnectionMessage] = useState('');
   const documentUri = `file:///playground/${documentId}.wire`;
 
   onChangeRef.current = onChange;
@@ -422,6 +427,8 @@ export default function WireEditor({
         documentVersionRef,
         diagnosticsRef,
         setEditorHeight,
+        readOnly,
+        ariaLabel,
       ),
       parent: parentElement,
     });
@@ -435,6 +442,8 @@ export default function WireEditor({
           return undefined;
         }
 
+        setConnectionMessage('');
+
         return languageClient.notify('textDocument/didOpen', {
           textDocument: {
             uri: documentUri,
@@ -444,7 +453,11 @@ export default function WireEditor({
           },
         }).then(() => notifyRuntimeValues(languageClient, documentUri, inputJson, secretsJson));
       })
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        if (!disposed) {
+          setConnectionMessage(error instanceof Error ? error.message : 'Language tools are unavailable.');
+        }
+      });
 
     return () => {
       disposed = true;
@@ -455,7 +468,7 @@ export default function WireEditor({
       editorViewRef.current = null;
       languageClientRef.current = null;
     };
-  }, [documentUri, darkMode]);
+  }, [documentUri, darkMode, readOnly, ariaLabel]);
 
   useEffect(() => {
     const languageClient = languageClientRef.current;
@@ -506,7 +519,12 @@ export default function WireEditor({
     editorView.focus();
   }, [jumpTarget?.sequence]);
 
-  return <div ref={editorElementRef} className="wire-editor-shell flex-1 overflow-hidden bg-transparent" style={{ height: `${editorHeight}px` }} />;
+  return (
+    <>
+      <div ref={editorElementRef} className="wire-editor-shell flex-1 overflow-hidden bg-transparent" style={{ height: `${editorHeight}px` }} />
+      {connectionMessage ? <p className="wire-editor-status" role="status">Language tools unavailable: {connectionMessage}</p> : null}
+    </>
+  );
 }
 
 function notifyRuntimeValues(languageClient: WebSocketLanguageClient, documentUri: string, inputJson: string, secretsJson: string) {
@@ -547,10 +565,15 @@ function createEditorState(
   documentVersionRef: React.MutableRefObject<number>,
   diagnosticsRef: React.MutableRefObject<LspDiagnostic[]>,
   setEditorHeight: (height: number) => void,
+  readOnly: boolean,
+  ariaLabel: string,
 ) {
   return EditorState.create({
     doc: value,
     extensions: [
+      EditorState.readOnly.of(readOnly),
+      EditorView.editable.of(!readOnly),
+      EditorView.contentAttributes.of({ 'aria-label': ariaLabel }),
       lineNumbers(),
       foldGutter(),
       foldService.of(wireFoldRange),

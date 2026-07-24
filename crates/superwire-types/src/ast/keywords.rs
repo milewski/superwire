@@ -88,6 +88,15 @@ pub enum ImportKeyword {
 
 impl ImportKeyword {
     #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        match identifier {
+            identifier if identifier == Self::From.as_str() => Some(Self::From),
+            identifier if identifier == Self::As.as_str() => Some(Self::As),
+            _ => None,
+        }
+    }
+
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::From => "from",
@@ -120,6 +129,43 @@ impl ExpressionKeyword {
             Self::Asset => "asset",
             Self::Compact => "compact",
             Self::Context => "context",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ScalarTypeKeyword {
+    String,
+    Number,
+    Float,
+    Boolean,
+    Object,
+    Null,
+}
+
+impl ScalarTypeKeyword {
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        match identifier {
+            "string" => Some(Self::String),
+            "number" => Some(Self::Number),
+            "float" => Some(Self::Float),
+            "boolean" => Some(Self::Boolean),
+            "object" => Some(Self::Object),
+            "null" => Some(Self::Null),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::String => "string",
+            Self::Number => "number",
+            Self::Float => "float",
+            Self::Boolean => "boolean",
+            Self::Object => "object",
+            Self::Null => "null",
         }
     }
 }
@@ -757,6 +803,17 @@ pub enum ReferenceKeyword {
 }
 
 impl ReferenceKeyword {
+    pub const ALL: [Self; 8] = [
+        Self::Agent,
+        Self::Dynamic,
+        Self::Input,
+        Self::Model,
+        Self::Secrets,
+        Self::Tool,
+        Self::Resource,
+        Self::Prompt,
+    ];
+
     #[must_use]
     pub fn from_identifier(identifier: &str) -> Option<Self> {
         match identifier {

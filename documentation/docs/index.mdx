@@ -1,41 +1,64 @@
 ---
-title: Superwire Docs
-description: Declarative DSL for controlled server-side AI workflows.
+title: Superwire developer documentation
+description: Choose a Playground, CLI, HTTP, or Laravel path and run a typed workflow.
 ---
 
-# Welcome to Superwire Docs
+# Build a typed AI workflow
 
-Superwire helps you build predictable AI workflows with explicit contracts for input, tools,
-dependencies, and structured outputs.
+Superwire turns server-side AI orchestration into a reviewable `.wire` contract: typed runtime data, explicit dependencies, scoped tools, and structured output.
 
 <CardGroup cols={2}>
-  <Card title="Introduction" icon="book-open" href="/introduction">
-    Start with the product overview and core ideas.
+  <Card title="Try the Playground" icon="play" href="/playground">
+    Run the Docker executor, edit a checked template, inspect its graph, and stream events.
   </Card>
-
-  <Card title="Quickstart" icon="rocket" href="/quickstart">
-    Run your first workflow with the Docker executor.
+  <Card title="Author with the CLI" icon="terminal" href="/cli">
+    Check, format, run, generate runtime variables, and lock MCP imports.
   </Card>
-
-  <Card title="Core Concepts" icon="boxes" href="/core-concepts/overview">
-    Learn workflows, providers, models, agents, schemas, and dependencies.
+  <Card title="Integrate over HTTP" icon="braces" href="/quickstart">
+    Send a workflow to the executor and receive JSON or Server-Sent Events.
   </Card>
-
-  <Card title="DSL Reference" icon="code" href="/syntax/overview">
-    Explore language syntax and authoring rules.
+  <Card title="Use Laravel" icon="blocks" href="/integrations/laravel">
+    Configure the PHP client, run or stream a workflow, map output, and fake calls in tests.
   </Card>
 </CardGroup>
 
+<Warning>
+  Superwire is pre-1.0. Pin production Docker deployments to a `sha-&lt;commit&gt;` tag and revalidate workflows when upgrading. The standalone TextMate package provides highlighting only, and no dedicated health endpoint is implemented.
+</Warning>
+
+## Progressive learning path
+
+1. [Install and run the executor](/installation).
+2. [Run the checked hello workflow](/quickstart).
+3. [Validate and format before execution](/cli#validate-a-workflow).
+4. [Understand typed data flow](/core-concepts/overview).
+5. [Scale with dependencies, loops, and concurrency](/advanced/parallel-execution).
+6. [Add MCP capabilities](/mcp/overview).
+7. [Operate streaming, caching, and failures](/api-reference/streaming-events).
+
+## What runs where
+
+```text
+.wire source + input + secrets
+             |
+             v
+     Superwire executor
+       |      |      |
+      JSON   SSE   Playground/LSP
+```
+
+The executor validates the workflow and runtime values before model execution. Model output can still vary; Superwire makes the graph, tool scopes, type contracts, and final output shape explicit.
+
+## Reference
+
 <CardGroup cols={3}>
-  <Card title="MCP and Tools" icon="wrench" href="/mcp/overview">
-    Connect MCP servers, import tools, and control capabilities.
+  <Card title="DSL reference" icon="code" href="/syntax/overview">
+    Declarations, types, references, expressions, and control flow.
   </Card>
-
-  <Card title="Examples" icon="flask" href="/examples/basic-agent">
-    Copy practical workflow patterns for common product tasks.
+  <Card title="Executor API" icon="server" href="/api-reference/executor-api">
+    Exact requests, responses, routes, and current limitations.
   </Card>
-
-  <Card title="Why Superwire" icon="lightbulb" href="/why-superwire/overview">
-    Understand where Superwire fits in a production backend.
+  <Card title="Troubleshooting" icon="wrench" href="/troubleshooting">
+    Docker networking, credentials, API modes, JSON types, MCP, SSE, and Laravel.
   </Card>
 </CardGroup>

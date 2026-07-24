@@ -628,14 +628,21 @@ impl TypeExpression {
         schema_type_lookup: &mut SchemaTypeLookup,
         field_types: &mut Vec<Self>,
         field_cache: &mut TypeExpressionFieldCache,
-    ) where
+    ) -> bool
+    where
         SchemaTypeLookup: FnMut(&str) -> Option<Self>,
     {
         if !reference_access.is_array_pluck() {
-            self.collect_field_types_for_access_with_cache(reference_access.field.as_str(), schema_type_lookup, field_types, field_cache);
-
-            return;
+            return self.collect_field_types_for_safe_access_with_cache(
+                reference_access.field.as_str(),
+                reference_access.is_optional(),
+                schema_type_lookup,
+                field_types,
+                field_cache,
+            );
         }
+
+        let initial_field_type_count = field_types.len();
 
         match self {
             Self::Array {
@@ -660,7 +667,7 @@ impl TypeExpression {
 
                 if reference_access.requires_strict_array_pluck_values() {
                     if includes_null || flattened_field_types.iter().any(Self::can_be_null) {
-                        return;
+                        return false;
                     }
 
                     if let Some(item_type) = Self::strict_array_pluck_item_type(flattened_field_types) {
@@ -670,7 +677,7 @@ impl TypeExpression {
                         });
                     }
 
-                    return;
+                    return field_types.len() > initial_field_type_count;
                 }
 
                 if reference_access.filters_null_array_pluck_values() {
@@ -690,7 +697,7 @@ impl TypeExpression {
             }
             Self::SchemaReference(schema_name) => {
                 if let Some(schema_type) = schema_type_lookup(schema_name) {
-                    schema_type.collect_field_types_for_reference_access_with_cache(
+                    return schema_type.collect_field_types_for_reference_access_with_cache(
                         reference_access,
                         schema_type_lookup,
                         field_types,
@@ -700,12 +707,16 @@ impl TypeExpression {
             }
             Self::Union(type_expressions) => {
                 for type_expression in type_expressions {
-                    type_expression.collect_field_types_for_reference_access_with_cache(
+                    if !type_expression.collect_field_types_for_reference_access_with_cache(
                         reference_access,
                         schema_type_lookup,
                         field_types,
                         field_cache,
-                    );
+                    ) {
+                        field_types.truncate(initial_field_type_count);
+
+                        return false;
+                    }
                 }
             }
             Self::String
@@ -723,6 +734,82 @@ impl TypeExpression {
                 cases: _,
             } => {}
         }
+
+        field_types.len() > initial_field_type_count
+    }
+
+    fn collect_field_types_for_safe_access_with_cache<SchemaTypeLookup>(
+        &self,
+        field_name: &str,
+        allows_missing_member: bool,
+        schema_type_lookup: &mut SchemaTypeLookup,
+        field_types: &mut Vec<Self>,
+        field_cache: &mut TypeExpressionFieldCache,
+    ) -> bool
+    where
+        SchemaTypeLookup: FnMut(&str) -> Option<Self>,
+    {
+        let initial_field_type_count = field_types.len();
+
+        match self {
+            Self::Object(typed_fields) => {
+                if let Some(typed_field) = field_cache.typed_field(typed_fields, field_name) {
+                    field_types.push(typed_field.field_type.clone());
+                }
+            }
+            Self::SchemaReference(schema_name) => {
+                if let Some(schema_type) = schema_type_lookup(schema_name) {
+                    return schema_type.collect_field_types_for_safe_access_with_cache(
+                        field_name,
+                        allows_missing_member,
+                        schema_type_lookup,
+                        field_types,
+                        field_cache,
+                    );
+                }
+            }
+            Self::Variant { discriminator, cases } => {
+                if discriminator == field_name {
+                    field_types.extend(cases.iter().map(|variant_case| Self::StringEnum(variant_case.name.clone())));
+                }
+            }
+            Self::Union(type_expressions) => {
+                for type_expression in type_expressions {
+                    if type_expression.collect_field_types_for_safe_access_with_cache(
+                        field_name,
+                        allows_missing_member,
+                        schema_type_lookup,
+                        field_types,
+                        field_cache,
+                    ) {
+                        continue;
+                    }
+
+                    if allows_missing_member {
+                        continue;
+                    }
+
+                    field_types.truncate(initial_field_type_count);
+
+                    return false;
+                }
+            }
+            Self::AnyObject => field_types.push(Self::AnyObject),
+            Self::String
+            | Self::Number
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::StringEnum(_)
+            | Self::StringEnumReference(_)
+            | Self::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | Self::Tuple(_) => {}
+        }
+
+        field_types.len() > initial_field_type_count
     }
 
     fn collect_array_pluck_field_types_with_cache<SchemaTypeLookup>(

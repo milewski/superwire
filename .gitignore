@@ -1,10 +1,15 @@
 /target
+/vendor/cersei-provider/target/
+/vendor/cersei-provider/Cargo.lock
 /playground/dist
 /playground/node_modules
+/playground/bun.lock
+/documentation/docs/node_modules
 /documentation/github-pages/.astro
 /documentation/github-pages/dist
 /documentation/github-pages/node_modules
 .idea
+/editors/intellij/.intellijPlatform/
 .claude/settings.local.json
 .claude/worktrees
 example-project

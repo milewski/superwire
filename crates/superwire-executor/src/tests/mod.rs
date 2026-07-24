@@ -1,4 +1,4 @@
-mod support;
+pub(crate) mod support;
 
 use superwire_test_support::fixtures;
 

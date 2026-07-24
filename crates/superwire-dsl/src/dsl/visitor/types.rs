@@ -1,5 +1,5 @@
 use super::{source_span_from_pair, AstVisitor};
-use crate::dsl::ast::{TypeExpression, TypedField, VariantCase};
+use crate::dsl::ast::{ScalarTypeKeyword, TypeExpression, TypedField, VariantCase};
 use crate::dsl::parser::{DslParseError, Rule};
 use pest::iterators::Pair;
 
@@ -28,13 +28,16 @@ impl AstVisitor {
             Rule::enum_type => self.visit_enum_type(type_term_pair),
             Rule::variant_type => self.visit_variant_type(type_term_pair),
             Rule::scalar_type => {
-                let scalar_type = match type_term_pair.as_str() {
-                    "string" => TypeExpression::String,
-                    "number" => TypeExpression::Number,
-                    "float" => TypeExpression::Float,
-                    "boolean" => TypeExpression::Boolean,
-                    "object" => TypeExpression::AnyObject,
-                    _ => unreachable!("scalar type should be one of the grammar literals"),
+                let scalar_type_keyword = ScalarTypeKeyword::from_identifier(type_term_pair.as_str()).ok_or_else(|| {
+                    DslParseError::unexpected_with_span(type_term_pair.as_rule(), "scalar type", source_span_from_pair(&type_term_pair))
+                })?;
+                let scalar_type = match scalar_type_keyword {
+                    ScalarTypeKeyword::String => TypeExpression::String,
+                    ScalarTypeKeyword::Number => TypeExpression::Number,
+                    ScalarTypeKeyword::Float => TypeExpression::Float,
+                    ScalarTypeKeyword::Boolean => TypeExpression::Boolean,
+                    ScalarTypeKeyword::Object => TypeExpression::AnyObject,
+                    ScalarTypeKeyword::Null => TypeExpression::Null,
                 };
 
                 Ok(scalar_type)
@@ -170,13 +173,16 @@ impl AstVisitor {
             Rule::enum_type => self.visit_enum_type(type_term_pair),
             Rule::variant_type => self.visit_variant_type(type_term_pair),
             Rule::scalar_type => {
-                let scalar_type = match type_term_pair.as_str() {
-                    "string" => TypeExpression::String,
-                    "number" => TypeExpression::Number,
-                    "float" => TypeExpression::Float,
-                    "boolean" => TypeExpression::Boolean,
-                    "object" => TypeExpression::AnyObject,
-                    _ => unreachable!("scalar type should be one of the grammar literals"),
+                let scalar_type_keyword = ScalarTypeKeyword::from_identifier(type_term_pair.as_str()).ok_or_else(|| {
+                    DslParseError::unexpected_with_span(type_term_pair.as_rule(), "scalar type", source_span_from_pair(&type_term_pair))
+                })?;
+                let scalar_type = match scalar_type_keyword {
+                    ScalarTypeKeyword::String => TypeExpression::String,
+                    ScalarTypeKeyword::Number => TypeExpression::Number,
+                    ScalarTypeKeyword::Float => TypeExpression::Float,
+                    ScalarTypeKeyword::Boolean => TypeExpression::Boolean,
+                    ScalarTypeKeyword::Object => TypeExpression::AnyObject,
+                    ScalarTypeKeyword::Null => TypeExpression::Null,
                 };
 
                 Ok(scalar_type)
@@ -230,6 +236,7 @@ impl AstVisitor {
     }
 
     pub(super) fn visit_enum_type(&self, enum_type_pair: Pair<'_, Rule>) -> Result<TypeExpression, DslParseError> {
+        let enum_span = source_span_from_pair(&enum_type_pair);
         let mut enum_values = Vec::new();
 
         for enum_case_pair in enum_type_pair.into_inner() {
@@ -238,10 +245,15 @@ impl AstVisitor {
             enum_values.push(TypeExpression::StringEnum(enum_value));
         }
 
+        if enum_values.is_empty() {
+            return Err(DslParseError::EmptyEnumType { span: enum_span });
+        }
+
         Ok(TypeExpression::Union(enum_values))
     }
 
     pub(super) fn visit_variant_type(&self, variant_type_pair: Pair<'_, Rule>) -> Result<TypeExpression, DslParseError> {
+        let variant_span = source_span_from_pair(&variant_type_pair);
         let mut inner_pairs = variant_type_pair.into_inner();
         let discriminator = self.next_identifier(&mut inner_pairs, "variant discriminator", "variant type")?;
         let mut cases = Vec::new();
@@ -258,6 +270,10 @@ impl AstVisitor {
                 fields: self.visit_typed_block(object_pair)?,
                 span: case_span,
             });
+        }
+
+        if cases.is_empty() {
+            return Err(DslParseError::EmptyVariantType { span: variant_span });
         }
 
         Ok(TypeExpression::Variant { discriminator, cases })

@@ -240,6 +240,8 @@ impl McpToolBatchImportItem {
             binding_fields: Vec::new(),
             fixed_binding_fields,
             output_fields,
+            mcp_schema: None,
+            schema_issues: Vec::new(),
             span: self.span,
         }
     }

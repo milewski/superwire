@@ -1,9 +1,10 @@
 use super::{source_span_from_pair, AstVisitor};
 use crate::dsl::ast::{
     AgentContext, AgentContextReference, AgentDeclaration, AgentFile, AgentForLoop, AgentForLoopPattern, AgentProperty,
-    CompactAgentContext, Declaration, DynamicBlock, Expression, ModelUsage, ObjectField, SourceSpan, ToolCall, ToolCallPropertyName,
+    CompactAgentContext, Declaration, DynamicBlock, Expression, ModelUsage, ObjectField, ReferenceKeyword, SourceSpan, ToolCall,
+    ToolCallPropertyName,
 };
-use crate::dsl::parser::{DslParseError, Rule};
+use crate::dsl::parser::{DslParseError, ReservedBindingContext, Rule};
 use crate::dsl::structure;
 use pest::iterators::Pair;
 
@@ -54,7 +55,17 @@ impl AstVisitor {
 
                 self.visit_for_loop_pattern(inner_pattern_pair)
             }
-            Rule::identifier => Ok(AgentForLoopPattern::Identifier(pattern_pair.as_str().to_owned())),
+            Rule::identifier => {
+                if ReferenceKeyword::from_identifier(pattern_pair.as_str()).is_some() {
+                    return Err(DslParseError::ReservedBindingName {
+                        binding_name: pattern_pair.as_str().to_owned(),
+                        context: ReservedBindingContext::ForLoop,
+                        span: source_span_from_pair(&pattern_pair),
+                    });
+                }
+
+                Ok(AgentForLoopPattern::Identifier(pattern_pair.as_str().to_owned()))
+            }
             Rule::object_destructuring_pattern => {
                 let mut field_names = Vec::new();
 
@@ -65,6 +76,14 @@ impl AstVisitor {
                             "object destructuring pattern",
                             source_span_from_pair(&identifier_pair),
                         ));
+                    }
+
+                    if ReferenceKeyword::from_identifier(identifier_pair.as_str()).is_some() {
+                        return Err(DslParseError::ReservedBindingName {
+                            binding_name: identifier_pair.as_str().to_owned(),
+                            context: ReservedBindingContext::ForLoopDestructuring,
+                            span: source_span_from_pair(&identifier_pair),
+                        });
                     }
 
                     field_names.push(identifier_pair.as_str().to_owned());
@@ -172,10 +191,20 @@ impl AstVisitor {
         let agent = structure::Agent::new();
 
         if agent.property_is_dynamic(property_name.as_str()) {
-            return Ok(AgentProperty::Dynamic(DynamicBlock {
+            let dynamic_block = DynamicBlock {
                 fields: self.visit_object_expression(object_expression_pair)?,
                 span: property_span,
-            }));
+            };
+
+            if let Some(reserved_field) = dynamic_block.reserved_reference_keyword_field() {
+                return Err(DslParseError::ReservedBindingName {
+                    binding_name: reserved_field.name.clone(),
+                    context: ReservedBindingContext::Dynamic,
+                    span: reserved_field.span,
+                });
+            }
+
+            return Ok(AgentProperty::Dynamic(dynamic_block));
         }
 
         if agent.property_is_output(property_name.as_str()) {

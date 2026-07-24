@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use std::time::Duration;
 use superwire_macros::workflow_source;
 use superwire_protocol::api::ExecutionOptions;
-use superwire_protocol::event::ExecutorEventKind;
+use superwire_protocol::event::{ExecutorDiagnosticCode, ExecutorEventKind};
 
 #[tokio::test]
 async fn for_loop_over_literal_array() {
@@ -112,6 +112,49 @@ async fn for_loop_over_input_array() {
         output,
         json!({ "results": [{ "value": "processed-a" }, { "value": "processed-b" }] })
     );
+}
+
+#[tokio::test]
+async fn for_loop_rejects_iteration_count_above_runtime_limit() {
+    const EXCESSIVE_ITERATION_COUNT: usize = 1025;
+
+    let workflow_source = workflow_source! {
+        provider openai from openai {
+            endpoint: "http://localhost:1234/v1"
+            api_key: "test-api-key"
+        }
+
+        model openai_model from openai {
+            id: "model-a"
+        }
+
+        input {
+            items: [string]
+        }
+
+        agent processor for item in input.items {
+            model: model.openai_model
+            instruction: "Process {{ item }}"
+            output {
+                value: string
+            }
+        }
+
+        output {
+            results: agent.processor
+        }
+    };
+    let input_items: Vec<Value> = (0..EXCESSIVE_ITERATION_COUNT)
+        .map(|item_index| Value::String(item_index.to_string()))
+        .collect();
+    let service = ExecutorService::new(TestModelProvider::new(Vec::new()));
+    let error = service
+        .execute(request_with_input(workflow_source, json!({ "items": input_items })))
+        .await
+        .expect_err("oversized for-loop should fail before provider work");
+
+    assert_eq!(error.diagnostic().code, ExecutorDiagnosticCode::InvalidInput);
+    assert!(error.diagnostic().message.contains("exceeding the limit of 1024"));
 }
 
 #[tokio::test]
@@ -257,7 +300,6 @@ async fn for_loop_respects_max_concurrency() {
 
     let mut request = crate::tests::support::request(workflow_source);
     request.options = ExecutionOptions {
-        include_events: false,
         max_concurrency: 1,
         use_cache: true,
         cache_key: None,
@@ -304,7 +346,6 @@ async fn for_loop_iterations_run_in_parallel_with_configured_limit() {
     let mut request = crate::tests::support::request(workflow_source);
 
     request.options = ExecutionOptions {
-        include_events: false,
         max_concurrency: 2,
         use_cache: true,
         cache_key: None,
@@ -437,7 +478,7 @@ async fn for_loop_events_include_iteration_indexes() {
 }
 
 #[tokio::test]
-async fn for_loop_events_include_loop_lifecycle_and_bindings() {
+async fn for_loop_events_include_public_loop_metadata() {
     let workflow_source = workflow_source! {
         provider openai from openai {
             endpoint: "http://localhost:1234/v1"
@@ -494,10 +535,12 @@ async fn for_loop_events_include_loop_lifecycle_and_bindings() {
     let loop_completed_data = loop_completed_data.expect("loop completed event should include data");
 
     assert_eq!(loop_started_data["iteration_count"], json!(2));
-    assert_eq!(loop_started_data["iterations"][0]["bindings"]["id"], json!(1));
-    assert_eq!(loop_started_data["iterations"][0]["bindings"]["name"], json!("Ada"));
+    assert_eq!(loop_started_data["binding_names"], json!(["id", "name"]));
+    assert!(loop_started_data.get("iterations").is_none());
     assert_eq!(loop_completed_data["iteration_count"], json!(2));
-    assert_eq!(loop_completed_data["output"], json!([{ "value": "a" }, { "value": "b" }]));
+    assert_eq!(loop_completed_data["result_kind"], json!("array"));
+    assert_eq!(loop_completed_data["item_count"], json!(2));
+    assert!(loop_completed_data.get("output").is_none());
 }
 
 #[tokio::test]

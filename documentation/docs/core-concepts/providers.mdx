@@ -1,85 +1,66 @@
 ---
-title: Providers and Models
-description: Configure backend access separately from model selection.
+title: Providers and models
+description: Configure backend access separately from model identity and inference defaults.
 ---
 
-Superwire separates provider instances and model profiles.
+import HelloWorkflow from "/examples/wire/hello.mdx";
 
 ```text
-provider instance -> model profile -> agent
+provider instance -> model profile -> agent usage
 ```
+
+## Complete example
+
+<HelloWorkflow />
+
+`llm` is the provider instance, `openai` is the driver, and `fast` is a named model profile.
 
 ## Provider declarations
 
-A provider declaration creates a named provider instance.
+Providers accept only `endpoint` and `api_key` properties:
 
 ```wire
 secrets {
     api_key: string
 }
 
-provider llm from openai {
-    endpoint: "https://api.openai.com/v1"
+provider primary from anthropic {
+    endpoint: "https://api.anthropic.com"
     api_key: secrets.api_key
 }
 ```
 
-`openai` is the provider type. `llm` is the provider instance name.
+Both properties are optional for drivers with defaults. The runtime can use a default endpoint and driver-specific environment key. See the source-backed [Provider matrix](/integrations/providers) for all 17 drivers.
 
-At the moment, the executor supports OpenAI-compatible providers through the `/responses` API.
+Inference settings do not belong in a provider block.
 
-## Model declarations
-
-A model declaration creates a reusable model profile from a provider instance.
+## Model profiles
 
 ```wire
-model fast from llm {
-    id: "gpt-4.1-mini"
-}
-```
-
-The `id` is the provider-specific model identifier sent to the configured provider.
-
-Models that accept non-text inputs should declare those supported asset kinds:
-
-```wire
-model vision from llm {
-    id: "qwen-plus"
-    assets: ["image", "video"]
-}
-```
-
-The supported asset kinds are `image`, `video`, and `document`. Superwire validates `asset` usage against this list before sending a model request.
-
-Agents reference model profiles through the `model` namespace:
-
-```wire
-agent reply {
-    model: model.fast
-    instruction: "Reply to {{ input.message }}"
-
-    output {
-        message: string
-    }
-}
-```
-
-## Inference defaults
-
-Inference configuration belongs on the model profile when it should apply to every agent using that profile.
-
-```wire
-model fast from llm {
-    id: "gpt-4.1-mini"
+model fast from primary {
+    id: "model-id"
+    wire_api: "responses"
+    assets: ["image"]
 
     inference {
         temperature: 0.2
         max_tokens: 4_000
+        provider_max_retries: 2
+        provider_retry_base_delay_ms: 250
     }
 }
 ```
 
-An agent can override inference for that specific model usage by opening a block after the model reference:
+| Property | Meaning |
+| --- | --- |
+| `id` | Required provider-specific model identifier. |
+| `wire_api` | `"responses"` by default or `"chat/completion"`. |
+| `assets` | Allowed non-text kinds: `image`, `video`, `document`. |
+| `inference` | Defaults for every agent using the profile. |
+
+Supported inference keys are `max_tokens`, `temperature`, `top_p`, `top_k`, `frequency_penalty`, `presence_penalty`, `repeat_penalty`, `seed`, `stuck_threshold`, `provider_max_retries`, and `provider_retry_base_delay_ms`.
+
+## Per-agent override
 
 ```wire
 agent creative_reply {
@@ -88,69 +69,23 @@ agent creative_reply {
             temperature: 0.8
         }
     }
-
-    instruction: "Write a creative reply to {{ input.message }}"
-
-    output {
-        message: string
-    }
-}
-```
-
-The usage block specializes the model for that agent. It does not create a new named model profile.
-
-## Multiple model profiles
-
-Define multiple profiles when different agents should use different model IDs or inference defaults.
-
-```wire
-model fast from llm {
-    id: "gpt-4.1-mini"
-}
-
-model smart from llm {
-    id: "gpt-4.1"
-}
-
-model cheap from llm {
-    id: "gpt-4.1-nano"
-}
-```
-
-Then each agent chooses the profile that matches its job:
-
-```wire
-agent quick_reply {
-    model: model.fast
-    instruction: "Reply briefly to {{ input.message }}"
+    instruction: "Write a creative reply."
 
     output {
         message: string
     }
 }
-
-agent careful_review {
-    model: model.smart
-    instruction: "Review this carefully: {{ input.message }}"
-
-    output {
-        review: string
-    }
-}
 ```
 
-## Provider-level defaults
+Agent model-usage inference overrides matching profile fields and inherits the rest. It does not create another named model.
 
-Provider-level defaults are optional and should be reserved for settings that truly apply to all model calls through that provider, such as timeout or retry configuration.
+## API-mode requirement for files
 
 ```wire
-provider llm from openai {
-    endpoint: "https://api.openai.com/v1"
-    api_key: secrets.api_key
-
-    inference {
-        timeout_seconds: 60
-        retry_attempts: 2
-    }
+model files from primary {
+    id: "file-capable-model"
+    wire_api: "chat/completion"
 }
 ```
+
+Agent `file` directives require Chat Completions mode. Other model calls default to Responses mode. The backend must implement the chosen API; an “OpenAI-compatible” label does not guarantee every endpoint or feature.

@@ -1,105 +1,267 @@
 ---
 title: Executor API
-description: HTTP contract for /execute, /validate, and /format.
+description: Exact HTTP contract for execution, validation, graphing, formatting, caching, streams, LSP, and Playground routes.
 ---
 
-The Docker executor exposes three HTTP endpoints:
+The executor listens on `0.0.0.0:13703` by default. JSON routes use `Content-Type: application/json`.
 
-- `POST /execute` executes the workflow and returns JSON by default.
-- `POST /validate` validates workflow source and returns validation diagnostics.
-- `POST /format` formats workflow source and returns canonical output.
+## Route map
 
-`POST /execute` switches to Server-Sent Events when the request includes `Accept: text/event-stream`.
+| Route | Method | Success | Purpose |
+| --- | --- | --- | --- |
+| `/execute` | POST | `200` JSON or SSE | Execute a workflow. |
+| `/execute/{run_identifier}/events` | GET | `200` SSE | Reconnect to a retained streamed run. |
+| `/execute/{run_identifier}/cancel` | POST | `200` JSON | Request cancellation and report its transition. |
+| `/cache/invalidate` | POST | `200` JSON | Delete entries for one cache key. |
+| `/validate` | POST | `200` JSON | Validate source and secrets without model execution. |
+| `/graph` | POST | `200` JSON | Return the validated execution graph. |
+| `/format` | POST | `200` JSON | Return canonical source formatting. |
+| `/lsp` | GET upgrade | WebSocket | JSON-RPC language-server transport used by Playground. |
+| `/` | GET | redirect | Redirect to Playground when enabled. |
+| `/playground` | GET | HTML/assets | Bundled Playground when enabled. |
 
-## Request body
+No dedicated health route is implemented.
+
+## Strict request schemas
+
+Requests reject unknown fields. Each route accepts only:
+
+| Request | Fields |
+| --- | --- |
+| Execute | `workflow_source` or `workflow_source_base64`, `input`, `secrets`, `options` |
+| Execute `options` | `max_concurrency`, `use_cache`, `cache_key` |
+| Validate | source field, `secrets` |
+| Graph | source field, `secrets` |
+| Format | source field |
+| Cache invalidation | `cache_key` |
+
+Streaming is selected only with `Accept: text/event-stream`. Malformed JSON and unknown fields return the typed error envelope below.
+
+## Operator-selected MCP network policy
+
+Outbound MCP access is executor process configuration, not request data. The server-config default is `Disabled` (`disabled`); the operator may start the process with `--mcp-network-policy` set to `disabled`, `public-only`, or `trusted`. The strict schemas above contain no policy field, so an HTTP body cannot enable or override networking.
+
+| Policy | `/execute`, `/validate`, and `/graph` |
+| --- | --- |
+| `disabled` | A workflow requiring MCP discovery fails before any outbound MCP request. Workflows without MCP continue normally. |
+| `public-only` | Allows absolute HTTP(S) URLs without user information after DNS and public-address checks. |
+| `trusted` | Still requires HTTP(S) and rejects URL user information, but permits private and local endpoints. |
+
+Both network-enabled policies disable environment proxies and automatic redirects and reject redirect responses. `public-only` additionally rejects every local, private, link-local, multicast, reserved, documentation, or cloud-metadata IPv4/IPv6 answer and pins the approved normalized address set and port in a custom resolver. These are request-time MCP SSRF controls, not process network sandboxing. `trusted` is for operator-reviewed workflows and networks. The implemented MCP transport is HTTP JSON-RPC only; stdio and local-process transports are not enabled.
+
+## Operator-selected provider network policy
+
+Model-provider access is also executor process configuration. The default `--provider-network-policy built-in-only` accepts only each provider driver’s exact built-in endpoint. An operator may select `public-only` for custom public HTTPS endpoints or `trusted` for reviewed custom public/private/local HTTP(S) endpoints. The strict request schemas contain no provider-policy field.
+
+Custom endpoint URLs cannot contain user information, queries, or fragments. Validation and DNS resolution happen before credentials are selected; approved addresses and ports are pinned into a shared completion/file-operation client. Provider clients ignore environment proxies, reject redirects, and bound connect/request durations, response bodies, SSE frames, total streams, and accumulated tool arguments. `public-only` rejects any non-public literal or DNS answer. A truncated stream without its provider completion event fails instead of returning partial output.
+
+## Source fields
+
+Execution, validation, graph, and format requests require exactly one source representation:
+
+| Field | Type | Rule |
+| --- | --- | --- |
+| `workflow_source` | string | Non-empty `.wire` UTF-8 source. |
+| `workflow_source_base64` | string | Standard base64 that decodes to non-empty UTF-8 source. |
+
+Sending both or neither returns HTTP 400.
+
+## Execute as JSON
 
 ```json
 {
+  "workflow_source_base64": "...",
   "input": {
-    "message": "Write a short welcome message."
+    "name": "Ada"
   },
   "secrets": {
-    "api_key": "sk-..."
+    "api_key": "replace-at-runtime"
   },
   "options": {
+    "max_concurrency": 5,
+    "use_cache": true,
     "cache_key": "tenant-1:conversation-42"
-  },
-  "workflow_source_base64": "..."
-}
-```
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `input` | object | Public workflow input. Must match the workflow `input` block. |
-| `secrets` | object | Sensitive runtime values. Must match the workflow `secrets` block. |
-| `options.cache_key` | string | Optional client-controlled cache key. When present and caching is enabled, matching agent outputs can be reused for later requests with the same key. |
-| `options.use_cache` | boolean | Optional cache toggle. Defaults to `true`, but cache is only used when `options.cache_key` is present. |
-| `workflow_source_base64` | string | Base64-encoded `.wire` source. |
-
-## `/execute` response
-
-Successful responses return the workflow `output` block as JSON.
-
-```json
-{
-  "result": {
-    "message": "Welcome to Superwire."
   }
 }
 ```
 
-Errors use a structured JSON body.
+| Field | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `input` | object or null | `null` | Public runtime fields validated against the declared `input` object. |
+| `secrets` | object or null | `null` | Sensitive runtime fields validated against the declared `secrets` object. |
+| `options.max_concurrency` | unsigned integer | `5` | Upper bound for independent agents and loop iterations; effective minimum is one. |
+| `options.use_cache` | boolean | `true` | Enables cache access when a non-empty key exists. |
+| `options.cache_key` | string or null | `null` | Request-only cache session. Empty/absent keys bypass cache. |
+
+Success contains only the final workflow value under `output`; it does not echo a cache key, context, or events:
+
+```json
+{
+  "output": {
+    "message": "Hello Ada."
+  }
+}
+```
+
+The CLI prints the inner object directly; HTTP does not.
+
+## Execution preflight and MCP ordering
+
+Execution rejects non-object `input`/`secrets` and validates declared field types before constructing an MCP client. For each MCP declaration, preflight resolves its endpoint, applies the process network policy, and then resolves its headers. Under `public-only`, policy application includes DNS resolution. Only after every permitted server configuration resolves does it create clients, emit schema-fetch-started events, or make the first MCP JSON-RPC HTTP request.
+
+This remains an all-or-nothing preflight boundary: a later invalid, unresolved, or policy-blocked MCP declaration produces zero MCP HTTP calls/events for earlier servers. Under `disabled`, policy rejection also performs no DNS lookup; under `public-only` or `trusted`, remote availability and returned schemas remain request-time concerns after preflight succeeds.
+
+`/execute`, `/validate`, and `/graph` can perform MCP discovery when the submitted workflow requires it, even though validation and graphing do not call a model provider. Whether they may contact a declared endpoint is fixed by the executor's operator-selected policy; requests cannot override it. Treat workflows accepted under a network-enabled policy as outbound network configuration; see [MCP servers](/mcp/mcp-servers#network-and-trust-boundary).
+
+## Typed errors
+
+Every JSON HTTP failure uses:
 
 ```json
 {
   "error": {
-    "kind": "validation_error",
-    "message": "Unknown reference: agent.missing.summary",
-    "issues": [
-      {
-        "path": "agent.writer.instruction",
-        "message": "Unknown reference: agent.missing.summary"
+    "code": "provider_retries_exhausted",
+    "stage": "model",
+    "severity": "error",
+    "retryability": "safe",
+    "message": "provider request failed after 4 attempts",
+    "subject": {
+      "type": "provider",
+      "agent_name": "writer",
+      "provider_name": "openai",
+      "model_name": "gpt-test",
+      "attempt": 4,
+      "http_status": 503
+    },
+    "cause": {
+      "code": "model_provider_failed",
+      "stage": "model",
+      "severity": "error",
+      "retryability": "safe",
+      "message": "HTTP 503",
+      "subject": {
+        "type": "provider",
+        "agent_name": "writer",
+        "provider_name": "openai",
+        "model_name": "gpt-test",
+        "attempt": 4,
+        "http_status": 503
       }
-    ]
+    }
   }
 }
 ```
 
-## `/execute` streaming response
+See [Diagnostics](/api-reference/diagnostics) for the closed code/stage/subject sets. `retry_after_ms` and recursive `cause` are omitted when absent.
 
-When `Accept: text/event-stream` is set, `/execute` responds with `text/event-stream`. A typical stream contains lifecycle events, agent events, tool/MCP events, and a final completion event.
+| Status | Diagnostic classes |
+| --- | --- |
+| `400` | Invalid workflow/input/secrets/configuration, malformed JSON, unknown fields |
+| `404` | Unknown run identifier |
+| `409` | Replay history gap or cancellation conflict |
+| `410` | Expired retained run |
+| `502` | Provider failure, rate limit, or exhausted retries |
+| `503` | Unavailable cache operation or exhausted stream-retention capacity |
+| `500` | Invalid workflow output, model rejection, tool/MCP failure, cancellation/internal failure |
 
-```text
-event: workflow_started
-data: {}
+Clients should branch on HTTP status and `error.code`, not parse `message`.
 
-event: workflow_planned
-data: {"nodes":[]}
+## Execute as SSE
 
-event: agent_started
-data: {"agent":"reply"}
+Send the same execute request with an `Accept` value containing `text/event-stream`; media-type parameters are accepted. The response carries `x-superwire-run-id`, and each frame has `id`, `event`, and `data` fields. See [Streaming and events](/api-reference/streaming-events) for reconnect, retention, replay gaps, and cancellation.
 
-event: agent_completed
-data: {"output":{"message":"Welcome to Superwire."}}
+Every complete executor event frame is at most 245,760 bytes, including SSE field framing and a worst-case event ID. Projection and serialization happen before sequencing. If a final output would exceed the contract, the stream terminates with one small `workflow_failed`/`event_too_large` event containing only actual/maximum byte counts; it never emits or retains the oversized output.
 
-event: workflow_completed
-data: {"output":{"result":{"message":"Welcome to Superwire."}}}
+## Validate
+
+```json
+{
+  "workflow_source": "output { ok: true }",
+  "secrets": {}
+}
 ```
 
-Exact event payloads may evolve with the executor. Treat `workflow_completed` as the terminal success event and `workflow_failed` as the terminal failure event.
+Success:
 
-Streaming responses include an `x-superwire-run-id` response header. If the client connection drops unintentionally, reconnect with `GET /execute/{run_id}/events` and pass the last received SSE event id with the `Last-Event-ID` header.
-
-To intentionally stop backend work for a running stream, call:
-
-```bash
-curl -X POST http://localhost:13703/execute/{run_id}/cancel
+```json
+{
+  "valid": true
+}
 ```
 
-Cancelling is different from disconnecting. A disconnected stream remains available for reconnection; a cancelled run is marked terminal and the executor aborts its backend task.
+Invalid source, supplied secrets, or resolvable runtime configuration returns HTTP 400 with the typed error envelope. `input` is not accepted: validation uses deferred-input mode so schema/source checks do not require the eventual execution payload.
 
-## Security notes
+## Graph
 
-- Do not log raw request bodies in production because `secrets` contains provider and MCP credentials.
-- Prefer short-lived API keys or internal credentials when possible.
-- Keep `.wire` source free of hardcoded secrets.
+```json
+{
+  "workflow_source_base64": "...",
+  "secrets": {}
+}
+```
+
+Success:
+
+```json
+{
+  "valid": true,
+  "graph": {
+    "nodes": [],
+    "edges": [],
+    "agent_execution_order": []
+  }
+}
+```
+
+The graph is a serialized `WorkflowExecutionGraph`. Its three required top-level fields are `nodes`, `edges`, and `agent_execution_order`; the order is the dependency-respecting agent sequence selected by the planner. Like validation, graph construction defers runtime input while still checking source, supplied secrets, and resolvable configuration. Invalid source or unresolved runtime configuration returns HTTP 400.
+
+## Format
+
+```json
+{
+  "workflow_source": "output{ok:true}"
+}
+```
+
+Success:
+
+```json
+{
+  "valid": true,
+  "formatted_workflow_source": "output {\n    ok: true\n}\n"
+}
+```
+
+Formatting accepts source only. Parse/format failures use the common typed error envelope.
+
+## Invalidate cache
+
+```json
+{
+  "cache_key": "tenant-1:conversation-42"
+}
+```
+
+Success:
+
+```json
+{
+  "purged_entries": 3
+}
+```
+
+A missing or blank key returns HTTP 400 `invalid_input`. A cache-driver purge failure fails closed with HTTP 503 and the typed error envelope: `code: "cache_unavailable"`, `stage: "cache"`, `severity: "error"`, `retryability: "safe"`, and cache subject operation `purge`. No `purged_entries` success body is returned, so deletion is unconfirmed and the caller may retry safely. A successful `{ "purged_entries": 0 }` means the purge completed but found no matching entries.
+
+Rotating a cache key starts a new scope but does not delete entries under the old key.
+
+## LSP WebSocket
+
+`GET /lsp` upgrades to a WebSocket carrying language-server JSON-RPC. The standalone `superwire-lsp` binary uses stdio for editor clients; no HTTP diagnostics endpoint or generic TCP mode is provided.
+
+## Security
+
+- Never log raw requests containing `secrets` or run identifiers.
+- Authenticate and authorize access at the reverse proxy/application boundary.
+- Bound request size, time, concurrency, and rate at the deployment boundary.
+- Use scoped cache keys that do not reveal credentials.
+- Keep MCP/domain authorization in the tools themselves.

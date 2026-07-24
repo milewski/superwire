@@ -2,8 +2,10 @@ use super::{
     AgentContext, AssetPropertyName, BuiltinFunctionArgumentName, BuiltinFunctionName, ModelCallArgumentName, Reference, ReferenceKeyword,
     SourceSpan, TypeExpression, TypedField,
 };
-use std::collections::HashSet;
+use serde_json::Value;
+use std::collections::{HashMap, HashSet};
 use std::hash::BuildHasher;
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expression {
@@ -53,6 +55,104 @@ pub struct VariantProjectionExpression {
     pub case_name: String,
     pub field_path: Vec<String>,
     pub span: SourceSpan,
+    resolved_discriminator: OnceLock<String>,
+}
+
+impl VariantProjectionExpression {
+    #[must_use]
+    pub fn new(value: Reference, case_name: String, field_path: Vec<String>, span: SourceSpan) -> Self {
+        Self {
+            value,
+            case_name,
+            field_path,
+            span,
+            resolved_discriminator: OnceLock::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn resolve_discriminator(&self, discriminator: &str) -> bool {
+        if let Some(resolved_discriminator) = self.resolved_discriminator.get() {
+            return resolved_discriminator == discriminator;
+        }
+
+        self.resolved_discriminator.set(discriminator.to_string()).is_ok()
+    }
+
+    #[must_use]
+    pub fn resolved_discriminator(&self) -> Option<&str> {
+        self.resolved_discriminator.get().map(String::as_str)
+    }
+
+    #[must_use]
+    pub fn project_value(&self, value: Value) -> Option<VariantProjectionOutcome> {
+        let discriminator = self.resolved_discriminator()?;
+
+        Some(Self::project_resolved_value(
+            value,
+            discriminator,
+            &self.case_name,
+            &self.field_path,
+        ))
+    }
+
+    fn project_resolved_value(value: Value, discriminator: &str, case_name: &str, field_path: &[String]) -> VariantProjectionOutcome {
+        let Some(object_fields) = value.as_object() else {
+            return VariantProjectionOutcome::NoMatch;
+        };
+        let has_matching_discriminator = object_fields.get(discriminator).and_then(Value::as_str) == Some(case_name);
+
+        if !has_matching_discriminator {
+            return VariantProjectionOutcome::NoMatch;
+        }
+
+        let Some((first_field_name, remaining_field_path)) = field_path.split_first() else {
+            return VariantProjectionOutcome::Matched(value);
+        };
+        let Some(mut current_value) = object_fields.get(first_field_name) else {
+            return VariantProjectionOutcome::Matched(Value::Null);
+        };
+
+        for field_name in remaining_field_path {
+            let Some(current_object_fields) = current_value.as_object() else {
+                return VariantProjectionOutcome::Matched(Value::Null);
+            };
+            let Some(next_value) = current_object_fields.get(field_name) else {
+                return VariantProjectionOutcome::Matched(Value::Null);
+            };
+
+            current_value = next_value;
+        }
+
+        VariantProjectionOutcome::Matched(current_value.clone())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MatchBranchStructureError {
+    DuplicateVariant {
+        case_name: String,
+        first_span: SourceSpan,
+        duplicate_span: SourceSpan,
+    },
+    MultipleFallback {
+        first_span: SourceSpan,
+        duplicate_span: SourceSpan,
+    },
+    NonFinalFallback {
+        span: SourceSpan,
+    },
+}
+
+impl MatchBranchStructureError {
+    #[must_use]
+    pub fn message(&self) -> String {
+        match self {
+            Self::DuplicateVariant { case_name, .. } => format!("duplicate match case `{case_name}`"),
+            Self::MultipleFallback { .. } => "match expression has more than one fallback branch".to_string(),
+            Self::NonFinalFallback { .. } => "match fallback branch must be last".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,6 +160,88 @@ pub struct MatchExpression {
     pub value: Box<Expression>,
     pub branches: Vec<MatchBranch>,
     pub span: SourceSpan,
+    resolved_discriminator: OnceLock<String>,
+}
+
+impl MatchExpression {
+    #[must_use]
+    pub fn new(value: Expression, branches: Vec<MatchBranch>, span: SourceSpan) -> Self {
+        Self {
+            value: Box::new(value),
+            branches,
+            span,
+            resolved_discriminator: OnceLock::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn resolve_discriminator(&self, discriminator: &str) -> bool {
+        if let Some(resolved_discriminator) = self.resolved_discriminator.get() {
+            return resolved_discriminator == discriminator;
+        }
+
+        self.resolved_discriminator.set(discriminator.to_string()).is_ok()
+    }
+
+    #[must_use]
+    pub fn resolved_discriminator(&self) -> Option<&str> {
+        self.resolved_discriminator.get().map(String::as_str)
+    }
+
+    #[must_use]
+    pub fn project_variant_branch(&self, value: Value, case_name: &str, field_path: &[String]) -> Option<VariantProjectionOutcome> {
+        let discriminator = self.resolved_discriminator()?;
+
+        Some(VariantProjectionExpression::project_resolved_value(
+            value,
+            discriminator,
+            case_name,
+            field_path,
+        ))
+    }
+
+    pub fn validate_branch_structure(&self) -> Result<(), MatchBranchStructureError> {
+        let mut first_variant_spans = HashMap::new();
+        let mut first_fallback_span = None;
+
+        for branch in &self.branches {
+            match branch {
+                MatchBranch::Variant {
+                    case_name,
+                    field_path: _,
+                    span,
+                } => {
+                    if let Some(first_span) = first_variant_spans.get(case_name) {
+                        return Err(MatchBranchStructureError::DuplicateVariant {
+                            case_name: case_name.clone(),
+                            first_span: *first_span,
+                            duplicate_span: *span,
+                        });
+                    }
+
+                    first_variant_spans.insert(case_name.clone(), *span);
+                }
+                MatchBranch::Fallback { value: _, span } => {
+                    if let Some(first_span) = first_fallback_span {
+                        return Err(MatchBranchStructureError::MultipleFallback {
+                            first_span,
+                            duplicate_span: *span,
+                        });
+                    }
+
+                    first_fallback_span = Some(*span);
+                }
+            }
+        }
+
+        if !self.branches.last().is_some_and(MatchBranch::is_fallback) {
+            if let Some(span) = first_fallback_span {
+                return Err(MatchBranchStructureError::NonFinalFallback { span });
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,6 +257,43 @@ pub enum MatchBranch {
     },
 }
 
+impl MatchBranch {
+    #[must_use]
+    pub fn is_fallback(&self) -> bool {
+        matches!(self, Self::Fallback { value: _, span: _ })
+    }
+
+    #[must_use]
+    pub fn case_name(&self) -> Option<&str> {
+        match self {
+            Self::Variant {
+                case_name,
+                field_path: _,
+                span: _,
+            } => Some(case_name),
+            Self::Fallback { value: _, span: _ } => None,
+        }
+    }
+
+    #[must_use]
+    pub fn fallback_value(&self) -> Option<&Expression> {
+        match self {
+            Self::Fallback { value, span: _ } => Some(value),
+            Self::Variant {
+                case_name: _,
+                field_path: _,
+                span: _,
+            } => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VariantProjectionOutcome {
+    NoMatch,
+    Matched(Value),
+}
+
 impl Expression {
     #[must_use]
     pub fn referenced_names_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Vec<String> {
@@ -86,6 +305,31 @@ impl Expression {
             .iter()
             .filter_map(|expression| expression.direct_name_for_keyword(reference_keyword))
             .collect()
+    }
+
+    #[must_use]
+    pub fn source_span(&self) -> Option<SourceSpan> {
+        match self {
+            Self::Reference(reference) => Some(reference.span),
+            Self::FunctionCall(function_call) => Some(function_call.callee.span),
+            Self::AgentContext(agent_context) => Some(agent_context.span()),
+            Self::Asset(asset) => Some(asset.span),
+            Self::ToolCall(tool_call) => Some(tool_call.span),
+            Self::McpCall(mcp_call) => Some(mcp_call.span),
+            Self::VariantProjection(variant_projection) => Some(variant_projection.span),
+            Self::Match(match_expression) => Some(match_expression.span),
+            Self::ObjectLiteral(object_fields) => object_fields.first().map(|object_field| object_field.span),
+            Self::StringTemplate(string_template) => string_template.parts.iter().find_map(|string_template_part| {
+                let StringTemplatePart::Interpolation(interpolation_expression) = string_template_part else {
+                    return None;
+                };
+
+                interpolation_expression.source_span()
+            }),
+            Self::NullFallback(null_fallback) => null_fallback.value.source_span().or_else(|| null_fallback.fallback.source_span()),
+            Self::ArrayLiteral(expressions) => expressions.iter().find_map(Self::source_span),
+            Self::StringLiteral(_) | Self::NumberLiteral(_) | Self::BooleanLiteral(_) | Self::NullLiteral => None,
+        }
     }
 
     #[must_use]
@@ -861,7 +1105,13 @@ impl StringTemplatePart {
             Self::Text(text) => {
                 let mut current_text = String::new();
 
-                for character in text.chars() {
+                let mut characters = text.chars().peekable();
+
+                while let Some(character) = characters.next() {
+                    if character == '\r' && characters.peek() == Some(&'\n') {
+                        continue;
+                    }
+
                     if character == '\n' {
                         Self::push_text_to_last_line(template_lines, &current_text);
                         current_text.clear();

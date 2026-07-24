@@ -1,49 +1,50 @@
 ---
-title: OpenAI-Compatible Providers
-description: Configure OpenAI-compatible providers that support the /responses API.
+title: OpenAI-compatible providers
+description: Configure OpenAI transport drivers and choose Responses or Chat Completions.
 ---
 
-Use `provider ... from openai` for OpenAI-compatible HTTP APIs.
+import HelloWorkflow from "/examples/wire/hello.mdx";
 
-The provider endpoint must support the `/responses` API.
+## OpenAI driver
+
+<HelloWorkflow />
+
+The `openai` driver defaults to `https://api.openai.com/v1` and reads `OPENAI_API_KEY` when `api_key` is omitted. The checked workflow instead requires a typed runtime secret so each caller can supply it.
+
+## Compatible gateway
 
 ```wire
 secrets {
     api_key: string
 }
 
-provider llm from openai {
-    endpoint: "https://api.openai.com/v1"
+provider gateway from openai_compatible {
+    endpoint: "https://gateway.example.test/v1"
     api_key: secrets.api_key
 }
 
-model fast from llm {
-    id: "gpt-4.1-mini"
+model fast from gateway {
+    id: "gateway-model-id"
+    wire_api: "chat/completion"
 }
 ```
 
-For an OpenAI-compatible gateway, change the endpoint and model ID.
+`openai_compatible` has no environment-key fallback; supply `api_key` when the gateway requires one.
+
+## API mode
+
+Models default to:
 
 ```wire
-provider llm from openai {
-    endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    api_key: secrets.api_key
-}
-
-model fast from llm {
-    id: "qwen3.6-plus"
-}
+wire_api: "responses"
 ```
 
-Agents use the named model profile.
+Select:
 
 ```wire
-agent reply {
-    model: model.fast
-    instruction: "Reply to {{ input.message }}."
-
-    output {
-        message: string
-    }
-}
+wire_api: "chat/completion"
 ```
+
+when the backend implements Chat Completions rather than Responses, or when an agent uses `file`. Compatibility is feature-specific: confirm structured output, tool calls, assets, streaming, and file endpoints with the chosen backend.
+
+See the [Provider matrix](/integrations/providers) for OpenAI, Ollama, Mistral, Groq, DeepSeek, xAI, Together, Fireworks, Perplexity, Cerebras, OpenRouter, Cohere, SambaNova, Anthropic, and Google drivers.

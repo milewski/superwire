@@ -1,50 +1,18 @@
 ---
-title: Context Continuation
+title: Context continuation
 description: Continue one agent from another agent's message history.
 ---
 
-```wire
-input {
-    task_id: number
-}
+import ContextWorkflow from "/examples/wire/context.mdx";
 
-secrets {
-    api_key: string
-}
+<ContextWorkflow />
 
-provider llm from openai {
-    endpoint: "https://api.openai.com/v1"
-    api_key: secrets.api_key
-}
+`context: agent.investigate` passes prior message history into `solve`; it does not read a structured field. A structured reference such as `agent.investigate.problem` reads only the declared output value.
 
-model fast from llm {
-    id: "gpt-4.1-mini"
-}
+| Need | Use |
+| --- | --- |
+| One typed value | `agent.investigate.problem` |
+| Prior conversation history | `context: agent.investigate` |
+| Shortened prior history | `context: compact agent.investigate { ... }` |
 
-agent investigate {
-    model: model.fast
-    instruction: "Investigate task {{ input.task_id }} and identify the problem."
-
-    output {
-        problem: string
-        evidence: [string]
-    }
-}
-
-agent solve {
-    model: model.fast
-    context: agent.investigate
-    instruction: "Continue from the investigation and propose a solution."
-
-    output {
-        solution: string
-        steps: [string]
-    }
-}
-
-output {
-    problem: agent.investigate.problem
-    solution: agent.solve.solution
-    steps: agent.solve.steps
-}
-```
+See [Context continuation and compaction](/advanced/context-sharing).

@@ -361,7 +361,3 @@ impl WorkflowExecutor {
         })
     }
 }
-
-pub(in crate::runtime) fn value_object(value: &Value) -> Map<String, Value> {
-    value.as_object().cloned().unwrap_or_default()
-}

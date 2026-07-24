@@ -1,4 +1,4 @@
-import type { ExecutorEvent, WorkflowTab } from './types';
+import { ExecutorEventKind, type ExecutionDiagnostic, type ExecutorEvent, type WorkflowTab } from './types';
 import { createWorkflowCodeFragment, parseWorkflowSourceFragments, workflowSourceFromCodeFragments } from './workflowFragments';
 import { parseWorkflowSourceMetadata } from './workflowMetadata';
 
@@ -31,6 +31,7 @@ export function createWorkflowTab(name: string): WorkflowTab {
     message: 'Ready.',
     outputJson: '',
     eventLog: [],
+    runtimeDiagnostic: null,
     graphState: 'idle',
     graphMessage: 'Open the graph view to generate a visual workflow plan.',
     graphData: null,
@@ -85,6 +86,7 @@ export function normalizeWorkflowTab(tab: unknown): WorkflowTab {
     useCache: typeof tab.useCache === 'boolean' ? tab.useCache : fallbackTab.useCache,
     cacheKey: typeof tab.cacheKey === 'string' && tab.cacheKey.trim() ? tab.cacheKey : fallbackTab.cacheKey,
     eventLog: Array.isArray(tab.eventLog) ? tab.eventLog : [],
+    runtimeDiagnostic: isJsonObject(tab.runtimeDiagnostic) ? (tab.runtimeDiagnostic as unknown as ExecutionDiagnostic) : null,
     graphState: normalizeGraphState(tab.graphState),
     graphMessage: typeof tab.graphMessage === 'string' ? tab.graphMessage : fallbackTab.graphMessage,
     graphData: isJsonObject(tab.graphData) ? (tab.graphData as unknown as WorkflowTab['graphData']) : null,
@@ -133,7 +135,7 @@ export function recoverWorkflowTabAfterReload(tab: unknown): WorkflowTab {
 
   const terminalEvent = terminalWorkflowEvent(normalizedTab.eventLog);
 
-  if (terminalEvent?.kind === 'workflow_completed') {
+  if (terminalEvent?.kind === ExecutorEventKind.WorkflowCompleted) {
     return {
       ...normalizedTab,
       runState: 'completed',
@@ -143,11 +145,21 @@ export function recoverWorkflowTabAfterReload(tab: unknown): WorkflowTab {
     };
   }
 
-  if (terminalEvent?.kind === 'workflow_failed') {
+  if (terminalEvent?.kind === ExecutorEventKind.WorkflowFailed) {
     return {
       ...normalizedTab,
       runState: 'failed',
-      message: terminalEvent.message ?? 'Workflow failed.',
+      message: terminalEvent.diagnostic?.message ?? terminalEvent.message ?? 'Workflow failed.',
+      runtimeDiagnostic: terminalEvent.diagnostic ?? normalizedTab.runtimeDiagnostic,
+    };
+  }
+
+  if (terminalEvent?.kind === ExecutorEventKind.WorkflowCancelled) {
+    return {
+      ...normalizedTab,
+      runState: 'cancelled',
+      message: terminalEvent.diagnostic?.message ?? terminalEvent.message ?? 'Workflow cancelled.',
+      runtimeDiagnostic: terminalEvent.diagnostic ?? normalizedTab.runtimeDiagnostic,
     };
   }
 
@@ -162,7 +174,7 @@ function terminalWorkflowEvent(events: ExecutorEvent[]) {
   for (let eventIndex = events.length - 1; eventIndex >= 0; eventIndex -= 1) {
     const event = events[eventIndex];
 
-    if (event.kind === 'workflow_completed' || event.kind === 'workflow_failed') {
+    if (event.kind === ExecutorEventKind.WorkflowCompleted || event.kind === ExecutorEventKind.WorkflowFailed || event.kind === ExecutorEventKind.WorkflowCancelled) {
       return event;
     }
   }

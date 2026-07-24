@@ -1,4 +1,5 @@
-use std::collections::HashSet;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 
 mod code_action;
 mod completion;
@@ -8,11 +9,14 @@ mod folding;
 mod formatting;
 mod hover;
 mod position;
+pub(crate) use position::PositionEncoding;
 mod reference;
 mod scope;
 mod semantic_index;
+mod semantic_tokens;
 mod snapshot;
 mod symbol;
+mod syntax;
 mod text_utils;
 mod types;
 mod workflow_document;
@@ -20,12 +24,12 @@ mod workflow_document;
 use snapshot::SemanticSnapshot;
 use text_utils::is_symbol_character;
 pub use types::{
-    CodeActionEdit, CodeActionSuggestion, CodeLensHint, CompletionSuggestion, DocumentDiagnostic, DocumentFormattingEdit,
-    DocumentSymbolNode, FoldingRangeBlock, WorkspaceSymbolMatch,
+    CodeActionEdit, CodeActionSuggestion, CodeLensHint, CompletionSuggestion, DocumentDiagnostic, DocumentDiagnosticRelated,
+    DocumentFormattingEdit, DocumentSymbolNode, FoldingRangeBlock, SemanticHighlight, SemanticHighlightKind, WorkspaceSymbolMatch,
 };
 
 use lsp_types::{CompletionItemKind, DiagnosticSeverity, Position};
-use superwire_dsl::{Declaration, Expression, ToolPropertyName, TypeExpression, TypedField};
+use superwire_dsl::{Declaration, DeclarationKeyword, Expression, ToolPropertyName, TypeExpression, TypedField};
 use superwire_mcp::{McpLock, McpToolLock};
 use superwire_semantic::ProviderDriver;
 
@@ -34,6 +38,10 @@ use crate::diagnostic_code::DiagnosticCode;
 #[derive(Debug)]
 pub struct DocumentState {
     text: String,
+    version: Option<i32>,
+    line_index: position::LineIndex,
+    syntax_snapshot: syntax::SyntaxSnapshot,
+    completion_semantic_indexes: RefCell<HashMap<usize, semantic_index::SemanticIndex>>,
     semantic_snapshot: SemanticSnapshot,
 }
 
@@ -41,23 +49,73 @@ pub struct DocumentState {
 pub(super) struct SymbolTokenAtPosition {
     pub symbol_token: String,
     pub cursor_character_offset: usize,
+    pub token_start_byte_offset: usize,
+    pub token_end_byte_offset: usize,
 }
 
 impl DocumentState {
     #[must_use]
     pub fn new(text: String, mcp_lock: Option<McpLock>) -> Self {
-        let semantic_snapshot = SemanticSnapshot::from_text(&text, mcp_lock.as_ref());
+        Self::from_versioned_text(text, mcp_lock, None, PositionEncoding::default())
+    }
 
-        Self { text, semantic_snapshot }
+    #[must_use]
+    pub(crate) fn from_versioned_text(
+        text: String,
+        mcp_lock: Option<McpLock>,
+        version: Option<i32>,
+        position_encoding: PositionEncoding,
+    ) -> Self {
+        let line_index = position::LineIndex::new(&text, position_encoding);
+        let semantic_snapshot = SemanticSnapshot::from_text(&text, mcp_lock.as_ref());
+        let syntax_snapshot = syntax::SyntaxSnapshot::from_source(&text);
+
+        Self {
+            text,
+            version,
+            line_index,
+            completion_semantic_indexes: RefCell::new(HashMap::new()),
+            syntax_snapshot,
+            semantic_snapshot,
+        }
     }
 
     pub fn replace_text(&mut self, text: String, mcp_lock: Option<McpLock>) -> bool {
+        self.replace_versioned_text(text, mcp_lock, self.version)
+    }
+
+    pub(crate) fn replace_versioned_text(&mut self, text: String, mcp_lock: Option<McpLock>, version: Option<i32>) -> bool {
         if self.text == text && self.semantic_snapshot.semantic_index.mcp_lock == mcp_lock {
+            self.version = version;
+
             return false;
         }
 
+        self.completion_semantic_indexes.get_mut().clear();
+        self.line_index = position::LineIndex::new(&text, self.line_index.position_encoding());
+        self.syntax_snapshot = syntax::SyntaxSnapshot::from_source(&text);
         self.semantic_snapshot = SemanticSnapshot::from_text(&text, mcp_lock.as_ref());
         self.text = text;
+        self.version = version;
+
+        true
+    }
+
+    pub(crate) fn replace_mcp_lock_if_version_and_source(
+        &mut self,
+        mcp_lock: Option<McpLock>,
+        expected_version: i32,
+        expected_source_text: &str,
+    ) -> bool {
+        if self.version != Some(expected_version)
+            || self.text != expected_source_text
+            || self.semantic_snapshot.semantic_index.mcp_lock == mcp_lock
+        {
+            return false;
+        }
+
+        self.completion_semantic_indexes.get_mut().clear();
+        self.semantic_snapshot = SemanticSnapshot::from_text(&self.text, mcp_lock.as_ref());
 
         true
     }
@@ -68,13 +126,57 @@ impl DocumentState {
     }
 
     #[must_use]
+    pub(crate) fn version(&self) -> Option<i32> {
+        self.version
+    }
+    #[must_use]
+    pub(crate) fn has_mcp_server_declarations(&self) -> bool {
+        !self.semantic_snapshot.semantic_index.mcp_server_names.is_empty()
+            || self
+                .syntax_snapshot
+                .recovered_declarations()
+                .iter()
+                .any(|declaration| declaration.keyword == DeclarationKeyword::Mcp)
+    }
+
+    #[must_use]
+    pub(crate) fn completion_is_incomplete(&self) -> bool {
+        self.semantic_snapshot.parse_error().is_some()
+    }
+
+    #[must_use]
+    pub(super) fn position_context(&self, position: Position) -> Option<position::DocumentPosition<'_>> {
+        position::DocumentPosition::new(&self.text, &self.line_index, position)
+    }
+
+    #[must_use]
+    pub(super) fn byte_offset(&self, position: Position) -> Option<usize> {
+        self.line_index.byte_offset(&self.text, position)
+    }
+
+    #[must_use]
+    pub(super) fn position_for_byte_offset(&self, byte_offset: usize) -> Option<Position> {
+        self.line_index.position(&self.text, byte_offset)
+    }
+
+    #[must_use]
+    pub(super) fn range_for_byte_offsets(&self, start_byte_offset: usize, end_byte_offset: usize) -> Option<lsp_types::Range> {
+        self.line_index.range(&self.text, start_byte_offset, end_byte_offset)
+    }
+
+    #[must_use]
+    pub(super) fn range_for_source_span(&self, source_span: superwire_dsl::SourceSpan) -> lsp_types::Range {
+        self.line_index.source_span_range(&self.text, source_span)
+    }
+
+    #[must_use]
     pub(super) fn mcp_lock(&self) -> Option<McpLock> {
         self.semantic_snapshot.semantic_index.mcp_lock.clone()
     }
 
     #[must_use]
     pub fn diagnostics(&self) -> Vec<DocumentDiagnostic> {
-        let mut diagnostics = self.semantic_snapshot.diagnostics(&self.text);
+        let mut diagnostics = self.semantic_snapshot.diagnostics(&self.text, &self.line_index);
         diagnostics.extend(self.mcp_schema_diagnostics());
 
         diagnostics
@@ -347,8 +449,8 @@ impl DocumentState {
 
     fn mcp_schema_fields(mcp_tool_lock: &McpToolLock, property_name: ToolPropertyName) -> Vec<TypedField> {
         match property_name {
-            ToolPropertyName::Input | ToolPropertyName::Bindings => mcp_tool_lock.input_fields_except(&[]),
-            ToolPropertyName::Output => mcp_tool_lock.output_fields(),
+            ToolPropertyName::Input | ToolPropertyName::Bindings => mcp_tool_lock.input_fields_except(&[]).unwrap_or_default(),
+            ToolPropertyName::Output => mcp_tool_lock.output_fields().unwrap_or_default(),
             ToolPropertyName::Description | ToolPropertyName::MaxCalls => Vec::new(),
         }
     }
@@ -433,68 +535,98 @@ impl DocumentState {
 
     fn mcp_schema_diagnostic(&self, span: superwire_dsl::SourceSpan, message: String) -> DocumentDiagnostic {
         DocumentDiagnostic {
-            range: position::source_span_to_range(&self.text, span),
+            range: self.range_for_source_span(span),
             severity: DiagnosticSeverity::ERROR,
             code: DiagnosticCode::InvalidToolBinding,
             message,
+            related: Vec::new(),
+            notes: Vec::new(),
+            help: None,
         }
     }
 
-    fn line_prefix(&self, position: Position) -> Option<String> {
-        let line_text = self.text.lines().nth(position.line as usize)?;
-        let line_characters: Vec<char> = line_text.chars().collect();
-        let cursor_index = usize::min(position.character as usize, line_characters.len());
-
-        Some(line_characters.into_iter().take(cursor_index).collect())
+    fn line_prefix(&self, position: Position) -> Option<&str> {
+        self.line_index.line_prefix(&self.text, position)
     }
 
-    fn line_suffix(&self, position: Position) -> Option<String> {
-        let line_text = self.text.lines().nth(position.line as usize)?;
-        let line_characters: Vec<char> = line_text.chars().collect();
-        let cursor_index = usize::min(position.character as usize, line_characters.len());
-
-        Some(line_characters.into_iter().skip(cursor_index).collect())
+    fn line_suffix(&self, position: Position) -> Option<&str> {
+        self.line_index.line_suffix(&self.text, position)
     }
 
     fn symbol_token_at_position(&self, position: Position) -> Option<SymbolTokenAtPosition> {
-        let line_text = self.text.lines().nth(position.line as usize)?;
-        let line_characters: Vec<char> = line_text.chars().collect();
+        let cursor_byte_offset = self.byte_offset(position)?;
+        let line_index = usize::try_from(position.line).ok()?;
+        let line_range = self.line_index.line_content_byte_range(&self.text, line_index)?;
 
-        if line_characters.is_empty() {
+        if line_range.is_empty() {
             return None;
         }
 
-        let mut cursor_index = usize::min(position.character as usize, line_characters.len().saturating_sub(1));
+        let cursor_character = self.text.get(cursor_byte_offset..line_range.end)?.chars().next();
+        let previous_byte_offset = self
+            .text
+            .get(line_range.start..cursor_byte_offset)?
+            .char_indices()
+            .next_back()
+            .map(|(relative_byte_offset, _)| line_range.start.saturating_add(relative_byte_offset));
+        let token_cursor_byte_offset = if cursor_character.is_some_and(is_symbol_character) {
+            cursor_byte_offset
+        } else {
+            let previous_byte_offset = previous_byte_offset?;
+            let previous_character = self.text.get(previous_byte_offset..cursor_byte_offset)?.chars().next()?;
 
-        if !is_symbol_character(line_characters[cursor_index]) {
-            if cursor_index == 0 || !is_symbol_character(line_characters[cursor_index - 1]) {
+            if !is_symbol_character(previous_character) {
                 return None;
             }
 
-            cursor_index -= 1;
+            previous_byte_offset
+        };
+        let mut token_start_byte_offset = token_cursor_byte_offset;
+
+        while token_start_byte_offset > line_range.start {
+            let previous_byte = self.text.as_bytes()[token_start_byte_offset.saturating_sub(1)];
+
+            if !previous_byte.is_ascii_alphanumeric() && !matches!(previous_byte, b'_' | b'.' | b'?' | b'*') {
+                break;
+            }
+
+            token_start_byte_offset = token_start_byte_offset.saturating_sub(1);
         }
 
-        let mut start_index = cursor_index;
+        let mut token_end_byte_offset = token_cursor_byte_offset.saturating_add(1);
 
-        while start_index > 0 && is_symbol_character(line_characters[start_index - 1]) {
-            start_index -= 1;
+        while token_end_byte_offset < line_range.end {
+            let next_byte = self.text.as_bytes()[token_end_byte_offset];
+
+            if !next_byte.is_ascii_alphanumeric() && !matches!(next_byte, b'_' | b'.' | b'?' | b'*') {
+                break;
+            }
+
+            token_end_byte_offset = token_end_byte_offset.saturating_add(1);
         }
 
-        let mut end_index = cursor_index + 1;
-
-        while end_index < line_characters.len() && is_symbol_character(line_characters[end_index]) {
-            end_index += 1;
-        }
+        let symbol_token = self.text.get(token_start_byte_offset..token_end_byte_offset)?.to_string();
+        let cursor_character_offset = self.text.get(token_start_byte_offset..token_cursor_byte_offset)?.chars().count();
 
         Some(SymbolTokenAtPosition {
-            symbol_token: line_characters[start_index..end_index].iter().collect(),
-            cursor_character_offset: cursor_index.saturating_sub(start_index),
+            symbol_token,
+            cursor_character_offset,
+            token_start_byte_offset,
+            token_end_byte_offset,
         })
     }
 
     fn symbol_token_at(&self, position: Position) -> Option<String> {
         self.symbol_token_at_position(position)
             .map(|symbol_token_at_position| symbol_token_at_position.symbol_token)
+    }
+    pub fn hover_range(&self, position: Position) -> Option<lsp_types::Range> {
+        let symbol_token_at_position = self.symbol_token_at_position(position)?;
+
+        self.range_for_byte_offsets(
+            symbol_token_at_position.token_start_byte_offset,
+            symbol_token_at_position.token_end_byte_offset,
+        )
     }
 }
 

@@ -1,10 +1,10 @@
 use super::{ExecutorError, ToolCallExecutionContext, WorkflowExecutor};
-use crate::model::ToolCallTracker;
+use crate::model::{ExecutorEventSenderExt, ToolCallTracker};
 use serde_json::Value;
 use std::time::Instant;
 use superwire_dsl::{McpCall, McpCallOperation, McpImportBindingEvaluationKind, McpImportBindings, ObjectField};
 use superwire_mcp::{render_mcp_prompt_result, render_mcp_resource_result, McpServerConfig};
-use superwire_protocol::event::{ExecutorEvent, McpCallEventDetails};
+use superwire_protocol::event::{ExecutorEvent, McpCallEventDetails, McpOperation};
 use superwire_semantic::support::expression::EvaluationContext;
 use tokio::sync::mpsc;
 
@@ -66,17 +66,16 @@ impl WorkflowExecutor {
             mcp_render_context.evaluation_context,
             resource_name,
         )?;
-        let call_details = McpCallEventDetails::new(
-            mcp_call.operation.as_str().to_string(),
+        let call_details = McpCallEventDetails::from_arguments(
+            McpOperation::from(mcp_call.operation),
             resource_name.to_string(),
             resource_import.source.server_name.clone(),
             resource_import.source.item_name.clone(),
-            arguments.clone(),
-            None,
+            &arguments,
         );
 
         if let Some(sender) = mcp_render_context.event_sender {
-            let _ = sender.try_send(ExecutorEvent::mcp_call_started(call_details.clone()));
+            sender.try_send_observed(ExecutorEvent::mcp_call_started(call_details.clone()));
         }
 
         let started_at = Instant::now();
@@ -88,25 +87,24 @@ impl WorkflowExecutor {
             Ok(result) => result,
             Err(error) => {
                 if let Some(sender) = mcp_render_context.event_sender {
-                    let _ = sender.try_send(ExecutorEvent::mcp_call_failed(
-                        call_details,
-                        Value::String(error.to_string()),
-                        started_at.elapsed(),
-                    ));
+                    sender.try_send_observed(ExecutorEvent::mcp_call_failed(call_details, started_at.elapsed()));
                 }
 
-                return Err(ExecutorError::Other {
-                    message: format!("MCP resource `{resource_name}` failed: {error}"),
-                });
+                return Err(ExecutorError::mcp_with_source(
+                    None,
+                    Some(resource_import.source.server_name.clone()),
+                    Some(resource_name.to_string()),
+                    format!("MCP resource `{resource_name}` request failed"),
+                    error,
+                ));
             }
         };
         let rendered_result = Value::String(render_mcp_resource_result(&result));
 
         if let Some(sender) = mcp_render_context.event_sender {
-            let _ = sender.try_send(ExecutorEvent::mcp_call_completed(
+            sender.try_send_observed(ExecutorEvent::mcp_call_completed(
                 call_details,
-                rendered_result.clone(),
-                result,
+                &rendered_result,
                 started_at.elapsed(),
             ));
         }
@@ -130,17 +128,16 @@ impl WorkflowExecutor {
             mcp_render_context.evaluation_context,
             prompt_name,
         )?;
-        let call_details = McpCallEventDetails::new(
-            mcp_call.operation.as_str().to_string(),
+        let call_details = McpCallEventDetails::from_arguments(
+            McpOperation::from(mcp_call.operation),
             prompt_name.to_string(),
             prompt_import.source.server_name.clone(),
             prompt_import.source.item_name.clone(),
-            arguments.clone(),
-            None,
+            &arguments,
         );
 
         if let Some(sender) = mcp_render_context.event_sender {
-            let _ = sender.try_send(ExecutorEvent::mcp_call_started(call_details.clone()));
+            sender.try_send_observed(ExecutorEvent::mcp_call_started(call_details.clone()));
         }
 
         let started_at = Instant::now();
@@ -152,25 +149,24 @@ impl WorkflowExecutor {
             Ok(result) => result,
             Err(error) => {
                 if let Some(sender) = mcp_render_context.event_sender {
-                    let _ = sender.try_send(ExecutorEvent::mcp_call_failed(
-                        call_details,
-                        Value::String(error.to_string()),
-                        started_at.elapsed(),
-                    ));
+                    sender.try_send_observed(ExecutorEvent::mcp_call_failed(call_details, started_at.elapsed()));
                 }
 
-                return Err(ExecutorError::Other {
-                    message: format!("MCP prompt `{prompt_name}` failed: {error}"),
-                });
+                return Err(ExecutorError::mcp_with_source(
+                    None,
+                    Some(prompt_import.source.server_name.clone()),
+                    Some(prompt_name.to_string()),
+                    format!("MCP prompt `{prompt_name}` request failed"),
+                    error,
+                ));
             }
         };
         let rendered_result = Value::String(render_mcp_prompt_result(&result));
 
         if let Some(sender) = mcp_render_context.event_sender {
-            let _ = sender.try_send(ExecutorEvent::mcp_call_completed(
+            sender.try_send_observed(ExecutorEvent::mcp_call_completed(
                 call_details,
-                rendered_result.clone(),
-                result,
+                &rendered_result,
                 started_at.elapsed(),
             ));
         }
@@ -240,9 +236,12 @@ impl WorkflowExecutor {
             message: format!("MCP import references unknown MCP server `{server_name}`"),
         })?;
 
-        McpServerConfig::resolve_from_declaration(mcp_server_declaration, evaluation_context).map_err(|error| ExecutorError::Other {
-            message: error.to_string(),
-        })
+        McpServerConfig::resolve_from_declaration_with_endpoint_validator(
+            mcp_server_declaration,
+            evaluation_context,
+            |resolved_name, endpoint| self.mcp_pool.validate_endpoint(resolved_name, endpoint),
+        )
+        .map_err(|error| ExecutorError::mcp_with_source(None, Some(server_name.to_string()), None, error.public_message(), error))
     }
 
     pub(in crate::runtime) fn resolve_mcp_import_context(&self, evaluation_context: &EvaluationContext) -> Result<String, ExecutorError> {
@@ -255,8 +254,14 @@ impl WorkflowExecutor {
                 .mcp_pool
                 .get(&server_config)?
                 .get_prompt(&prompt_import.source.item_name, arguments)
-                .map_err(|error| ExecutorError::Other {
-                    message: format!("MCP prompt `{}` failed: {error}", prompt_import.name),
+                .map_err(|error| {
+                    ExecutorError::mcp_with_source(
+                        None,
+                        Some(prompt_import.source.server_name.clone()),
+                        Some(prompt_import.name.clone()),
+                        format!("MCP prompt `{}` failed: {error}", prompt_import.name),
+                        error,
+                    )
                 })?;
 
             context_sections.push(format!(
@@ -273,8 +278,14 @@ impl WorkflowExecutor {
                 .mcp_pool
                 .get(&server_config)?
                 .read_resource(&resource_import.source.item_name, arguments)
-                .map_err(|error| ExecutorError::Other {
-                    message: format!("MCP resource `{}` failed: {error}", resource_import.name),
+                .map_err(|error| {
+                    ExecutorError::mcp_with_source(
+                        None,
+                        Some(resource_import.source.server_name.clone()),
+                        Some(resource_import.name.clone()),
+                        format!("MCP resource `{}` failed: {error}", resource_import.name),
+                        error,
+                    )
                 })?;
 
             context_sections.push(format!(

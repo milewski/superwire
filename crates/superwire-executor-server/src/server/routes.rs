@@ -1,5 +1,6 @@
-use crate::server::error::ExecutorHttpError;
 use crate::server::sse::event_to_sse_result;
+use crate::server::{error::ExecutorHttpError, ExecutorServerConfig};
+use axum::extract::rejection::{JsonRejection, QueryRejection};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::Path;
 use axum::extract::Query;
@@ -14,18 +15,22 @@ use futures::{SinkExt, StreamExt};
 use serde::Deserialize;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 use superwire_executor::model::ModelProvider;
 use superwire_executor::runtime::{AgentCacheConfig, AgentCacheDriver, AgentCacheSession, DEFAULT_AGENT_CACHE_TIME_TO_LIVE};
 use superwire_executor::ExecutorService;
 use superwire_lsp::server::LanguageServer;
-use superwire_protocol::api::{CacheInvalidationRequest, ExecutionRequest, FormatRequest, GraphRequest, ValidationRequest};
+use superwire_protocol::api::{
+    CacheInvalidationRequest, CancelExecutionResponse, ExecutionRequest, FormatRequest, GraphRequest, ValidationRequest,
+};
 use superwire_provider_cersei::CerseiModelProvider;
 use tokio::fs;
 use tokio::net::TcpListener;
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::wrappers::ReceiverStream;
 
 const RUN_IDENTIFIER_HEADER: &str = "x-superwire-run-id";
+const MAX_REQUEST_CONCURRENCY: usize = 64;
 
 #[derive(Clone)]
 struct ExecutorRouterState<ModelProviderType> {
@@ -34,7 +39,7 @@ struct ExecutorRouterState<ModelProviderType> {
 }
 
 pub fn executor_router() -> Router {
-    executor_router_with_service(ExecutorService::new(CerseiModelProvider), false)
+    executor_router_with_service(ExecutorService::new(CerseiModelProvider::default()), false)
 }
 
 pub fn executor_router_with_service<ModelProviderType>(service: ExecutorService<ModelProviderType>, disable_playground: bool) -> Router
@@ -86,11 +91,20 @@ where
 }
 
 pub async fn serve_executor(address: SocketAddr, disable_playground: bool) -> Result<(), std::io::Error> {
-    serve_executor_with_cache(
+    serve_executor_with_config(address, disable_playground, ExecutorServerConfig::default()).await
+}
+
+pub async fn serve_executor_with_config(
+    address: SocketAddr,
+    disable_playground: bool,
+    server_config: ExecutorServerConfig,
+) -> Result<(), std::io::Error> {
+    serve_executor_with_agent_cache_and_config(
         address,
         disable_playground,
-        AgentCacheDriver::InMemory,
+        AgentCacheConfig::new(AgentCacheDriver::InMemory),
         DEFAULT_AGENT_CACHE_TIME_TO_LIVE,
+        server_config,
     )
     .await
 }
@@ -110,9 +124,29 @@ pub async fn serve_executor_with_agent_cache(
     cache_config: AgentCacheConfig,
     cache_time_to_live: Duration,
 ) -> Result<(), std::io::Error> {
+    serve_executor_with_agent_cache_and_config(
+        address,
+        disable_playground,
+        cache_config,
+        cache_time_to_live,
+        ExecutorServerConfig::default(),
+    )
+    .await
+}
+
+pub async fn serve_executor_with_agent_cache_and_config(
+    address: SocketAddr,
+    disable_playground: bool,
+    cache_config: AgentCacheConfig,
+    cache_time_to_live: Duration,
+    server_config: ExecutorServerConfig,
+) -> Result<(), std::io::Error> {
     let listener = TcpListener::bind(address).await?;
-    let service =
-        ExecutorService::with_agent_cache_config(CerseiModelProvider, cache_config, cache_time_to_live).map_err(std::io::Error::other)?;
+    let mcp_client_factory = superwire_mcp::HttpMcpClientFactory::for_network_policy(server_config.mcp_network_policy());
+    let model_provider = CerseiModelProvider::for_network_policy(server_config.provider_network_policy());
+    let service = ExecutorService::with_agent_cache_config(model_provider, cache_config, cache_time_to_live)
+        .map_err(std::io::Error::other)?
+        .with_mcp_client_factory(Arc::new(mcp_client_factory));
 
     axum::serve(listener, executor_router_with_service(service, disable_playground)).await
 }
@@ -120,11 +154,19 @@ pub async fn serve_executor_with_agent_cache(
 async fn execute_handler<ModelProviderType>(
     State(state): State<ExecutorRouterState<ModelProviderType>>,
     request_headers: HeaderMap,
-    Json(request): Json<ExecutionRequest>,
+    request: Result<Json<ExecutionRequest>, JsonRejection>,
 ) -> Result<Response, ExecutorHttpError>
 where
     ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
 {
+    let Json(request) = request.map_err(|error| ExecutorHttpError::invalid_request(format!("invalid JSON request body: {error}")))?;
+
+    if request.options.max_concurrency == 0 || request.options.max_concurrency > MAX_REQUEST_CONCURRENCY {
+        return Err(ExecutorHttpError::invalid_request(format!(
+            "`options.max_concurrency` must be between 1 and {MAX_REQUEST_CONCURRENCY}"
+        )));
+    }
+
     match ExecuteResponseKind::from_headers(&request_headers) {
         ExecuteResponseKind::Json => {
             let response = state.service.execute(request).await?;
@@ -133,9 +175,9 @@ where
         }
 
         ExecuteResponseKind::EventStream => {
-            let stream_subscription = state.service.start_streamed_execution(request);
+            let stream_subscription = state.service.start_streamed_execution(request)?;
             let run_identifier = stream_subscription.run_identifier.clone();
-            let event_stream = UnboundedReceiverStream::new(stream_subscription.receiver).map(event_to_sse_result);
+            let event_stream = ReceiverStream::new(stream_subscription.receiver).map(event_to_sse_result);
 
             Ok(sse_response(event_stream, &run_identifier))
         }
@@ -144,13 +186,14 @@ where
 
 async fn invalidate_cache_handler<ModelProviderType>(
     State(state): State<ExecutorRouterState<ModelProviderType>>,
-    request: Option<Json<CacheInvalidationRequest>>,
+    request: Result<Json<CacheInvalidationRequest>, JsonRejection>,
 ) -> Result<Response, ExecutorHttpError>
 where
     ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
 {
-    let Some(cache_key) = request.as_ref().and_then(|Json(request)| request.cache_key_identifier()) else {
-        return Ok(StatusCode::BAD_REQUEST.into_response());
+    let Json(request) = request.map_err(|error| ExecutorHttpError::invalid_request(format!("invalid JSON request body: {error}")))?;
+    let Some(cache_key) = request.cache_key_identifier() else {
+        return Err(ExecutorHttpError::invalid_request("`cache_key` must be a non-empty string"));
     };
 
     let cache_session = AgentCacheSession::new(cache_key);
@@ -166,28 +209,26 @@ async fn cancel_stream_handler<ModelProviderType>(
 where
     ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
 {
-    if !state.service.cancel_streamed_execution(&run_identifier) {
-        return Ok(StatusCode::NOT_FOUND.into_response());
-    }
+    let transition = state.service.cancel_streamed_execution(&run_identifier);
 
-    Ok(StatusCode::NO_CONTENT.into_response())
+    Ok(Json(CancelExecutionResponse { transition }).into_response())
 }
 
 async fn reconnect_stream_handler<ModelProviderType>(
     State(state): State<ExecutorRouterState<ModelProviderType>>,
     Path(run_identifier): Path<String>,
-    Query(reconnect_parameters): Query<StreamReconnectParameters>,
+    reconnect_parameters: Result<Query<StreamReconnectParameters>, QueryRejection>,
     request_headers: HeaderMap,
 ) -> Result<Response, ExecutorHttpError>
 where
     ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
 {
-    let last_event_identifier = reconnect_parameters.last_event_identifier(&request_headers);
-    let Some(stream_subscription) = state.service.reconnect_streamed_execution(&run_identifier, last_event_identifier) else {
-        return Ok(StatusCode::NOT_FOUND.into_response());
-    };
+    let Query(reconnect_parameters) =
+        reconnect_parameters.map_err(|error| ExecutorHttpError::invalid_request(format!("invalid query parameters: {error}")))?;
 
-    let event_stream = UnboundedReceiverStream::new(stream_subscription.receiver).map(event_to_sse_result);
+    let last_event_identifier = reconnect_parameters.last_event_identifier(&request_headers)?;
+    let stream_subscription = state.service.reconnect_streamed_execution(&run_identifier, last_event_identifier)?;
+    let event_stream = ReceiverStream::new(stream_subscription.receiver).map(event_to_sse_result);
 
     Ok(sse_response(event_stream, &run_identifier))
 }
@@ -199,13 +240,22 @@ struct StreamReconnectParameters {
 }
 
 impl StreamReconnectParameters {
-    fn last_event_identifier(&self, request_headers: &HeaderMap) -> Option<u64> {
-        self.after.or_else(|| {
-            request_headers
-                .get("last-event-id")
-                .and_then(|header_value| header_value.to_str().ok())
-                .and_then(|header_value| header_value.parse::<u64>().ok())
-        })
+    fn last_event_identifier(&self, request_headers: &HeaderMap) -> Result<Option<u64>, ExecutorHttpError> {
+        if self.after.is_some() {
+            return Ok(self.after);
+        }
+
+        let Some(header_value) = request_headers.get("last-event-id") else {
+            return Ok(None);
+        };
+        let header_value = header_value
+            .to_str()
+            .map_err(|error| ExecutorHttpError::invalid_request(format!("invalid `last-event-id` header: {error}")))?;
+        let event_identifier = header_value
+            .parse::<u64>()
+            .map_err(|error| ExecutorHttpError::invalid_request(format!("invalid `last-event-id` header: {error}")))?;
+
+        Ok(Some(event_identifier))
     }
 }
 
@@ -253,31 +303,37 @@ impl ExecuteResponseKind {
 
 async fn validate_handler<ModelProviderType>(
     State(state): State<ExecutorRouterState<ModelProviderType>>,
-    Json(request): Json<ValidationRequest>,
+    request: Result<Json<ValidationRequest>, JsonRejection>,
 ) -> Result<Response, ExecutorHttpError>
 where
     ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
 {
+    let Json(request) = request.map_err(|error| ExecutorHttpError::invalid_request(format!("invalid JSON request body: {error}")))?;
+
     Ok(Json(state.service.validate(request)?).into_response())
 }
 
 async fn graph_handler<ModelProviderType>(
     State(state): State<ExecutorRouterState<ModelProviderType>>,
-    Json(request): Json<GraphRequest>,
+    request: Result<Json<GraphRequest>, JsonRejection>,
 ) -> Result<Response, ExecutorHttpError>
 where
     ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
 {
+    let Json(request) = request.map_err(|error| ExecutorHttpError::invalid_request(format!("invalid JSON request body: {error}")))?;
+
     Ok(Json(state.service.graph(request)?).into_response())
 }
 
 async fn format_handler<ModelProviderType>(
     State(state): State<ExecutorRouterState<ModelProviderType>>,
-    Json(request): Json<FormatRequest>,
+    request: Result<Json<FormatRequest>, JsonRejection>,
 ) -> Result<Response, ExecutorHttpError>
 where
     ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
 {
+    let Json(request) = request.map_err(|error| ExecutorHttpError::invalid_request(format!("invalid JSON request body: {error}")))?;
+
     Ok(Json(state.service.format(request)?).into_response())
 }
 

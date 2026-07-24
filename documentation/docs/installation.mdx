@@ -1,59 +1,151 @@
 ---
 title: Installation
-description: Run the Superwire executor and configure model access.
+description: Install the executor, CLI, language server, documentation tools, or Laravel client.
 ---
 
-The recommended way to run Superwire is the Docker executor.
+## Runtime paths
+
+| Path | Requirements | Command | Notes |
+| --- | --- | --- | --- |
+| Docker executor | Docker-compatible runtime | `docker run --rm -p 13703:13703 rmilewski/superwire:latest` | Published for Linux AMD64 and ARM64; includes Playground and CLI. |
+| Native binaries | Rust 1.94 | `cargo build --release -p superwire-executor-server -p superwire-cli -p superwire-lsp` | Produces `superwire-executor`, `superwire-cli`, and `superwire-lsp`. |
+| Playground development | Rust 1.94, Node.js 22 | `just playground` | Executor on `3000`; Vite on `3001`. |
+| Laravel client | PHP 8.4, Laravel 12 or 13 | `composer require superwire/superwire-laravel` | Also run an executor and set its URL. |
+| Documentation | Node.js 22 | `npm ci && npm run dev` in `documentation/docs` | Mint requires Node.js 20.17 or newer; this repository standardizes on 22. |
+| IntelliJ plugin build | Rust 1.94, Java 21; JetBrains build 243–253.* | `./gradlew buildPlugin` in `editors/intellij` | Creates an installable ZIP under `build/distributions`; no Marketplace publish is configured. |
+
+<Warning>
+  Superwire is pre-1.0. The `latest` image follows the current main branch. Use a published `sha-&lt;commit&gt;` image tag for a reproducible deployment.
+</Warning>
+
+## Run Docker
 
 ```bash
-docker run --rm -p 13703:13703 rmilewski/superwire
+docker run --rm -p 13703:13703 rmilewski/superwire:latest
 ```
 
-The executor exposes:
+The executor listens on `0.0.0.0:13703` and serves:
 
 - `POST /execute`
+- `POST /execute/{run_id}/cancel`
+- `GET /execute/{run_id}/events`
+- `POST /cache/invalidate`
 - `POST /validate`
+- `POST /graph`
 - `POST /format`
+- `GET /lsp` as a WebSocket upgrade
+- `/playground` and its assets unless `--disable-playground` is set
 
-For `/execute`, set `Accept: text/event-stream` to receive Server-Sent Events.
+There is no dedicated health endpoint. For local readiness, open `http://localhost:13703/playground`. For automated readiness, send a harmless valid request to `/validate` and require HTTP 200.
 
-## Runtime requirements
+## Use the CLI from the image
 
-Your executor host needs:
-
-- Docker or a compatible container runtime.
-- Network access to the model provider endpoint used by the workflow.
-- Network access to any MCP servers imported by the workflow.
-
-## Provider setup
-
-A workflow creates provider instances supported by the executor.
-
-At the moment, executor provider support is OpenAI-compatible endpoints that implement `/responses`.
-
-```wire
-secrets {
-    api_key: string
-}
-
-provider llm from openai {
-    endpoint: "https://api.openai.com/v1"
-    api_key: secrets.api_key
-}
-
-model fast from llm {
-    id: "gpt-4.1-mini"
-}
+```bash
+docker run --rm \
+  --entrypoint superwire-cli \
+  -v "$PWD:/work" \
+  -w /work \
+  rmilewski/superwire:latest \
+  workflow check hello.wire
 ```
 
-The provider instance configures access to the backend. The model profile selects the provider-specific model ID used by agents.
+See [CLI](/cli) for native and Docker examples.
 
-## Health checks
+## Executor options
 
-A deployment should verify that the executor is reachable before sending workflow traffic. The exact health endpoint depends on the executor build and deployment configuration.
+```text
+--address <ADDRESS>                default: 0.0.0.0:13703
+--disable-playground
+--mcp-network-policy <disabled|public-only|trusted>  default: disabled
+--provider-network-policy <built-in-only|public-only|trusted>  default: built-in-only
+--cache-driver <in-memory|redis>   default: in-memory
+--cache-ttl <DURATION>             default: 1h
+--redis-host <HOST>                default: 127.0.0.1:6379
+--redis-password <PASSWORD>
+--redis-database <NUMBER>          default: 0
+```
 
-## See also
+## Executor MCP network policy
 
-- [Quickstart](/quickstart)
-- [Executor API](/api-reference/executor-api)
-- [OpenAI-Compatible Providers](/integrations/openai)
+`--mcp-network-policy` is process configuration selected by the executor operator. Its server-config default is `Disabled` (`disabled`), and HTTP request bodies cannot enable or override it.
+
+| Value | `/execute`, `/validate`, and `/graph` behavior |
+| --- | --- |
+| `disabled` | Workflows that require MCP discovery fail before an outbound MCP request. Workflows without MCP continue normally. |
+| `public-only` | Allows absolute HTTP(S) MCP URLs without user information only when every resolved address is public. |
+| `trusted` | Still requires HTTP(S) and rejects URL user information, but permits private and local endpoints. Use only for reviewed workflows and trusted networks. |
+
+Both network-enabled policies disable environment proxies and automatic redirects and reject redirect responses. `public-only` additionally rejects local, private, link-local, multicast, reserved, documentation, and cloud-metadata IPv4/IPv6 destinations, DNS-resolves hostnames, and pins the approved normalized address set and port in the HTTP resolver. These are MCP SSRF controls, not a network sandbox; apply normal host or container egress controls as well. Only HTTP JSON-RPC MCP transport is implemented—stdio and local-process transports are not enabled.
+
+Run an executor that may reach only public MCP endpoints while binding its API to the local host:
+
+```bash
+docker run --rm \
+  -p 127.0.0.1:13703:13703 \
+  rmilewski/superwire:latest \
+  --mcp-network-policy public-only
+```
+
+For an explicitly trusted local or private MCP server, opt in at process startup:
+
+```bash
+docker run --rm \
+  --add-host=host.docker.internal:host-gateway \
+  -p 127.0.0.1:13703:13703 \
+  rmilewski/superwire:latest \
+  --mcp-network-policy trusted
+```
+
+## Executor provider network policy
+
+`--provider-network-policy` is process configuration selected by the executor operator. HTTP request bodies and workflow source cannot change it.
+
+| Value | Model-provider behavior |
+| --- | --- |
+| `built-in-only` | Allows only the selected driver’s exact built-in endpoint. This is the server default. |
+| `public-only` | Also allows custom HTTPS endpoints only when every resolved address is public. |
+| `trusted` | Also allows custom HTTP/HTTPS endpoints that resolve to public, private, or local addresses. Use only for reviewed workflows and trusted networks. |
+
+Every custom endpoint must be absolute HTTP(S) without URL user information, a query, or a fragment. The executor validates and DNS-resolves it before selecting credentials, pins the approved address set and port into one shared completion/upload/delete client, ignores environment proxies, and rejects redirects. `public-only` additionally rejects local, private, link-local, multicast, reserved, documentation, and cloud-metadata IPv4/IPv6 destinations. Provider response bodies, SSE frames, total stream bytes, tool arguments, connect time, and total request time are bounded; truncated streams fail rather than returning partial output. These are SSRF and resource controls, not a network sandbox.
+
+The CLI deliberately uses `trusted` for provider execution to preserve local-provider workflows. Run untrusted CLI workflows inside an OS/container egress boundary.
+
+## Docker networking
+
+`localhost` inside the executor container refers to the container, not the host. A provider or MCP server running on the host needs a host-reachable address.
+
+On Docker Desktop, use `host.docker.internal`. On Linux Engine, add the host gateway:
+
+```bash
+docker run --rm \
+  --add-host=host.docker.internal:host-gateway \
+  -p 13703:13703 \
+  rmilewski/superwire:latest
+```
+
+Then use an endpoint such as `http://host.docker.internal:11434/v1` for host Ollama.
+
+## Provider credentials
+
+Built-in drivers have default endpoints. Most also read a driver-specific environment variable when the `.wire` provider omits `api_key`. A typed `secrets` reference is preferred when the caller should supply the key per request.
+
+Never commit a real key in a `.wire` file. See [Provider matrix](/integrations/providers).
+
+## Laravel
+
+```bash
+composer require superwire/superwire-laravel
+```
+
+Set the Docker executor URL explicitly:
+
+```dotenv
+SUPERWIRE_EXECUTOR_URL=http://localhost:13703
+SUPERWIRE_EXECUTOR_TIMEOUT=300
+```
+
+Package auto-discovery registers its service provider. Publishing `superwire-config` is optional. See [Laravel integration](/integrations/laravel).
+
+## Next step
+
+Continue to [Quickstart](/quickstart) and run the checked hello workflow.

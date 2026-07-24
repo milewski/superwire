@@ -1,0 +1,30 @@
+```wire hello.wire
+input {
+    name: string
+}
+
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+agent greeting {
+    model: model.fast
+    instruction: "Greet {{ input.name }} in one friendly sentence."
+
+    output {
+        message: string
+    }
+}
+
+output {
+    message: agent.greeting.message
+}
+```

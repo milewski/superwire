@@ -1,29 +1,49 @@
 ---
 title: Rust API
-description: Parse, validate, and execute workflows from Rust when embedding the runtime directly.
+description: Parse and validate workflows when working inside the Superwire Rust workspace.
 ---
 
-The Docker executor is the recommended path for application integration. The Rust API is useful for runtime-level work such as parser validation, executor internals, and deterministic tests.
+The HTTP executor is the supported application boundary. The Rust crates are useful for Superwire development, language tooling, runtime embedding experiments, and deterministic tests, but they are pre-1.0 and are not documented here as a stable crates.io SDK.
 
-Provider drivers are implemented by the Superwire engine. Application code should not be documented as registering arbitrary provider drivers.
-
-## Typical responsibilities
-
-- parse `.wire` source into an AST
-- validate declarations, references, schemas, and dependencies
-- execute workflows in runtime-level tests
-
-## Example shape
+## Parse and validate
 
 ```rust
 use superwire_dsl::{parse_workflow, validate_workflow};
 
-let workflow = parse_workflow(source)?;
-let report = validate_workflow(&workflow);
+fn assert_valid_workflow(source: &str, source_name: &str) {
+    let workflow = parse_workflow(source).expect("workflow should parse");
+    let report = validate_workflow(&workflow);
 
-if !report.is_valid() {
-    panic!("invalid workflow: {:?}", report.issues);
+    assert!(
+        report.is_valid(),
+        "{}",
+        report.render_with_source(source, source_name),
+    );
 }
 ```
 
-Prefer [Executor API](/api-reference/executor-api) for product integration unless you need direct runtime control.
+`ValidationReport::issues()` returns the issues slice when a caller needs structured Rust values. The `issues` field itself is private.
+
+## Opaque schema cache identifiers
+
+`WorkflowType::schema_cache_key()` returns a `String` for internal schema caching, but its text is an opaque, version-specific structural identifier. Do not parse it, persist it across builds, or compare it with an older delimiter-based representation. The current encoder uses recursive tags and length prefixes so delimiter-shaped enum/case/field names cannot alias another type.
+
+This API is unrelated to the application-controlled HTTP `options.cache_key`.
+
+## Workspace dependencies
+
+Inside this repository, depend on workspace crates by path:
+
+```toml
+[dependencies]
+superwire-dsl = { path = "../superwire/crates/superwire-dsl" }
+superwire-executor = { path = "../superwire/crates/superwire-executor" }
+```
+
+Adjust paths for the embedding workspace. Do not assume semantic-version compatibility before a stable package release.
+
+## Runtime embedding
+
+Runtime embedding also requires a model-provider implementation, MCP client behavior, cache configuration, and event handling. Those contracts are lower-level than the HTTP service and can change with executor internals.
+
+Use [Executor API](/api-reference/executor-api) for product integration unless the application intentionally owns those Rust runtime responsibilities.

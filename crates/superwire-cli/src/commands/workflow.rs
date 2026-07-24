@@ -27,7 +27,7 @@ impl WorkflowCommand {
     pub fn execute_with_mcp_client_factory(self, mcp_client_factory: &dyn McpClientFactory) -> Result<(), CommandError> {
         match self.command {
             WorkflowSubcommand::Check(check_workflow_command) => check_workflow_command.execute(),
-            WorkflowSubcommand::Run(run_workflow_command) => run_workflow_command.execute(),
+            WorkflowSubcommand::Run(run_workflow_command) => run_workflow_command.execute_with_mcp_client_factory(mcp_client_factory),
             WorkflowSubcommand::Lock(lock_workflow_command) => lock_workflow_command.execute_with_mcp_client_factory(mcp_client_factory),
             WorkflowSubcommand::Vars(vars_workflow_command) => vars_workflow_command.execute(),
         }

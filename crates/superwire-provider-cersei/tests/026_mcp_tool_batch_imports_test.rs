@@ -18,7 +18,7 @@ async fn scripts_provider_tool_calls_and_mcp_tool_responses() {
                     .turn()
                     .expect_prompt("Manage project tasks")
                     .expect_tools(["assign_task", "create_sorting_task", "update_task_status"])
-                    .expect_tool_with_schema("create_sorting_task", provider_tool_schema(schema! { title: String }))
+                    .expect_tool_with_schema("create_sorting_task", schema! { title: String })
                     .respond_tool_calls([call!("create_sorting_task", { "title": "first" })]);
 
                 model
@@ -69,38 +69,6 @@ fn assert_mcp_tool_was_called_with(requests: &[FakeMcpRequest], tool_name: &str,
     assert_eq!(tool_call.arguments, expected_arguments);
 }
 
-fn provider_tool_schema(schema: Value) -> Value {
-    let mut normalized_schema = schema;
-
-    remove_integer_format_fields(&mut normalized_schema);
-
-    if let Some(schema_object) = normalized_schema.as_object_mut() {
-        schema_object.insert("additionalProperties".to_string(), json!(false));
-    }
-
-    normalized_schema
-}
-
-fn remove_integer_format_fields(schema_value: &mut Value) {
-    match schema_value {
-        Value::Object(schema_object) => {
-            if schema_object.get("type") == Some(&json!("integer")) {
-                schema_object.remove("format");
-            }
-
-            for nested_schema in schema_object.values_mut() {
-                remove_integer_format_fields(nested_schema);
-            }
-        }
-        Value::Array(schema_array) => {
-            for nested_schema in schema_array {
-                remove_integer_format_fields(nested_schema);
-            }
-        }
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
-    }
-}
-
 #[tokio::test]
 async fn sends_model_tool_call_argument_errors_back_to_model() {
     let task_schema = schema! { title: String };
@@ -114,7 +82,7 @@ async fn sends_model_tool_call_argument_errors_back_to_model() {
                     .turn()
                     .expect_prompt("Manage project tasks")
                     .expect_tools(["assign_task", "create_sorting_task", "update_task_status"])
-                    .expect_tool_with_schema("create_sorting_task", provider_tool_schema(schema! { title: String }))
+                    .expect_tool_with_schema("create_sorting_task", schema! { title: String })
                     .respond_tool_calls([call!("create_sorting_task", { "title": 123 })]);
 
                 model.turn().respond_json(json!({ "value": "recovered" }));
@@ -198,7 +166,7 @@ async fn sends_error_back_when_model_receives_incorrect_tool_schema() {
                 model
                     .turn()
                     .expect_prompt("Manage project tasks")
-                    .expect_tool_with_schema("create_sorting_task", provider_tool_schema(schema! { title: i64 }))
+                    .expect_tool_with_schema("create_sorting_task", schema! { title: i64 })
                     .respond_tool_calls([call!("create_sorting_task", { "title": "not a number" })]);
 
                 model.turn().respond_json(json!({ "value": "recovered from bad schema" }));

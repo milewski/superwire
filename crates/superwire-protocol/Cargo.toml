@@ -11,3 +11,4 @@ base64 = "0.22"
 serde = { workspace = true }
 serde_json = { workspace = true }
 superwire-semantic = { path = "../superwire-semantic" }
+superwire-types = { path = "../superwire-types" }

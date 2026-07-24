@@ -1,7 +1,6 @@
 use lsp_types::{CompletionItemKind, Position};
 use superwire_dsl::{ReferenceKeyword, ToolCallKeyword, ToolPropertyName, TypeExpression, TypedField};
 
-use super::super::position::byte_offset_for_position;
 use super::super::scope::tool_property_scope_suggestions;
 use super::super::semantic_index::SemanticIndex;
 use super::super::text_utils::trailing_identifier;
@@ -16,7 +15,7 @@ pub(super) struct ToolCallBindingCompletionContext {
 
 impl DocumentState {
     pub(in crate::document) fn tool_schema_property_name_at_position(&self, position: Position) -> Option<ToolPropertyName> {
-        let cursor_offset = byte_offset_for_position(&self.text, position)?;
+        let cursor_offset = self.byte_offset(position)?;
         let source_prefix = &self.text[..cursor_offset];
 
         [ToolPropertyName::Input, ToolPropertyName::Bindings, ToolPropertyName::Output]
@@ -58,7 +57,7 @@ impl DocumentState {
             return None;
         }
 
-        let cursor_offset = byte_offset_for_position(&self.text, position)?;
+        let cursor_offset = self.byte_offset(position)?;
         let source_prefix = &self.text[..cursor_offset];
         let bindings_keyword = ToolPropertyName::Bindings.as_str();
         let bindings_keyword_index = source_prefix.rfind(bindings_keyword)?;

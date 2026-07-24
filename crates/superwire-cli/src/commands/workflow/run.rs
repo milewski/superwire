@@ -5,7 +5,9 @@ use clap::Args;
 use serde_json::Value;
 use superwire_dsl::parse_workflow;
 use superwire_executor::{AgentCacheDriver, AgentCacheOptions, AgentCacheSession, AgentCacheTimeToLive, ExecutorError, WorkflowExecutor};
-use superwire_provider_cersei::CerseiModelProvider;
+use superwire_mcp::McpClientFactory;
+use superwire_provider_cersei::{CerseiModelProvider, ProviderNetworkPolicy};
+use superwire_semantic::WorkflowSemanticError;
 
 use super::json::WorkflowPayloadSources;
 use super::schema::CliRuntimeSchemaContext;
@@ -45,11 +47,11 @@ pub(super) struct RunWorkflowCommand {
 }
 
 impl RunWorkflowCommand {
-    pub(super) fn execute(self) -> Result<(), CommandError> {
+    pub(super) fn execute_with_mcp_client_factory(self, mcp_client_factory: &dyn McpClientFactory) -> Result<(), CommandError> {
         self.payload_sources().validate()?;
 
-        let input_value = self.payload_sources().input_value()?;
-        let secrets_value = self.payload_sources().secrets_value()?;
+        let input_value = Value::Object(self.payload_sources().input_value()?);
+        let secrets_value = Value::Object(self.payload_sources().secrets_value()?);
 
         let async_runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -60,23 +62,37 @@ impl RunWorkflowCommand {
             .map_err(|error| CommandError::internal(format!("failed to read workflow file {}: {error}", self.workflow_path.display())))?;
 
         let parsed_workflow = parse_workflow(&workflow_source).map_err(|error| {
-            CommandError::internal(error.render_for_output_target(&workflow_source, &self.workflow_path.display().to_string()))
+            let details = error.render_for_output_target(&workflow_source, &self.workflow_path.display().to_string());
+            let semantic_error = WorkflowSemanticError::ParseFailed {
+                source: Box::new(error),
+                details,
+            };
+
+            Self::map_workflow_runtime_error(ExecutorError::Semantic(semantic_error))
         })?;
 
+        let workflow_executor = if parsed_workflow
+            .declarations()
+            .iter()
+            .any(|declaration| matches!(declaration, superwire_dsl::Declaration::McpServer(_)))
+        {
+            WorkflowExecutor::from_source_with_runtime_values_and_mcp_client_factory(
+                &workflow_source,
+                &input_value,
+                &secrets_value,
+                mcp_client_factory,
+            )
+        } else {
+            WorkflowExecutor::from_source(&workflow_source)
+        }
+        .map_err(Self::map_workflow_runtime_error)?;
         let _runtime_schema_context = CliRuntimeSchemaContext::from_workflow(&parsed_workflow)?;
-        let workflow_executor =
-            WorkflowExecutor::from_source(&workflow_source).map_err(|error| CommandError::internal(error.to_string()))?;
         let cache_options = self.cache_options()?;
 
+        let model_provider = CerseiModelProvider::for_network_policy(ProviderNetworkPolicy::Trusted);
+
         let output_value = async_runtime
-            .block_on(workflow_executor.execute_with_cache(
-                Value::Object(input_value),
-                Value::Object(secrets_value),
-                &CerseiModelProvider,
-                None,
-                10,
-                cache_options,
-            ))
+            .block_on(workflow_executor.execute_with_cache(input_value, secrets_value, &model_provider, None, 10, cache_options))
             .map_err(Self::map_workflow_runtime_error)?;
 
         if self.pretty {
@@ -126,12 +142,18 @@ impl RunWorkflowCommand {
     }
 
     fn map_workflow_runtime_error(error: ExecutorError) -> CommandError {
-        CommandError::internal_with_details(
-            error.to_string(),
+        let message = error.to_string();
+        let details = serde_json::to_value(error.diagnostic()).unwrap_or_else(|serialization_error| {
             serde_json::json!({
-                "type": "workflow_runtime_error",
-                "error": error.to_string(),
-            }),
-        )
+                "code": "internal_error",
+                "message": format!("failed to serialize workflow diagnostic: {serialization_error}"),
+            })
+        });
+
+        if error.is_client_error() {
+            CommandError::invalid_input_with_details(message, details)
+        } else {
+            CommandError::internal_with_details(message, details)
+        }
     }
 }

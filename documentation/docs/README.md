@@ -1,40 +1,85 @@
 # Superwire documentation
 
-This directory contains the Mintlify documentation for the Superwire workflow DSL.
+This directory is the Mint documentation site for Superwire developers. It starts with a progressive Playground, CLI, HTTP, or Laravel path and keeps complete `.wire` examples in imported checked snippets.
 
-The documentation is written for application developers who execute `.wire` files through the Docker executor service.
+## Requirements
 
-## Structure
+- Node.js 22
+- npm
+- Rust 1.94 when validating workflow fixtures with a locally built CLI
 
-- `introduction.mdx`, `quickstart.mdx`, `installation.mdx`: first-run onboarding around the executor HTTP API
-- `why-superwire/`: product positioning, benefits, use cases, comparison, and adoption guidance
-- `core-concepts/`: workflow mental model and declaration reference
-- `syntax/`: grammar-level DSL reference
-- `mcp/`: MCP server, tool, resource, prompt, and batch import usage
-- `guides/`: practical workflow authoring conventions
-- `api-reference/executor-api.mdx`: `/execute`, `/validate`, and `/format` request/response contract, including event-stream mode via `Accept: text/event-stream`
-- `examples/`: complete `.wire` examples
-- `docs.json`: Mintlify navigation and site configuration
+## Source layout
 
-## Run locally
+- `index.mdx`, `introduction.mdx`, `installation.mdx`, `quickstart.mdx`: developer entry journey
+- `cli.mdx`, `playground.mdx`, `editor-setup.mdx`, `troubleshooting.mdx`: operational authoring guides
+- `core-concepts/`: workflow mental model
+- `syntax/`: language reference
+- `mcp/`: capability and lockfile usage
+- `api-reference/`: executor, events, diagnostics, LSP, and Rust contracts
+- `integrations/`: provider and Laravel clients
+- `examples/`: progressive pages
+- `examples/wire/`: reusable MDX snippets containing exactly one checked `wire` fence
+- `scripts/check-wire-fixtures.mjs`: extracts fixture fences and runs `superwire-cli workflow check`
+- `scripts/check-release-contracts.mjs`: guards release workflow, generated-artifact, cache, streaming, Laravel, and dependency contracts
+- `docs.json`: navigation and site configuration
+
+## Install
 
 ```bash
 cd documentation/docs
-npx mintlify dev
+npm ci
 ```
 
-## Validate the docs
+The package uses the supported `mint` CLI package, not the legacy `mintlify` package.
+
+## Preview
+
+```bash
+npm run dev
+```
+
+## Validate
+
+Build the CLI once from the repository root:
+
+```bash
+cargo build -p superwire-cli
+```
+
+Then run documentation checks:
 
 ```bash
 cd documentation/docs
-npx mintlify lint
+npm run check:contracts
+npm run check:wire
+npm run validate
+npm run links
+npm run a11y
 ```
+
+`links` checks internal routes, anchors, redirects, and imported snippets. External links are intentionally not part of deterministic CI.
+
+`check:contracts` keeps Docker publish concurrency, immutable image tags, Pages asset inputs, generated-cache ignores, fail-closed cache invalidation, Laravel result boundaries, and the pinned Mint/js-yaml overrides synchronized with their source contracts. `npm test` runs every check above in the same order used for final documentation verification.
+
+## Reuse a checked workflow
+
+Mint supports importing `.mdx` snippets. A fixture such as `examples/wire/hello.mdx` contains one code fence and is imported by a page:
+
+```mdx
+import HelloWorkflow from "/examples/wire/hello.mdx";
+
+<HelloWorkflow />
+```
+
+Do not copy the workflow into another page. Update the fixture and let every import render the same checked source.
 
 ## Writing rules
 
-- Lead with the Docker executor and HTTP payloads.
-- Use `instruction:` for agent prompts.
-- Use `uses:` for agent tool access.
-- Agent outputs are always object blocks, for example `output { answer: string }`.
-- Document the current unreleased language directly; avoid historical compatibility notes.
-- Keep examples small enough to copy into a single `.wire` file.
+- Use current `instruction:` syntax.
+- Every agent has an object-shaped `output {}` block; schema reuse appears as a typed field.
+- Put deterministic application values in tool `bindings`, not model-visible input.
+- Use enum-backed/current DSL names and references; dynamic values include the `dynamic.` root.
+- Never put literal ellipses or obsolete syntax in a `wire` fence.
+- Label incomplete syntax blocks as fragments in prose.
+- Document implemented behavior and current limitations directly; derive typed errors/events from the protocol and never promise unimplemented editor clients, health routes, or integration features.
+- Keep credentials out of source and examples.

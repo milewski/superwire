@@ -1,18 +1,13 @@
 use axum::response::sse::Event;
-use serde_json::json;
 use std::convert::Infallible;
 use superwire_executor::service::SequencedExecutorEvent;
+use superwire_protocol::event::MAX_SERIALIZED_PUBLIC_EVENT_BYTES;
 
 pub fn event_to_sse_result(sequenced_event: SequencedExecutorEvent) -> Result<Event, Infallible> {
-    let event_name = sequenced_event.event.kind.as_str();
-    let event_identifier = sequenced_event.event_identifier.to_string();
-    let event_data = serde_json::to_string(&sequenced_event.event).unwrap_or_else(|error| {
-        json!({
-            "kind": "workflow_failed",
-            "message": format!("failed to serialize executor event: {error}"),
-        })
-        .to_string()
-    });
+    debug_assert!(sequenced_event.maximum_sse_frame_bytes <= MAX_SERIALIZED_PUBLIC_EVENT_BYTES);
 
-    Ok(Event::default().event(event_name).id(event_identifier).data(event_data))
+    Ok(Event::default()
+        .event(sequenced_event.event.kind.as_str())
+        .id(sequenced_event.event_identifier.to_string())
+        .data(sequenced_event.serialized_data.as_ref()))
 }

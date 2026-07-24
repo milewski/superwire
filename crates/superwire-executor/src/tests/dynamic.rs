@@ -1,5 +1,4 @@
-use super::fixtures;
-use crate::service::ExecutorService;
+use super::{fixtures, support};
 use crate::tests::support::{request_with_input, TestModelProvider, TrackingModelProvider};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -95,7 +94,7 @@ async fn deterministic_tool_call_in_dynamic_block_executes_via_mcp() {
     }
     .replace("__ENDPOINT__", &server.endpoint());
     let model_provider = TestModelProvider::new(vec![json!({ "summary": "done" })]);
-    let service = ExecutorService::new(model_provider);
+    let service = support::service_with_trusted_mcp(model_provider);
 
     let output = service
         .execute(request_with_input(&workflow_source, json!({ "project_id": 42, "task_id": 7 })))
@@ -156,7 +155,7 @@ async fn deterministic_tool_call_result_is_available_in_agent_prompt() {
     }
     .replace("__ENDPOINT__", &server.endpoint());
     let model_provider = TestModelProvider::new(vec![json!({ "value": "processed" })]);
-    let service = ExecutorService::new(model_provider);
+    let service = support::service_with_trusted_mcp(model_provider);
 
     let output = service
         .execute(request_with_input(&workflow_source, json!({ "project_id": 100, "task_id": 200 })))
@@ -197,7 +196,7 @@ async fn deterministic_tool_call_respects_max_calls_limit() {
     }
     .replace("__ENDPOINT__", &server.endpoint());
     let model_provider = TestModelProvider::new(Vec::new());
-    let service = ExecutorService::new(model_provider);
+    let service = support::service_with_trusted_mcp(model_provider);
 
     let execution_error = service
         .execute(request_with_input(&workflow_source, Value::Null))
@@ -250,11 +249,10 @@ async fn agent_dynamic_tool_call_executes_inside_for_loop_agent() {
     .replace("__ENDPOINT__", &server.endpoint());
 
     let model_provider = TrackingModelProvider::new(vec![json!({ "value": "first" }), json!({ "value": "second" })]);
-    let service = ExecutorService::new(model_provider.clone());
+    let service = support::service_with_trusted_mcp(model_provider.clone());
     let mut request = request_with_input(&workflow_source, Value::Null);
 
     request.options = ExecutionOptions {
-        include_events: false,
         max_concurrency: 1,
         use_cache: false,
         cache_key: None,
@@ -343,12 +341,12 @@ fn handle_mcp_request(mut stream: TcpStream, received_tool_arguments: &Arc<Mutex
         let response_body = response_body.to_string();
 
         format!(
-            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nconnection: close\r\ncontent-length: {}\r\n\r\n{}",
             response_body.len(),
             response_body
         )
     } else {
-        "HTTP/1.1 202 Accepted\r\ncontent-length: 0\r\n\r\n".to_string()
+        "HTTP/1.1 202 Accepted\r\nconnection: close\r\ncontent-length: 0\r\n\r\n".to_string()
     };
 
     stream.write_all(response.as_bytes()).expect("response should write");

@@ -1,43 +1,37 @@
 ---
-title: Tool Calling
-description: Advanced notes for controlled MCP tool access.
+title: Tool calling safety
+description: Choose workflow-owned or model-owned calls and preserve application safeguards.
 ---
 
-Agents do not receive every imported tool automatically. Tool access is explicit through `uses`.
+import McpTaskWorkflow from "/examples/wire/mcp-task.mdx";
 
-```wire
-tool fetch_task from mcp.tasks.tool.fetch_task
+<McpTaskWorkflow />
 
-agent researcher {
-    model: model.fast
-    uses: [tool.fetch_task]
-    instruction: "Fetch task context and summarize it."
+## Workflow-owned calls
 
-    output {
-        summary: string
-    }
-}
-```
+Use `dynamic` plus `call tool.name` when the operation is required and its position in the graph is fixed. Supply application-owned scope through `bindings`; supply ordinary call input through `input`.
 
-## Workflow-owned calls versus model-owned calls
+## Model-owned calls
 
-Use a `call` expression when the workflow author decides exactly which tool to call:
+Expose a tool through agent `uses` when model judgment determines whether/how to call it. The model receives only listed tools, prompts, and resources.
 
-```wire
-dynamic {
-    task: call tool.fetch_task {
-        bindings {
-            task_id: input.task_id
-        }
-    }
-}
-```
+## Bound every layer
 
-Use `uses` when the model may decide whether and how to call the tool during the agent step.
+`max_calls` can apply at import, batch, deterministic call, and agent usage scopes. Use the narrowest budget that still supports the workflow. Also bound request concurrency, provider retries, timeout, rate, and domain operations outside the prompt.
 
-## Guardrails
+## Domain guardrails
 
-- Add `input` and `output` schemas to tool declarations when possible.
-- Use `bindings` for trusted runtime values supplied by the workflow.
-- Keep tool names descriptive and scoped to their purpose.
-- Include only the tools, prompts, and resources an agent needs.
+Superwire tool scope does not replace:
+
+- authentication and authorization inside the MCP server;
+- tenant scoping derived from trusted bindings;
+- idempotency for writes;
+- transactions and uniqueness constraints;
+- human approval for destructive work;
+- rate limits, audit logs, and cost controls.
+
+## Validate and observe
+
+Declare input/output schemas, generate/review MCP locks, and consume public tool/MCP validation/call event metadata. These events report names, durations, diagnostics, and result shapes—not argument values, schemas, or returned payloads. A model tool call can fail even when source validation succeeds because remote availability and returned data are runtime concerns.
+
+See [MCP tools](/mcp/tools), [MCP lockfiles](/mcp/lockfiles), and [Streaming and events](/api-reference/streaming-events).

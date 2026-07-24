@@ -1,103 +1,117 @@
 ---
-title: Laravel Integration
-description: Execute, stream, validate, format, map, and fake workflows from Laravel.
+title: Laravel integration
+description: Configure, execute, stream, validate, format, map, and fake workflows from Laravel.
 ---
 
-Laravel applications use the `Superwire\Laravel\Workflow` fluent API to send workflows to the executor.
+import HelloWorkflow from "/examples/wire/hello.mdx";
 
-## Install package
+## Requirements
+
+- PHP `8.4`;
+- Laravel/Illuminate `12` or `13`;
+- a reachable Superwire executor.
+
+## Install and configure
 
 ```bash
 composer require superwire/superwire-laravel
 ```
 
-## Run a workflow from a file
+The package uses Laravel auto-discovery. Its executor defaults to `http://localhost:13703`; set it explicitly for each environment:
 
-```php
-use Superwire\Laravel\Workflow;
-
-$result = Workflow::fromFile(resource_path('workflows/reply.wire'))
-    ->inputs([
-        'message' => 'Write a short welcome message.',
-    ])
-    ->secrets([
-        'api_key' => config('services.openai.key'),
-    ])
-    ->run();
-
-$output = $result->output;
+```dotenv
+SUPERWIRE_EXECUTOR_URL=http://localhost:13703
+SUPERWIRE_EXECUTOR_TIMEOUT=300
 ```
 
-## Run a workflow from source
+Publishing the config is optional:
+
+```bash
+php artisan vendor:publish --tag=superwire-config
+```
+
+Run the executor before the first request:
+
+```bash
+docker run --rm -p 13703:13703 rmilewski/superwire:latest
+```
+
+## Add the checked workflow
+
+Save this as `resources/workflows/hello.wire`:
+
+<HelloWorkflow />
+
+## Run from a file
 
 ```php
 use Superwire\Laravel\Workflow;
 
-$source = <<<'WIRE'
-input {
-    message: string
-}
+$result = Workflow::fromFile(resource_path('workflows/hello.wire'))
+    ->inputs(['name' => 'Ada'])
+    ->secrets(['api_key' => config('services.openai.key')])
+    ->run();
 
-secrets {
-    api_key: string
-}
+$message = $result->output['message'];
+```
 
-provider llm from openai {
-    endpoint: "https://api.openai.com/v1"
-    api_key: secrets.api_key
-}
+`WorkflowResult` exposes `output`, a safe `context`, and an optional typed `transportIdentity`. Ordinary array/JSON serialization returns exactly:
 
-model fast from llm {
-    id: "gpt-4.1-mini"
-}
+```php
+[
+    'output' => $result->output,
+    'context' => [
+        'input_count' => $result->context->inputCount,
+        'cache_key_provided' => $result->context->cacheKeyProvided,
+        'retained_history_event_count' => $result->context->retainedHistoryEventCount,
+    ],
+]
+```
 
-agent reply {
-    model: model.fast
-    instruction: "Reply to {{ input.message }}"
+The context never contains submitted input or secrets, a cache-key value, event history, or transport identifiers. Output is application-owned and may still be sensitive. The non-serialized `transportIdentity` carries the run and terminal event identifiers for a completed stream.
 
-    output {
-        message: string
-    }
-}
+## Run inline source
 
-output {
-    message: agent.reply.message
-}
-WIRE;
+```php
+$source = file_get_contents(resource_path('workflows/hello.wire'));
 
 $result = Workflow::fromSource($source)
-    ->inputs(['message' => 'Hello'])
+    ->inputs(['name' => 'Ada'])
     ->secrets(['api_key' => config('services.openai.key')])
     ->run();
 ```
 
-## Cache key
+Prefer files for reviewable application workflows. Inline source is useful when source is already managed by the application.
 
-Use `cacheKey()` to opt into executor caching for a specific client-controlled scope. Reuse the same key to reuse matching cached agent outputs, or change the key to start a fresh cache scope.
+## Cache scope
 
 ```php
-$result = Workflow::fromFile(resource_path('workflows/reply.wire'))
-    ->inputs(['message' => 'Hello'])
+$result = Workflow::fromFile(resource_path('workflows/hello.wire'))
+    ->inputs(['name' => 'Ada'])
     ->secrets(['api_key' => config('services.openai.key')])
     ->cacheKey("tenant:{$tenantId}:conversation:{$conversationId}")
     ->run();
 ```
 
-## Stream workflow events
+A non-empty key enables executor cache access. Changing it starts a new scope but does not delete old entries. The Laravel API does not expose `/cache/invalidate`; call the executor route separately when deletion is required and handle HTTP 503 `cache_unavailable` as an unconfirmed purge.
 
-`stream()` yields `ExecutorEvent` instances.
+## Stream events
 
 ```php
+use Superwire\Laravel\Enums\ExecutorEventKind;
 use Superwire\Laravel\Workflow;
 
+$finalOutput = null;
+
 foreach (
-    Workflow::fromFile(resource_path('workflows/reply.wire'))
-        ->inputs(['message' => 'Hello'])
+    Workflow::fromFile(resource_path('workflows/hello.wire'))
+        ->inputs(['name' => 'Ada'])
         ->secrets(['api_key' => config('services.openai.key')])
         ->stream() as $event
 ) {
-    if ($event->output() !== null) {
-        $partialOrFinalOutput = $event->output();
+    if ($event->kind === ExecutorEventKind::WorkflowCompleted) {
+        $finalOutput = $event->output();
+        break;
     }
 
     if ($event->isTerminal()) {
@@ -106,137 +120,152 @@ foreach (
 }
 ```
 
-`streamToResult()` consumes the stream and returns the final `WorkflowResult`.
+`ExecutorEvent` exposes `kind`, `timestampMs`, `agentName`, `message`, a typed event DTO at `event`, optional typed `diagnostic`, transport `runIdentifier`/`eventIdentifier`, `isTerminal()`, `output()`, and `toArray()`. `output()` returns final output only for `WorkflowCompletedEvent`. Nested DTOs expose safe metadata: started DTOs provide `argumentNames` or `bindingNames` where applicable, while completion DTOs provide `resultKind`, optional `itemCount`, and `durationMs`. They never expose raw inputs, outputs, prompts, contexts, schemas, upstream bodies or headers, secrets, or run capabilities. Transport IDs remain separate from the canonical event-envelope array.
+
+Supported kinds:
+
+- workflow started, planned, completed, failed, and cancelled;
+- agent loop started, completed, failed, and cancelled;
+- context compaction started, completed, and failed;
+- agent file created and deleted;
+- agent started, completed, failed, and cancelled;
+- provider attempt started, completed, and failed;
+- tool call started, completed, and failed;
+- MCP tool schema fetch started, completed, and failed;
+- MCP tool validation started, completed, and failed;
+- MCP call started, completed, and failed;
+- cache degraded and stream gap.
+
+`streamToResult()` consumes the stream and returns a `WorkflowResult` with final output, safe context counts, bounded public history, and typed transport identity:
 
 ```php
-$result = Workflow::fromFile(resource_path('workflows/reply.wire'))
-    ->inputs(['message' => 'Hello'])
+$result = Workflow::fromFile(resource_path('workflows/hello.wire'))
+    ->inputs(['name' => 'Ada'])
     ->secrets(['api_key' => config('services.openai.key')])
     ->streamToResult();
+
+$eventCount = $result->retainedHistoryEventCount();
+$history = $result->toSensitiveDebugArray()['history'];
+$runIdentifier = $result->transportIdentity?->runIdentifier;
+$terminalEventIdentifier = $result->transportIdentity?->terminalEventIdentifier;
 ```
 
-## Event helpers
+History is available only through the explicit debug export and is omitted from ordinary serialization. It contains the executor's public metadata projection, not raw provider responses, tool/MCP argument values or results, prompts, schemas, headers, secrets, or run capabilities. Protect the export because output, diagnostics, filenames, and other metadata may still be sensitive in the application's domain.
 
-An `ExecutorEvent` exposes:
+The executor caps each complete public SSE frame at 245,760 bytes. Laravel exposes the same contract as `ExecutorRuntimeLimits::SERVER_MAXIMUM_SERIALIZED_PUBLIC_EVENT_BYTES`; its default line/frame/data limits remain higher, while custom lower limits intentionally fail closed. Fragmented input is accumulated only within those configured bounds, and retained-history serialization failures report event kind/ID without embedding output or secret values.
 
-```php
-$event->kind;
-$event->agentName;
-$event->event;
-$event->isTerminal();
-$event->output();
-$event->toArray();
-```
-
-Known event kinds include workflow started, workflow planned, agent started, agent completed, tool call started, tool call completed, tool call failed, MCP call started, MCP call completed, MCP call failed, workflow completed, and workflow failed.
+<Note>
+  Streamed `ExecutorEvent` objects preserve run and SSE event identifiers separately from their canonical `toArray()` envelope. The client does not provide reconnect/cancel helper methods; use those identifiers with a lower-level HTTP client when required. `streamToResult()` fails explicitly on `stream_gap`, incomplete EOF, post-terminal events, `workflow_failed`, `workflow_cancelled`, and retained-history limits; it never returns success without terminal output.
+</Note>
 
 ## Validate and format
 
 ```php
-$validation = Workflow::fromFile(resource_path('workflows/reply.wire'))
+$validation = Workflow::fromFile(resource_path('workflows/hello.wire'))
     ->secrets(['api_key' => config('services.openai.key')])
     ->validate();
 
-$formatted = Workflow::fromFile(resource_path('workflows/reply.wire'))
+if (! $validation->valid) {
+    throw new RuntimeException($validation->details ?? 'Workflow is invalid.');
+}
+
+$format = Workflow::fromFile(resource_path('workflows/hello.wire'))
     ->format();
+
+$formattedSource = $format->formattedSource;
 ```
+
+`WorkflowValidationResult` exposes `valid`, `details`, and `context`. `WorkflowFormatResult` exposes `valid` and `formattedSource`.
+
+The current executor reports invalid validation/format requests as HTTP errors, so the remote client normally throws `RuntimeException` rather than returning `valid: false`.
 
 ## Map output into a class
 
-`mapInto()` maps the final output into a PHP class. If the class has a static `from()` method, it is used. Otherwise, array output is passed as named constructor arguments.
-
 ```php
-final readonly class ReplyOutput
+final readonly class HelloOutput
 {
     public function __construct(
         public string $message,
     ) {}
 }
 
-$result = Workflow::fromFile(resource_path('workflows/reply.wire'))
-    ->inputs(['message' => 'Hello'])
+$result = Workflow::fromFile(resource_path('workflows/hello.wire'))
+    ->inputs(['name' => 'Ada'])
     ->secrets(['api_key' => config('services.openai.key')])
-    ->mapInto(ReplyOutput::class)
+    ->mapInto(HelloOutput::class)
     ->run();
 
-$output = $result->output;
+$message = $result->output->message;
 ```
 
-## Testing with fakes
+`mapInto()` uses a static `from()` method when present. Otherwise it passes array output as named constructor arguments and scalar output as one constructor argument.
+
+## Test with fakes
 
 ```php
 use Superwire\Laravel\Workflow;
 
-Workflow::fake([
-    'message' => 'Fake workflow output.',
+$fake = Workflow::fake([
+    'message' => 'Hello from a fake.',
 ]);
 
-$result = Workflow::fromFile(resource_path('workflows/reply.wire'))
-    ->inputs(['message' => 'Hello'])
-    ->secrets(['api_key' => 'test-key'])
-    ->run();
-
-Workflow::restoreFake();
-```
-
-## Testing patterns
-
-Validate workflow contracts in tests:
-
-```php
-use Superwire\Laravel\Workflow;
-
-$validation = Workflow::fromFile(resource_path('workflows/reply.wire'))
-    ->secrets([
-        'api_key' => config('services.openai.key'),
-    ])
-    ->validate();
-```
-
-Use fake execution for deterministic application tests:
-
-```php
-use Superwire\Laravel\Workflow;
-
-Workflow::fake([
-    'message' => 'Hello from a fake workflow.',
-]);
-
-$result = Workflow::fromFile(resource_path('workflows/reply.wire'))
-    ->inputs(['message' => 'Hello'])
+$result = Workflow::fromFile(resource_path('workflows/hello.wire'))
+    ->inputs(['name' => 'Ada'])
     ->secrets(['api_key' => 'test-key'])
     ->run();
 
 expect($result->output)->toBe([
-    'message' => 'Hello from a fake workflow.',
+    'message' => 'Hello from a fake.',
 ]);
 
+$fake
+    ->assertExecutedWith(['name' => 'Ada'])
+    ->assertExecuted(1);
+
 Workflow::restoreFake();
 ```
 
-Test data guidance:
-
-- Keep test workflows small.
-- Use deterministic inputs.
-- Avoid live provider calls in unit tests.
-- Reserve end-to-end tests for the executor boundary.
-
-## API summary
+Use per-file or computed output when a test exercises several workflows:
 
 ```php
-Workflow::fromFile($path);
-Workflow::fromSource($source);
-
-$workflow->inputs([...]);
-$workflow->secrets([...]);
-$workflow->mapInto(SomeOutput::class);
-
-$workflow->run();
-$workflow->stream();
-$workflow->streamToResult();
-$workflow->validate();
-$workflow->format();
-
-Workflow::fake([...]);
-Workflow::restoreFake();
+$fake = Workflow::fake()
+    ->forFile(
+        resource_path('workflows/hello.wire'),
+        fn (array $input, array $secrets): array => [
+            'message' => "Hello {$input['name']}.",
+        ],
+    );
 ```
+
+The fake also exposes `assertNothingExecuted()`, `recorded()`, and `executionCount()`. It records input, secrets, source, and cache key; do not print recorded secrets in test diagnostics.
+
+`WorkflowFake::executeStreamToResult()` consumes one deterministic fake stream and preserves the remote executor's safe serialization, bounded public history, context counts, and typed non-serialized transport identity.
+
+## Error handling
+
+Connection failures are Laravel `ConnectionException`. Failed execute/validate/format HTTP responses and streamed `workflow_failed`/`workflow_cancelled` terminals throw `WorkflowExecutionException`. It exposes `diagnostic`, `httpStatus`, `runIdentifier`, `eventKind`, `eventIdentifier`, and a prior protocol exception when applicable.
+
+```php
+use Superwire\Laravel\Runtime\WorkflowExecutionException;
+
+try {
+    $result = Workflow::fromFile(resource_path('workflows/hello.wire'))->run();
+} catch (WorkflowExecutionException $exception) {
+    $code = $exception->diagnostic?->code->value;
+    $retryability = $exception->diagnostic?->retryability->value;
+    $retryAfterMs = $exception->diagnostic?->retryAfterMs;
+    $cause = $exception->diagnostic?->cause;
+    $httpStatus = $exception->httpStatus;
+    $runIdentifier = $exception->runIdentifier;
+    $eventKind = $exception->eventKind?->value;
+    $eventIdentifier = $exception->eventIdentifier;
+
+    throw $exception;
+}
+```
+
+`ExecutorDiagnostic` also exposes typed stage, severity, subject, message, and recursive cause. Malformed successful execute/validate/format bodies throw `RuntimeException`; connection failures retain their Laravel exception type.
+
+For `event_too_large`, inspect `diagnostic.subject.actualBytes` and `maximumBytes`; no oversized output is present. `stream_capacity_exceeded` can arrive as HTTP 503 before the stream begins or as the single reserved terminal failure after it begins.
+
+Malformed/unknown event kinds, diagnostics, subjects, SSE IDs, or event/kind mismatches throw `ExecutorProtocolException` with event-kind/event-ID context. The parser accepts optional `workflow_cancelled` duration metadata exactly as the Rust protocol permits.

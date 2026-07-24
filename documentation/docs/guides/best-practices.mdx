@@ -1,122 +1,57 @@
 ---
-title: Best Practices
-description: Patterns for maintainable, efficient Superwire workflows.
+title: Best practices
+description: Keep workflow contracts small, typed, scoped, bounded, and operable.
 ---
 
-## Keep the first version small
+import ClassifyWorkflow from "/examples/wire/classify.mdx";
+import ParallelWorkflow from "/examples/wire/parallel.mdx";
+import McpTaskWorkflow from "/examples/wire/mcp-task.mdx";
 
-Start with one provider, one model, one agent, and one output. Add schemas, tools, prompts, resources, and parallelism only when the workflow needs them.
+## Start with one contract
 
-## Keep secrets out of instructions
+One provider, model, agent, and final output is enough for the first working version. Add another node only when it has a distinct input/output responsibility.
 
-Do not interpolate secrets into model instructions unless the external provider explicitly needs that value. Provider keys and MCP tokens belong in provider or MCP configuration.
+## Keep secrets outside source and instructions
 
-## Prefer structured outputs
+Supply provider/MCP credentials through runtime secrets or executor environment variables. Do not interpolate credentials into instructions. Avoid command-line secret JSON when a restricted file or application client is available.
 
-```wire
-agent classify {
-    model: model.fast
-    instruction: "Classify {{ input.message }}."
+## Prefer structured output
 
-    output {
-        category: enum { bug, feature, question }
-        confidence: number
-    }
-}
-```
+<ClassifyWorkflow />
 
-Structured outputs are easier to validate, reference, and aggregate.
+Typed objects are easier to validate, reference, cache, map into application classes, and evolve than free-form text that another layer must parse.
 
-## Split fan-out and aggregation
+## Make concurrency visible
 
-Use separate steps when a workflow needs to process many items and then produce one final result.
+<ParallelWorkflow />
 
-```wire
-input {
-    project_id: number
-}
+Independent references expose safe concurrency. Set an explicit `max_concurrency` in production based on provider/tool capacity; do not assume more parallelism is always faster or cheaper.
 
-secrets {
-    api_key: string
-}
+## Separate tool ownership
 
-provider llm from openai {
-    endpoint: "https://api.openai.com/v1"
-    api_key: secrets.api_key
-}
+<McpTaskWorkflow />
 
-model fast from llm {
-    id: "gpt-4.1-mini"
-}
-
-mcp tasks {
-    endpoint: "http://localhost:8000/mcp/tasks"
-}
-
-tool fetch_tasks from mcp.tasks.tool.fetch_tasks {
-    input {
-        project_id: number
-    }
-
-    output {
-        tasks: [{
-            id: number
-            title: string
-            description: string
-            status: string
-        }]
-    }
-}
-
-dynamic {
-    task_list: call tool.fetch_tasks {
-        bindings {
-            project_id: input.project_id
-        }
-    }
-}
-
-agent analyze_task for task in task_list.tasks {
-    model: model.fast
-
-    instruction: """
-        Analyze this task and identify the next useful action.
-
-        Task title: {{ task.title }}
-        Task description: {{ task.description }}
-        Task status: {{ task.status }}
-    """
-
-    output {
-        task_id: number
-        summary: string
-        recommended_action: string
-    }
-}
-
-agent summarize_project {
-    model: model.fast
-
-    instruction: """
-        Create a project-level summary from these task analyses:
-
-        {{ agent.analyze_task }}
-    """
-
-    output {
-        summary: string
-        next_actions: [string]
-    }
-}
-
-output {
-    task_analyses: agent.analyze_task
-    project_summary: agent.summarize_project
-}
-```
-
-`analyze_task` runs once per task, and those iterations may run in parallel. The final `summarize_project` agent aggregates the array produced by `agent.analyze_task`.
+- Use deterministic `call tool.name` for required operations.
+- Use agent `uses` when model judgment is required.
+- Put trusted IDs/tenant scope in `bindings`, not model-visible `input`.
+- Bound model-owned calls with `max_calls`.
+- Keep authorization and transaction safety inside domain tools.
 
 ## Continue context only when needed
 
-Use `context: agent.previous` when the next agent should continue the previous message history. Use structured references when you only need data.
+Use structured references for values. Use full context only for conversational history. Use `compact` when history is large and state what the compactor must preserve.
+
+## Choose API mode deliberately
+
+Models default to `wire_api: "responses"`. Select `"chat/completion"` when the backend requires it and for every agent using a `file` directive.
+
+## Treat cache keys as behavior
+
+A cache key scopes reusable agent results. Include tenant/conversation/version dimensions needed to prevent accidental cross-context reuse. Rotate for a fresh scope and invalidate when deletion is required.
+
+## Validate every source of truth
+
+- Keep complete docs examples in imported checked fixtures.
+- Run `superwire-cli workflow check` and `fmt` locally.
+- Generate/review `superwire.lock` when MCP schemas matter.
+- Exercise JSON and SSE output contracts in the integrating application.

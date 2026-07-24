@@ -5,7 +5,9 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use superwire_executor::runtime::{ExecutorError, WorkflowExecutor};
-use superwire_provider_cersei::CerseiModelProvider;
+use superwire_mcp::{HttpMcpClientFactory, McpClientFactory, McpNetworkPolicy};
+use superwire_protocol::event::ExecutorEvent;
+use superwire_provider_cersei::{CerseiModelProvider, ProviderNetworkPolicy};
 pub use superwire_test_support::FakeMcpRequest;
 use superwire_test_support::{fixtures, FakeMcpClientFactory, WorkflowSource};
 
@@ -16,6 +18,7 @@ pub struct TestRunOutput {
     pub output: Value,
     pub provider_requests: BTreeMap<String, Vec<Value>>,
     pub mcp_requests: BTreeMap<String, Vec<FakeMcpRequest>>,
+    pub events: Vec<ExecutorEvent>,
 }
 
 #[derive(Debug)]
@@ -23,6 +26,7 @@ pub struct TestRunErrorOutput {
     pub error: ExecutorError,
     pub provider_requests: BTreeMap<String, Vec<Value>>,
     pub mcp_requests: BTreeMap<String, Vec<FakeMcpRequest>>,
+    pub events: Vec<ExecutorEvent>,
 }
 
 pub struct TestRunner {
@@ -31,6 +35,7 @@ pub struct TestRunner {
     secrets: Value,
     providers: BTreeMap<String, ProviderScript>,
     mcp_servers: BTreeMap<String, McpScript>,
+    mcp_http_endpoints: BTreeMap<String, String>,
     max_concurrency: usize,
 }
 
@@ -111,7 +116,7 @@ enum ModelTurnResponse {
     Json(Value),
     Text(String),
     ToolCalls(Vec<ToolCall>),
-    Error(String),
+    Error { status: u16, message: String },
 }
 
 #[derive(Debug)]
@@ -172,6 +177,7 @@ impl TestRunner {
             secrets: Value::Null,
             providers: BTreeMap::new(),
             mcp_servers: BTreeMap::new(),
+            mcp_http_endpoints: BTreeMap::new(),
             max_concurrency: 1,
         }
     }
@@ -210,58 +216,76 @@ impl TestRunner {
         self
     }
 
+    #[must_use]
+    pub fn mcp_http_endpoint(mut self, server_name: impl Into<String>, endpoint: impl Into<String>) -> Self {
+        self.mcp_http_endpoints.insert(server_name.into(), endpoint.into());
+        self
+    }
+
     pub async fn run(self) -> Result<TestRunOutput, ExecutorError> {
         let provider_servers = self.spawn_provider_servers();
         let mcp_server_names = self.mcp_server_names();
-        let mcp_client_factory = self.fake_mcp_client_factory();
+        let fake_mcp_client_factory = self.fake_mcp_client_factory();
+        let http_mcp_client_factory = HttpMcpClientFactory::for_network_policy(McpNetworkPolicy::Trusted);
+        let mcp_client_factory = self.selected_mcp_client_factory(&fake_mcp_client_factory, &http_mcp_client_factory);
         let workflow_source = self.workflow_source_with_mock_endpoints(&provider_servers)?;
         let executor = WorkflowExecutor::from_source_with_runtime_values_and_mcp_client_factory(
             &workflow_source,
             &self.input,
             &self.secrets,
-            &mcp_client_factory,
+            mcp_client_factory,
         )?;
+        let (event_sender, mut event_receiver) = tokio::sync::mpsc::channel(256);
+        let model_provider = CerseiModelProvider::for_network_policy(ProviderNetworkPolicy::Trusted);
         let output = executor
-            .execute(self.input, self.secrets, &CerseiModelProvider, None, self.max_concurrency)
+            .execute(self.input, self.secrets, &model_provider, Some(event_sender), self.max_concurrency)
             .await?;
 
         let provider_requests = verify_provider_servers(&provider_servers);
-        let mcp_requests = collect_mcp_requests(&mcp_client_factory, &mcp_server_names);
+        let mcp_requests = collect_mcp_requests(&fake_mcp_client_factory, &mcp_server_names);
+        let events = collect_executor_events(&mut event_receiver);
 
         Ok(TestRunOutput {
             output,
             provider_requests,
             mcp_requests,
+            events,
         })
     }
 
     pub async fn run_expect_error(self) -> TestRunErrorOutput {
         let provider_servers = self.spawn_provider_servers();
         let mcp_server_names = self.mcp_server_names();
-        let mcp_client_factory = self.fake_mcp_client_factory();
+        let fake_mcp_client_factory = self.fake_mcp_client_factory();
+        let http_mcp_client_factory = HttpMcpClientFactory::for_network_policy(McpNetworkPolicy::Trusted);
+        let mcp_client_factory = self.selected_mcp_client_factory(&fake_mcp_client_factory, &http_mcp_client_factory);
         let workflow_source = self
             .workflow_source_with_mock_endpoints(&provider_servers)
             .expect("workflow source should be prepared");
+        let (event_sender, mut event_receiver) = tokio::sync::mpsc::channel(256);
+        let model_provider = CerseiModelProvider::for_network_policy(ProviderNetworkPolicy::Trusted);
         let execution_error = match WorkflowExecutor::from_source_with_runtime_values_and_mcp_client_factory(
             &workflow_source,
             &self.input,
             &self.secrets,
-            &mcp_client_factory,
+            mcp_client_factory,
         ) {
             Ok(executor) => executor
-                .execute(self.input, self.secrets, &CerseiModelProvider, None, self.max_concurrency)
+                .execute(self.input, self.secrets, &model_provider, Some(event_sender), self.max_concurrency)
                 .await
                 .expect_err("fixture runner should fail execution"),
             Err(error) => error,
         };
 
         let provider_requests = verify_provider_servers(&provider_servers);
-        let mcp_requests = collect_mcp_requests(&mcp_client_factory, &mcp_server_names);
+        let mcp_requests = collect_mcp_requests(&fake_mcp_client_factory, &mcp_server_names);
+        let events = collect_executor_events(&mut event_receiver);
 
         TestRunErrorOutput {
             error: execution_error,
             provider_requests,
             mcp_requests,
+            events,
         }
     }
 
@@ -286,6 +310,23 @@ impl TestRunner {
         factory
     }
 
+    fn selected_mcp_client_factory<'factory>(
+        &self,
+        fake_factory: &'factory FakeMcpClientFactory,
+        http_factory: &'factory dyn McpClientFactory,
+    ) -> &'factory dyn McpClientFactory {
+        assert!(
+            self.mcp_servers.is_empty() || self.mcp_http_endpoints.is_empty(),
+            "fixture runner cannot mix fake and HTTP MCP servers"
+        );
+
+        if self.mcp_http_endpoints.is_empty() {
+            fake_factory
+        } else {
+            http_factory
+        }
+    }
+
     fn workflow_source_with_mock_endpoints(&self, provider_servers: &BTreeMap<String, ProviderServer>) -> Result<String, ExecutorError> {
         let mut workflow_source = self
             .workflow_source
@@ -308,7 +349,11 @@ impl TestRunner {
             );
         }
 
-        if !self.mcp_servers.is_empty() {
+        for (server_name, endpoint) in &self.mcp_http_endpoints {
+            workflow_source = replace_block_property(&workflow_source, "mcp", server_name, "endpoint", &json!(endpoint));
+        }
+
+        if !self.mcp_servers.is_empty() || !self.mcp_http_endpoints.is_empty() {
             workflow_source = workflow_source.replace("secrets {\n    mcp_endpoint: string\n}\n\n", "");
         }
 
@@ -406,8 +451,15 @@ impl<'model> ModelTurnBuilder<'model> {
         self.finish()
     }
 
-    pub fn respond_error(mut self, message: impl Into<String>) -> &'model mut ModelBuilder {
-        self.turn.response = Some(ModelTurnResponse::Error(message.into()));
+    pub fn respond_error(self, message: impl Into<String>) -> &'model mut ModelBuilder {
+        self.respond_status_error(500, message)
+    }
+
+    pub fn respond_status_error(mut self, status: u16, message: impl Into<String>) -> &'model mut ModelBuilder {
+        self.turn.response = Some(ModelTurnResponse::Error {
+            status,
+            message: message.into(),
+        });
         self.finish()
     }
 
@@ -820,7 +872,7 @@ impl ModelTurn {
 impl ModelTurnResponse {
     fn to_http_response(&self) -> String {
         match self {
-            Self::Error(message) => http_json_response(400, json!({ "error": { "message": message } })),
+            Self::Error { status, message } => http_json_response(*status, json!({ "error": { "message": message } })),
             _ => http_sse_response(self.to_openai_stream_events()),
         }
     }
@@ -836,7 +888,7 @@ impl ModelTurnResponse {
             )]),
             Self::Text(output) => openai_content_stream_events(output.clone()),
             Self::ToolCalls(tool_calls) => openai_tool_call_stream_events(tool_calls.clone()),
-            Self::Error(message) => vec![json!({ "error": { "message": message } })],
+            Self::Error { message, .. } => vec![json!({ "error": { "message": message } })],
         }
     }
 }
@@ -959,6 +1011,16 @@ fn openai_tool_call_stream_events(tool_calls: impl IntoIterator<Item = ToolCall>
             "finish_reason": null,
         }]
     })]
+}
+
+fn collect_executor_events(event_receiver: &mut tokio::sync::mpsc::Receiver<ExecutorEvent>) -> Vec<ExecutorEvent> {
+    let mut events = Vec::new();
+
+    while let Ok(event) = event_receiver.try_recv() {
+        events.push(event);
+    }
+
+    events
 }
 
 fn assert_tool_names(request_body: &Value, expected_tools: &[String]) -> Result<(), String> {

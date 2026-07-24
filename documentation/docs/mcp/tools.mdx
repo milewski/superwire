@@ -1,79 +1,92 @@
 ---
-title: MCP Tools
-description: Import MCP tools, choose deterministic vs model-owned calls, and scope tool access safely.
+title: MCP tools
+description: Declare tool schemas, separate model input from trusted bindings, bound calls, and choose ownership.
 ---
 
-Tools are callable MCP capabilities. They usually represent backend operations such as fetch, search, create, or update.
+import McpTaskWorkflow from "/examples/wire/mcp-task.mdx";
 
-A tool import makes one MCP tool available to the workflow:
+## Checked end-to-end example
+
+<McpTaskWorkflow />
+
+## Declaration properties
+
+| Property | Purpose |
+| --- | --- |
+| `description` | Local tool description exposed to model/tooling. |
+| `max_calls` | Workflow import call budget. |
+| `input {}` | Model-visible or call-supplied input fields. |
+| `bindings {}` | Trusted values supplied by workflow expressions. |
+| `output {}` | Expected output schema override. |
+
+Remote MCP schema discovery supplies fields when local blocks are omitted. Discovery preserves unions, nullable array items, formats, constraints, and `additionalProperties` instead of flattening them. Local schemas let a workflow narrow/override the imported contract.
+
+## Input versus bindings
 
 ```wire
-tool fetch_task from mcp.tasks.tool.fetch_task
-```
+tool search_tasks from mcp.tasks.tool.search_tasks {
+    max_calls: 4
 
-## Tool schemas
-
-`input {}` and `output {}` define the tool contract expected by the workflow.
-
-```wire
-tool fetch_task from mcp.tasks.tool.fetch_task {
     input {
-        task_id: number
+        query: string
+    }
+
+    bindings {
+        workspace_id: input.workspace_id
     }
 
     output {
-        title: string
-        description: string
-        status: string
+        ids: [number]
     }
 }
 ```
 
-## Runtime bindings
+`query` is visible to a model or must be supplied by a deterministic call. `workspace_id` is fixed by trusted workflow data and is not delegated to the model.
 
-Use `bindings {}` when the workflow should supply trusted runtime values directly. This is the workflow-owned pattern.
+## Workflow-owned call
 
 ```wire
 dynamic {
-    task: call tool.fetch_task {
-        bindings {
-            task_id: input.task_id
+    search: call tool.search_tasks {
+        input {
+            query: input.query
         }
+
+        max_calls: 1
     }
 }
 ```
 
-Use workflow-owned calls when the operation is required and should not depend on model discretion.
+Use workflow ownership when the operation must happen at a declared point. Call-time `bindings` can override/add trusted binding values when the imported contract permits them.
 
-## Agent tool access
-
-Agents can only call tools listed in `uses`.
+## Model-owned access
 
 ```wire
 agent researcher {
     model: model.fast
-    uses: [tool.fetch_task]
-    instruction: "Fetch the task and summarize it."
+    uses: [
+        tool.search_tasks {
+            max_calls: 2
+        },
+    ]
+    instruction: "Research {{ input.topic }}."
 
     output {
-        summary: string
+        findings: [string]
     }
 }
 ```
 
-This is the model-owned pattern: the model decides whether and when to call available tools.
+Use model ownership when the model must decide whether or how to call. Tools absent from `uses` are unavailable to that agent.
 
-## Choosing the pattern
+`max_calls` can be declared on an imported tool, batch import, deterministic call, and an agent `uses` entry. Narrow budgets near the use site; do not rely on prompts alone to limit calls.
 
-- Use workflow-owned calls (`dynamic` + `call tool.*`) for deterministic steps and strict ordering.
-- Use model-owned calls (`uses: [tool.*]`) when the model needs tool-choice judgment.
-- Combine both when needed: prefetch core data deterministically, then expose selected tools for reasoning.
+## Validation and errors
 
-`uses` can also include prompts and resources.
+The runtime validates fixed declaration bindings and merged call-time bindings before dispatch. It validates the returned value against the tool output schema at the tool boundary.
 
-## See also
+For model-owned calls, schema/input/output failures are returned to the model as structured, recoverable tool errors so it can correct a call within the configured budget. Workflow-owned calls surface the same contract failure to workflow execution. SSE exposes schema-fetch, validation, MCP-call, and model tool-call lifecycle metadata, not argument values, schemas, or returned payloads. See [Streaming and events](/api-reference/streaming-events).
 
-- [MCP and Tools Overview](/mcp/overview)
-- [MCP Servers](/mcp/mcp-servers)
-- [Batch Imports](/mcp/batch-imports)
-- [MCP Tools, Prompts, and Resources example](/examples/mcp-tools)
+## Lock before deployment
+
+Use [MCP lockfiles](/mcp/lockfiles) to resolve and review remote metadata. Domain authorization, idempotency, and transaction safety still belong in the MCP tool implementation.

@@ -1,19 +1,33 @@
 {
-  "name": "documentation",
-  "version": "1.0.0",
-  "description": "This directory contains the Mintlify documentation for the Superwire workflow DSL.",
-  "main": "index.js",
-  "directories": {
-    "example": "examples"
+  "name": "superwire-documentation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mint documentation for the Superwire workflow DSL and runtime.",
+  "type": "module",
+  "engines": {
+    "node": "22.x"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "mint dev",
+    "validate": "mint validate",
+    "links": "mint broken-links --check-anchors --check-redirects --check-snippets",
+    "a11y": "mint a11y",
+    "check:wire": "node scripts/check-wire-fixtures.mjs",
+    "check:contracts": "node scripts/check-release-contracts.mjs",
+    "test": "npm run check:contracts && npm run check:wire && npm run validate && npm run links && npm run a11y"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "dependencies": {
-    "mintlify": "^4.2.566"
+  "devDependencies": {
+    "mint": "^4.2.734"
+  },
+  "overrides": {
+    "adm-zip": "^0.6.0",
+    "axios": "^1.18.0",
+    "front-matter": {
+      "js-yaml": "^3.15.0"
+    },
+    "js-yaml": "^4.3.0",
+    "qs": "^6.15.2",
+    "sharp": "^0.35.0",
+    "tar": "^7.5.19"
   }
 }

@@ -11,6 +11,8 @@ mcp tasks {
 }
 ```
 
+This local endpoint requires `trusted`. The same applies to every local/private MCP endpoint on this page: the CLI already uses `trusted`, while executor runtime routes and LSP discovery must be enabled through their separate gates.
+
 Imported tools, prompts, and resources reference that server through the `mcp` namespace.
 
 ```wire
@@ -18,6 +20,10 @@ tool fetch_task from mcp.tasks.tool.fetch_task
 prompt writer_instructions from mcp.tasks.prompt.writer_instructions
 resource project_readme from mcp.tasks.resource.project_readme
 ```
+
+## Supported transport
+
+Superwire implements remote HTTP JSON-RPC MCP only. An endpoint must be an absolute `http` or `https` URL and must not contain URL user information. `stdio` and other local-process transports are not implemented, including under `trusted`.
 
 ## Authenticated MCP servers
 
@@ -48,7 +54,28 @@ mcp internal_tools {
         X_Workspace_ID: "{{ input.workspace_id }}"
     }
 }
+
 ```
+
+## Runtime preflight
+
+For execution, `input` and `secrets` must be objects (or `null` when absent) and must satisfy their declared types. For each MCP declaration, Superwire resolves the endpoint, applies the component's network policy, and only then resolves header expressions. It resolves every permitted server configuration before constructing any MCP client or emitting a schema-fetch lifecycle event. A later unresolved, invalid, or policy-blocked declaration therefore prevents calls and schema-fetch events for every earlier server; `disabled` rejects the first endpoint before its headers or DNS are evaluated.
+
+After preflight, remote discovery preserves the server's schema shapes—including unions, nullable array items, formats, constraints, and `additionalProperties`—and validates imported fixed/merged bindings before model or deterministic dispatch. `/validate` and `/graph` intentionally defer the execution input payload; see [Execution preflight](/api-reference/executor-api#execution-preflight-and-mcp-ordering).
+
+## Network and trust boundary
+
+MCP discovery is not passive parsing. The executor routes `/execute`, `/validate`, and `/graph` use one operator-selected server policy through `--mcp-network-policy`, set to `disabled`, `public-only`, or `trusted`. Server configuration defaults to `disabled`, and an HTTP request cannot override the server policy.
+
+- `disabled` blocks every outbound MCP connection.
+- `public-only` accepts absolute `http`/`https` URLs without user information. It resolves hostnames before connecting and rejects the entire endpoint if any literal address or DNS answer is local, private, link-local, multicast, reserved, documentation, or cloud metadata IPv4/IPv6 space. Reserved local/metadata hostnames are rejected without DNS. The approved addresses are normalized to the endpoint port, sorted, deduplicated, and pinned in a custom `ureq` resolver so the request cannot re-resolve to another address.
+- `trusted` retains the `http`/`https` and no-user-information checks but permits local/private destinations. It does not enable `stdio` or another local-process transport.
+
+For both enabled policies, the HTTP client ignores environment proxies, disables automatic redirects, and rejects redirect responses.
+
+`superwire-cli` deliberately uses `trusted` for its MCP discovery and execution paths, so running it grants reviewed workflows local/private network scope from the CLI process. The LSP is independent: it makes no discovery requests unless client initialization explicitly sets `initializationOptions.workspaceTrust.networkMcpDiscovery` to `trusted`; that setting does not alter executor policy.
+
+Discovery and later resource, prompt, and tool calls attach every resolved header, including values derived from runtime `input` or `secrets`. Treat `.wire` source as network-active configuration: accept it only from trusted authors and inspect endpoint/header expressions before supplying credentials. These policy checks reduce SSRF exposure but are not a network sandbox; constrain process/container egress and enforce authorization at the MCP service. A reviewed `superwire.lock` supplies metadata, not egress policy.
 
 ## Practical guidance
 

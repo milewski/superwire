@@ -3,21 +3,34 @@ use superwire_types::PromptValueFormat;
 
 #[must_use]
 pub fn normalize_mcp_tool_result(result: Value) -> Value {
-    if let Some(structured_content) = result.get("structuredContent") {
-        return structured_content.clone();
+    let Value::Object(mut result_object) = result else {
+        return result;
+    };
+
+    if let Some(structured_content) = result_object.remove("structuredContent") {
+        return structured_content;
     }
 
-    if let Some(text_content) = result
-        .get("content")
-        .and_then(Value::as_array)
-        .and_then(|content| content.first())
-        .and_then(|content_item| content_item.get("text"))
-        .and_then(Value::as_str)
-    {
-        return serde_json::from_str(text_content).unwrap_or_else(|_error| Value::String(text_content.to_string()));
+    let Some(content) = result_object.remove("content") else {
+        return Value::Object(result_object);
+    };
+    let Value::Array(mut content_items) = content else {
+        result_object.insert("content".to_string(), content);
+
+        return Value::Object(result_object);
+    };
+
+    if content_items.len() == 1 {
+        if let Some(Value::String(text_content)) = content_items
+            .first_mut()
+            .and_then(Value::as_object_mut)
+            .and_then(|content_item| content_item.remove("text"))
+        {
+            return serde_json::from_str(&text_content).unwrap_or(Value::String(text_content));
+        }
     }
 
-    result
+    Value::Array(content_items)
 }
 
 #[must_use]
@@ -105,4 +118,41 @@ fn render_mcp_content_value(content: &Value) -> String {
     }
 
     normalize_mcp_prompt_value(content)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn unwraps_only_one_text_content_item() {
+        let normalized_result = normalize_mcp_tool_result(json!({
+            "content": [{ "type": "text", "text": "{\"value\":7}" }]
+        }));
+
+        assert_eq!(normalized_result, json!({ "value": 7 }));
+    }
+
+    #[test]
+    fn preserves_every_unstructured_content_item() {
+        let content = json!([
+            { "type": "text", "text": "first" },
+            { "type": "image", "data": "aW1hZ2U=", "mimeType": "image/png" }
+        ]);
+        let normalized_result = normalize_mcp_tool_result(json!({
+            "content": content,
+            "isError": false
+        }));
+
+        assert_eq!(normalized_result, content);
+    }
+
+    #[test]
+    fn preserves_single_non_text_content_as_content_array() {
+        let content = json!([{ "type": "resource_link", "uri": "file:///report.json" }]);
+        let normalized_result = normalize_mcp_tool_result(json!({ "content": content }));
+
+        assert_eq!(normalized_result, content);
+    }
 }

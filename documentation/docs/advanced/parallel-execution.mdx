@@ -1,62 +1,46 @@
 ---
-title: Parallel Execution
-description: How Superwire runs independent agents and loop iterations concurrently.
+title: Parallel execution
+description: Understand dependency scheduling, loop concurrency, limits, and output ordering.
 ---
 
-Superwire builds a dependency graph from references. Nodes with no dependency relationship can run concurrently.
+import ParallelWorkflow from "/examples/wire/parallel.mdx";
+import LoopWorkflow from "/examples/wire/loop.mdx";
 
-## Independent agents
+## Independent graph nodes
 
-```wire
-agent extract_risks {
-    model: model.fast
-    instruction: "List risks for {{ input.topic }}."
+<ParallelWorkflow />
 
-    output {
-        risks: [string]
-    }
-}
+`risks` and `actions` are ready together because neither references the other. `plan` becomes ready only after both values exist.
 
-agent extract_actions {
-    model: model.fast
-    instruction: "List action items for {{ input.topic }}."
+Superwire derives this graph from references; source order does not serialize independent agents.
 
-    output {
-        actions: [string]
-    }
-}
+## Looped nodes
 
-agent create_plan {
-    model: model.smart
-    instruction: "Create a plan from risks {{ agent.extract_risks.risks }} and actions {{ agent.extract_actions.actions }}."
+<LoopWorkflow />
 
-    output {
-        plan: string
-    }
+Each loop iteration is independently schedulable after its upstream values are ready. Results are returned in input order even if executions complete out of order.
+
+## Limit concurrency
+
+HTTP execution option:
+
+```json
+{
+  "options": {
+    "max_concurrency": 2
+  }
 }
 ```
 
-`extract_risks` and `extract_actions` can run at the same time. `create_plan` waits for both.
+The default is `5`. The runtime uses an effective minimum of one. The same limiter covers runtime work scheduled concurrently; choose a value that respects provider/MCP rate limits and deployment capacity.
 
-## Looped agents
+`superwire-cli workflow run` currently uses a concurrency value of `10` internally and does not expose a CLI flag for it.
 
-```wire
-agent summarize_each for task_id in input.task_ids {
-    model: model.fast
-    instruction: "Summarize task {{ task_id }}."
+## Practical design
 
-    output {
-        task_id: number
-        summary: string
-    }
-}
-```
-
-Each loop iteration is independent unless it references shared upstream work that must run first.
-
-## Practical guidance
-
-- Split unrelated work into separate agents.
-- Keep dependencies explicit through references.
-- Use looped agents for batch work.
-- Add aggregation agents only after fan-out work has completed.
+- Split independent responsibilities rather than creating artificial sequential chains.
+- Preserve required order with explicit value/context/tool dependencies.
+- Use loops for homogeneous typed collections.
+- Aggregate only after fan-out when synthesis needs every result.
+- Keep write operations idempotent; concurrency can expose domain races the workflow type system cannot prevent.
+- Use SSE plan/loop/agent events to explain actual scheduling.

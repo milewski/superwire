@@ -21,7 +21,7 @@
       "patterns": [
         {
           "name": "keyword.control.wire",
-          "match": "(?<![.#-])\\b(provider|model|mcp|secrets|input|schema|tool|resource|prompt|from|dynamic|agent|file|for|in|output|as|call|read|render|match)\\b(?![.#-])"
+          "match": "(?<![.#-])\\b(provider|model|mcp|secrets|input|schema|tool|resource|prompt|from|dynamic|agent|file|for|in|output|as|call|read|render|match|asset|compact|context)\\b(?![.#-])"
         }
       ]
     },
@@ -597,15 +597,12 @@
           "include": "#model-usage-block"
         },
         {
-          "match": "\\b(model)\\s*(:)",
-          "captures": {
-            "1": {
-              "name": "entity.other.attribute-name.wire"
-            },
-            "2": {
-              "name": "punctuation.separator.key-value.wire"
-            }
-          }
+          "match": "\\b(model|instruction|context|uses)\\b(?=\\s*:)",
+          "name": "entity.other.attribute-name.agent-property.wire"
+        },
+        {
+          "match": "\\b(file)\\b(?=\\s+)",
+          "name": "keyword.control.directive.file.wire"
         },
         {
           "include": "#object-fields"
@@ -959,10 +956,13 @@
           "include": "#variant-projection"
         },
         {
-          "include": "#references"
+          "include": "#literal-keywords"
         },
         {
-          "include": "#literal-keywords"
+          "include": "#language-keywords"
+        },
+        {
+          "include": "#references"
         },
         {
           "include": "#numbers"

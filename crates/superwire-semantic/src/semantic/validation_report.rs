@@ -306,6 +306,10 @@ pub enum ValidationIssue {
         tool_name: String,
         message: String,
     },
+    InvalidMcpToolSchema {
+        tool_name: String,
+        message: String,
+    },
     InvalidTypeExpressionReference {
         reference_path: String,
         context: ValidationContext,
@@ -369,6 +373,7 @@ impl ValidationIssue {
             Self::UnknownResourceReference { .. } => "unknown_resource_reference",
             Self::UnknownPromptReference { .. } => "unknown_prompt_reference",
             Self::InvalidToolBinding { .. } => "invalid_tool_binding",
+            Self::InvalidMcpToolSchema { .. } => "invalid_mcp_tool_schema",
             Self::InvalidTypeExpressionReference { .. } => "invalid_type_expression_reference",
             Self::AgentDependencyCycle { .. } => "agent_dependency_cycle",
             Self::DynamicDependencyCycle { .. } => "dynamic_dependency_cycle",
@@ -499,6 +504,9 @@ impl ValidationIssue {
             } => {
                 format!("Agent `{agent_name}` has invalid binding overrides for `tool.{tool_name}`: {message}.")
             }
+            Self::InvalidMcpToolSchema { tool_name, message } => {
+                format!("Tool `{tool_name}` has an invalid discovered MCP schema: {message}.")
+            }
             Self::InvalidKeywordReferenceRoot { keyword, context } => {
                 format!("`{}` reference requires a field path in {}.", keyword.as_str(), context.describe())
             }
@@ -622,6 +630,9 @@ impl ValidationIssue {
                 property_name: _,
             } => Some("Use only `name` and `purpose` inside a file block.".to_string()),
             Self::MissingAgentFileContent { agent_name: _ } => Some("Add a content expression after `file`.".to_string()),
+            Self::InvalidMcpToolSchema { .. } => {
+                Some("Fix the MCP server schema, or declare explicit input/output fields to override discovery.".to_string())
+            }
             Self::InvalidAgentFileWireApi { .. } => Some(self.agent_model_help_message()),
             Self::InvalidProviderName { .. } => Some("Rename the provider using lowercase snake_case, such as `openai_cloud`.".to_string()),
             Self::InvalidModelName { .. } => Some("Rename the model using lowercase snake_case, such as `fast`.".to_string()),
@@ -1072,6 +1083,7 @@ impl From<&ValidationIssue> for DiagnosticCode {
                 tool_name: _,
                 message: _,
             } => Self::InvalidToolBinding,
+            ValidationIssue::InvalidMcpToolSchema { tool_name: _, message: _ } => Self::InvalidMcpToolSchema,
             ValidationIssue::InvalidTypeExpressionReference {
                 reference_path: _,
                 context: _,

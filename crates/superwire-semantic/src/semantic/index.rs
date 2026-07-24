@@ -1,5 +1,7 @@
 use super::resolver::ReferenceResolutionScope;
-use crate::semantic::support::types::{TypeExpressionWorkflowTypeExt, WorkflowType};
+use crate::semantic::support::types::{
+    workflow_type_from_json_schema, ToolDeclarationWorkflowTypeExt, TypeExpressionWorkflowTypeExt, WorkflowType,
+};
 use crate::semantic::{ProviderDriver, SingletonDeclarationKind, ValidationIssue, ValidationReport};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
@@ -330,6 +332,8 @@ pub struct SemanticToolSchema {
     pub fixed_binding_fields: Vec<ObjectField>,
     pub output_fields: HashMap<String, SemanticTypedField>,
     pub input_type: Option<WorkflowType>,
+    pub full_input_type: Option<WorkflowType>,
+    pub full_input_additional_property_type: Option<WorkflowType>,
     pub binding_type: Option<WorkflowType>,
     pub output_type: Option<WorkflowType>,
     pub span: SourceSpan,
@@ -338,17 +342,26 @@ pub struct SemanticToolSchema {
 impl SemanticToolSchema {
     #[must_use]
     pub fn from_tool_declaration(tool_declaration: &ToolDeclaration, named_schema_types: &HashMap<String, TypeExpression>) -> Self {
-        let input_type_expression = TypeExpression::Object(tool_declaration.input_fields.clone());
         let binding_type_expression = TypeExpression::Object(tool_declaration.binding_fields.clone());
-        let input_type = input_type_expression.to_workflow_type(named_schema_types).ok();
+        let input_type = tool_declaration.resolved_input_type(named_schema_types).ok();
+        let full_input_type = tool_declaration
+            .mcp_schema
+            .as_ref()
+            .filter(|mcp_schema| mcp_schema.uses_discovered_input)
+            .and_then(|_| tool_declaration.resolved_full_input_type(named_schema_types).ok());
+        let full_input_additional_property_type = tool_declaration
+            .mcp_schema
+            .as_ref()
+            .filter(|mcp_schema| mcp_schema.uses_discovered_input)
+            .and_then(|mcp_schema| match mcp_schema.input.get("additionalProperties") {
+                Some(additional_properties) if additional_properties.as_bool() == Some(false) => None,
+                Some(additional_properties) if additional_properties.is_object() => {
+                    workflow_type_from_json_schema(additional_properties).ok()
+                }
+                Some(_) | None => Some(WorkflowType::Any),
+            });
         let binding_type = binding_type_expression.to_workflow_type(named_schema_types).ok();
-        let output_type = if tool_declaration.has_untyped_mcp_output() {
-            Some(WorkflowType::Any)
-        } else {
-            TypeExpression::Object(tool_declaration.output_fields.clone())
-                .to_workflow_type(named_schema_types)
-                .ok()
-        };
+        let output_type = tool_declaration.resolved_output_type(named_schema_types).ok();
 
         Self {
             name: tool_declaration.name.clone(),
@@ -360,6 +373,8 @@ impl SemanticToolSchema {
             fixed_binding_fields: tool_declaration.fixed_binding_fields.clone(),
             output_fields: WorkflowSemanticIndex::collect_semantic_fields(&tool_declaration.output_fields),
             input_type,
+            full_input_type,
+            full_input_additional_property_type,
             binding_type,
             output_type,
             span: tool_declaration.span,
@@ -1468,13 +1483,13 @@ impl WorkflowSemanticIndex {
                 }
                 Declaration::Tool(_) | Declaration::McpToolBatch(_) => {
                     for tool_declaration in declaration.tool_declarations() {
-                        validation_index.index_tool_declaration(tool_declaration);
+                        validation_index.index_tool_declaration(tool_declaration, validation_report);
                         validation_index.register_tool_name(tool_declaration, validation_report);
                     }
                 }
                 Declaration::McpBatch(batch_import_declaration) => {
                     for tool_declaration in declaration.tool_declarations() {
-                        validation_index.index_tool_declaration(tool_declaration);
+                        validation_index.index_tool_declaration(tool_declaration, validation_report);
                         validation_index.register_tool_name(tool_declaration, validation_report);
                     }
 
@@ -1584,7 +1599,17 @@ impl WorkflowSemanticIndex {
         validation_index
     }
 
-    fn index_tool_declaration(&mut self, tool_declaration: &ToolDeclaration) {
+    fn index_tool_declaration(&mut self, tool_declaration: &ToolDeclaration, validation_report: &mut ValidationReport) {
+        for schema_issue in &tool_declaration.schema_issues {
+            validation_report.push_issue_with_span(
+                ValidationIssue::InvalidMcpToolSchema {
+                    tool_name: tool_declaration.name.clone(),
+                    message: schema_issue.message().to_string(),
+                },
+                Some(tool_declaration.span),
+            );
+        }
+
         let named_schema_types = self.named_schema_types(tool_declaration.span);
         let semantic_tool_schema = SemanticToolSchema::from_tool_declaration(tool_declaration, &named_schema_types);
 

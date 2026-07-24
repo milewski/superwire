@@ -2,7 +2,6 @@ use superwire_dsl::{ToolPropertyName, TypedField};
 
 use lsp_types::{Position, Range};
 
-use super::position::byte_offset_for_position;
 use super::{CodeActionEdit, CodeActionSuggestion, DocumentState, RenderTypeExpression};
 
 impl DocumentState {
@@ -87,7 +86,7 @@ impl DocumentState {
     }
 
     fn current_tool_schema_block(&self, position: Position) -> Option<ToolSchemaBlock> {
-        let cursor_offset = byte_offset_for_position(&self.text, position)?;
+        let cursor_offset = self.byte_offset(position)?;
         let source_prefix = &self.text[..cursor_offset];
 
         [ToolPropertyName::Input, ToolPropertyName::Bindings, ToolPropertyName::Output]
@@ -142,28 +141,6 @@ impl DocumentState {
             .join("\n");
 
         format!("\n{rendered_fields}\n{indent}")
-    }
-
-    fn position_for_byte_offset(&self, byte_offset: usize) -> Option<Position> {
-        if byte_offset > self.text.len() || !self.text.is_char_boundary(byte_offset) {
-            return None;
-        }
-
-        let mut line = 0_u32;
-        let mut character = 0_u32;
-
-        for source_character in self.text[..byte_offset].chars() {
-            if source_character == '\n' {
-                line += 1;
-                character = 0;
-
-                continue;
-            }
-
-            character += 1;
-        }
-
-        Some(Position { line, character })
     }
 
     fn line_indent_at_position(&self, position: Position) -> String {

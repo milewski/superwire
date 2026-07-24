@@ -1,9 +1,9 @@
 ---
-title: Type Annotations
-description: Where type annotations appear and how to write readable contracts.
+title: Type annotations
+description: Write typed fields for runtime values, schemas, tools, and object-shaped agent output.
 ---
 
-Type annotations appear after a field name.
+## Runtime fields
 
 ```wire
 input {
@@ -11,18 +11,22 @@ input {
     title: string
     urgent: boolean
 }
+
+secrets {
+    api_key: string
+}
 ```
 
-## Field descriptions
+A field is `name: type`. Runtime JSON must match every required field and nested shape.
 
-Use triple-slash comments for schema field descriptions.
+## Schema descriptions
 
 ```wire
 schema task_summary {
     /// Short display title
     title: string
 
-    /// One paragraph summary
+    /// One-paragraph summary
     summary: string
 
     /// Routing priority
@@ -30,9 +34,11 @@ schema task_summary {
 }
 ```
 
-## Agent outputs
+Triple-slash descriptions are preserved for schema-aware tooling/model output. Regular `//` comments are not field descriptions.
 
-Agent output contracts are required and object-shaped.
+## Agent output
+
+Agent output is a required object block:
 
 ```wire
 agent summarize {
@@ -46,7 +52,7 @@ agent summarize {
 }
 ```
 
-## Reusing schemas
+Reuse a schema as a field type, then reference that field:
 
 ```wire
 schema summary_output {
@@ -57,26 +63,35 @@ schema summary_output {
 agent summarize {
     model: model.fast
     instruction: "Summarize {{ input.title }}."
-    output: schema.summary_output
+
+    output {
+        result: schema.summary_output
+    }
+}
+
+output {
+    summary: agent.summarize.result.summary
 }
 ```
 
-## Tool contracts
+Direct scalar/schema syntax such as `output: string` or `output: schema.summary_output` is not current agent syntax.
 
-`input {}` and `output {}` on tools define schemas. They do not bind runtime values.
+## Tool input, bindings, and output
 
 ```wire
-tool fetch_task from mcp.tasks.tool.fetch_task {
+tool update_task from mcp.tasks.tool.update_task {
     input {
-        task_id: number
+        status: string
+    }
+
+    bindings {
+        task_id: input.task_id
     }
 
     output {
-        title: string
-        description: string
-        status: string
+        updated: boolean
     }
 }
 ```
 
-Runtime values are supplied with `bindings {}` at the call site.
+Tool `input` defines model-visible/call-supplied fields. `bindings` contains workflow-owned values. Tool `output` constrains the returned value.

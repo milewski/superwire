@@ -1,0 +1,22 @@
+```wire variant-match.wire
+input {
+    route: maybe variant action {
+        answer {
+            text: string
+        }
+
+        escalation {
+            reason: string
+        }
+    }
+}
+
+output {
+    projected_answer: input.route#answer
+    selected_text: match input.route {
+        answer.text
+        escalation.reason
+        _ "unavailable"
+    }
+}
+```
